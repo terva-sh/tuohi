@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:33:30Z
+updated_at: 2026-09-27T19:35:06Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -119,3 +119,7 @@ An input from PR #3's review of TKT-01M3HWWRRXTAR4T01SK79Z4BSM: decide the lifec
 **agent:claude-code/t3code-92c88910** at 2026-09-27T19:33:30Z
 
 Review disposition, PR #4, terva-review run c5d9701a. Medium finding, do not issue the access cookie to an unauthenticated first requester: fixed. TKT-01M3J59M4EJRPMKHWBS7K4XD3S (Guard tuohi's loopback server and settle its idle shutdown) now says the cookie may only answer a request that already presents the token, and must never be set for one that did not.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:35:06Z
+
+Review disposition, PR #4, terva-review run 58d99346. Two medium findings, both fixed. (1) Do not offer unlinking a held lock file as a fix: it still permits two primaries. A superseding note on TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 requires the lock file never be unlinked, and the doc now says so. (2) Prevent timed-out UI work from executing later: the timeout rule was wrong. The threading rule is now a pending, running, or cancelled state on each operation, with atomic claim and cancel, and callers give up only when the loop owner marks the loop stopped. It is recorded in a superseding note on TKT-01M3J1H8CPMZX9EJX8R2CQRA6P and in the doc's 'One threading rule'.

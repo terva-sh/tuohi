@@ -23,7 +23,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T19:26:49Z
+updated_at: 2026-09-27T19:35:06Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -75,3 +75,7 @@ Another local user could squat on the names in a shared `/tmp`. That is inferred
 - **Dropped launches on Windows.** With `maxInstances=1` and no `WaitNamedPipe`, a launch that arrives while the server is busy is dropped silently (`app_windows.go:85-104`). Any pipe create failure is also read as "already running".
 - **Working directory.** It is not forwarded, so relative paths in forwarded arguments resolve against the primary's directory. Forward it.
 - **No deadline on Unix.** `io.ReadAll` has no deadline as well as no cap.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:35:06Z
+
+Supersedes the 'Unlock race' fix in the previous note, which offered 'or unlink it while still holding the lock'. That alternative is wrong. A launcher that opened the old inode before the unlink can still take the lock on it once it is released, while another launcher creates and locks a new file at the same path, which gives two primaries. The fix is to never unlink the lock file: it stays in the per-user runtime directory for good, and only the socket is removed. Found by terva-review on tuohi PR #4.

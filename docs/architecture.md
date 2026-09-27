@@ -178,17 +178,30 @@ class of bug that crashed every Linux GUI scenario in `Destroy`, fixed in
 
 The rule from now on: **every exported `View` and `App` method is safe to call
 from any goroutine on every engine.** On the UI thread a call runs in place.
-Elsewhere it is marshalled to the UI thread asynchronously. A call whose
-caller needs a result, such as a dialog, waits for it with a timeout and
-returns an error if the loop has stopped. It never waits forever. macOS's
+Elsewhere it is marshalled to the UI thread asynchronously.
+
+A call whose caller needs a result, such as a dialog, waits for it, and must
+neither hang nor report a failure that later turns out false:
+
+- **Each marshalled operation carries a state:** pending, running, or
+  cancelled. The UI thread claims an operation atomically before running it,
+  and skips a cancelled one.
+- **The loop owner marks the loop stopped when its loop exits for good,** at
+  the end of `App.Wait` or `Run`. Anything still pending is then cancelled,
+  and a later call returns an error at once instead of queuing.
+- **A waiting caller gives up only when the loop is marked stopped,** never on
+  a timer. It then cancels its operation atomically. If the operation has
+  already started, the caller waits for it instead.
+
+A timeout was the first draft and lost. A timeout cannot tell a stopped loop
+from a busy one, so a call could report failure and then run anyway when the
+loop resumed, and a caller that retried a dialog would get two. macOS's
 `performOnMain` waits forever today (`lib_darwin.go:550-561`) and changes to
 match. TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to call
 from any goroutine) carries this out in the shared layer.
 
-A call made after the event loop has stopped for good stays queued and never
-runs. That is true on Unix and Windows today, and it is the accepted cost of
-never hanging. The alternative, running the native call in place, is the crash
-the rule exists to prevent.
+Running the native call in place when the loop is not running was also
+considered. It is the crash the rule exists to prevent.
 
 macOS adds one more rule. AppKit must run on the process's main thread, and
 tuohi does nothing to put it there: there is no `init` that locks the main
@@ -334,8 +347,8 @@ headers if it wants cross-origin isolation.
   single-instance channel against other local users) already lists the
   hardening: no `/tmp` fallback, a 0700 directory, peer credentials, a size
   cap, and a pipe security descriptor. The review adds four defects:
-  - `release` unlocks the flock before it unlinks the lock file, which can
-    give two primaries;
+  - `release` unlinks the lock file, which can give two primaries whether it
+    unlinks before or after unlocking, so the lock file must stay;
   - Windows drops a launch that arrives while the pipe is busy;
   - the working directory is not forwarded;
   - the Unix read has no deadline.
