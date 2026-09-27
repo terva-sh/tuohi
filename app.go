@@ -1069,10 +1069,15 @@ func cloneBindMap(m map[string]any) map[string]any {
 	return out
 }
 
-// Open opens rawurl with the user's default handler (browser, mail client,
-// ...). Only http, https, mailto and file URLs are allowed; anything else -
-// including a bare hostname or path with no scheme - returns ErrScheme. For
-// a local file use a file:// URL, or Reveal to show it in the file manager.
+// Open opens rawurl with the user's default handler: the browser or the mail
+// client. Only http, https, and mailto URLs are allowed. Anything else,
+// including file: and a bare hostname or path with no scheme, returns
+// ErrScheme. To show a local file, use Reveal.
+//
+// file: is refused because the platform opener runs what it is given: a
+// file: URL for an executable, a .app, a .lnk, or a .desktop file launches it
+// through ShellExecute, NSWorkspace, or xdg-open. Open is also where a view's
+// external links are sent, so its argument may come from a page.
 func (a *App) Open(rawurl string) error {
 	// Refuse a disallowed scheme BEFORE opening the app scope: nothing is
 	// launched either way, and a refused URL must not initialize the platform
@@ -1113,19 +1118,18 @@ func validateScheme(rawurl string) error {
 		return fmt.Errorf("appkit: parse %q: %w", rawurl, err)
 	}
 	if !allowedSchemes[u.Scheme] {
-		return fmt.Errorf("%w: %q (allowed: http, https, mailto, file)", ErrScheme, u.Scheme)
+		return fmt.Errorf("%w: %q (allowed: http, https, mailto)", ErrScheme, u.Scheme)
 	}
 	return nil
 }
 
 // allowedSchemes is the set Open will hand to the OS. Keeping it small is the
-// safety boundary: an attacker-controlled string can at worst open a web page,
-// an email draft, or a local file - never a custom protocol handler.
+// safety boundary: an attacker-controlled string can at worst open a web page
+// or an email draft, never a local program or a custom protocol handler.
 var allowedSchemes = map[string]bool{
 	"http":   true,
 	"https":  true,
 	"mailto": true,
-	"file":   true,
 }
 
 // ErrScheme is returned by Open when the URL's scheme is not in the allow-list.

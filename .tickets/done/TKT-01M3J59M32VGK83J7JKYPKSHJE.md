@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M32VGK83J7JKYPKSHJE
 title: "Drop file: from the schemes App.Open accepts"
 type: task
-status: draft
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-27T19:54:52Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -43,5 +43,9 @@ This matters more once the navigation policy (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE) se
 
 ## Acceptance criteria
 
-- [ ] App.Open rejects file: URLs with ErrScheme and accepts http, https, and mailto
-- [ ] The Open and Reveal docs say which to use for a local file
+- [x] App.Open rejects file: URLs with ErrScheme and accepts http, https, and mailto
+- [x] The Open and Reveal docs say which to use for a local file
+
+## Summary
+
+Open allows http, https, and mailto only. file: returns ErrScheme, and the tests cover a plain file: path, an upper-case FILE: scheme, and a UNC host. The Open doc says why file: is refused and points to Reveal for local files. The README never listed file: for Open, so it needed no change. just ci passes. This unblocks the navigation policy in TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins call a view's Go bindings), which depends on it.

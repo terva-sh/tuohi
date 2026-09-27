@@ -596,7 +596,6 @@ func TestValidateSchemeAllows(t *testing.T) {
 		"https://example.com/a?b=c#d",
 		"HTTPS://EXAMPLE.COM", // scheme is matched case-insensitively
 		"mailto:someone@example.com",
-		"file:///tmp/report.pdf",
 	}
 	for _, u := range allowed {
 		err := validateScheme(u)
@@ -616,6 +615,9 @@ func TestValidateSchemeRejects(t *testing.T) {
 		"vbscript:msgbox(1)",
 		"data:text/html,<h1>x",
 		"smb://host/share",
+		"file:///tmp/report.pdf",        // launches executables through the OS opener
+		"FILE:///C:/Windows/calc.exe",   // scheme matched case-insensitively
+		"file://server/share/setup.exe", // a UNC host on Windows
 	}
 	for _, u := range rejected {
 		err := validateScheme(u)

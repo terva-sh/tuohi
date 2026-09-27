@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M0VJYQ3E652Y0FD90H3
 title: Declare the engine interface and share the bridge core
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-92c88910
-  branch: refactor/engine-interface
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
-  commit: c5ffbcae0b57fbb91d8243274d741646fd29f888
-  session: null
-  claimed_at: 2026-09-27T19:44:42Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:49:51Z
+updated_at: 2026-09-27T19:54:07Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -69,7 +62,7 @@ Do this before the security tickets change the bridge, so each one lands once ra
 
 - [x] An unexported engine interface lists every method the shared code calls, and each platform's webview satisfies it at compile time
 - [x] Message parsing, reply, bind and unbind, and internal-message dispatch live in shared code, not in each engine
-- [ ] just ci and just test-gui pass, and GitHub CI passes on macOS and Windows
+- [x] just ci and just test-gui pass, and GitHub CI passes on macOS and Windows
 
 ## Implementation plan
 
@@ -127,3 +120,7 @@ None of substance. The plan's list of engine methods gained `Run` and `Init`. Bo
 **agent:claude-code/t3code-92c88910** at 2026-09-27T19:49:51Z
 
 Corrects the previous note's 'Differences from the plan'. Init is in the interface because installEvents (bind_evt.go:113), which is shared code, calls it. Run is there because the GUI tests call it through View.w. Nothing in View.Close calls either.
+
+## Summary
+
+Landed through Forgejo PR #5, merged as ef124ad and synced to GitHub. View holds its engine through an unexported engine interface that each platform's webview satisfies at compile time. Per-view state is one embedded viewCore. The bridge's message envelope, reply path, and BindBatch and Unbind are written once in engine.go. Each engine keeps handleInternal for its window messages and updateBindings for its lock and thread choice. Behaviour is unchanged. Verified by just ci, just test-gui on both stacks, vet on five targets, and golangci-lint for three. GitHub run 36345851837 on ef124ad passed on macOS, Windows, and all four Linux GUI jobs. terva-review was clean on the first round. The URL rewrite, geometry defaults, and engine registry are still duplicated. They go with TKT-01M3J1H8CPMZX9EJX8R2CQRA6P.
