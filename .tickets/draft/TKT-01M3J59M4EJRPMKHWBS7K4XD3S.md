@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:32:26Z
+updated_at: 2026-09-27T19:33:30Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -39,7 +39,7 @@ Fix three issues in tuohi's own loopback server (`app.go:1133-1567`). It serves 
 
 - **No access control.** The Host header only builds URLs (`app.go:1455`), and nothing else is checked. Two different readers can reach `App.FS` while the server is up, and each needs its own fix:
   - **A web page, through DNS rebinding.** INFERRED. Fix: answer only requests whose Host is `localhost:PORT` or `127.0.0.1:PORT`.
-  - **Another local process.** A Host check does nothing here, because the process sends whatever Host it likes. Fix: give each server an unguessable token, put it in the URL the view loads, and refuse requests without it. A cookie set on the first response works too, if relative URLs must stay clean. That keeps out other users on the machine. A process running as the same user can still read `App.FS`, because it can read the binary and its memory. Document that limit rather than claim more.
+  - **Another local process.** A Host check does nothing here, because the process sends whatever Host it likes. Fix: give each server an unguessable token, put it in the URL the view loads, and refuse requests without it. If relative URLs must stay clean, the server may answer the first token-bearing request with a cookie that carries the token and accept either afterwards. It must never set that cookie on a request that did not present the token, or the first requester, whoever it is, gets access. That keeps out other users on the machine. A process running as the same user can still read `App.FS`, because it can read the binary and its memory. Document that limit rather than claim more.
 - **It closes 3 s after its last request** (`loopbackIdleTimeout`, `app.go:1306`) by design, "so it serves exactly the page's initial load". The page's origin is that server, though. A lazy `import()`, a route change, or a `fetch` of an `App.FS` file after the timeout has no server to answer it. Write a GUI scenario that fetches after 4 s, and decide from the result: keep the server for the view's lifetime, or document the limit.
 - **Stale comments.** `app.go:1273` says fireReady stops the server, and `lib_unix.go:1809-1810` says it stops once the first load finishes. Only `releaseLoopback` in `Destroy` and the idle timer stop it.
 

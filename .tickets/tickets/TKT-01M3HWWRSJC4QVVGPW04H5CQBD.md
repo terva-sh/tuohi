@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:32:26Z
+updated_at: 2026-09-27T19:33:30Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -115,3 +115,7 @@ An input from PR #3's review of TKT-01M3HWWRRXTAR4T01SK79Z4BSM: decide the lifec
   - processes running as the same user are documented as able to read `App.FS` regardless.
 
   A criterion for the token was added, and the doc says the same.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:33:30Z
+
+Review disposition, PR #4, terva-review run c5d9701a. Medium finding, do not issue the access cookie to an unauthenticated first requester: fixed. TKT-01M3J59M4EJRPMKHWBS7K4XD3S (Guard tuohi's loopback server and settle its idle shutdown) now says the cookie may only answer a request that already presents the token, and must never be set for one that did not.
