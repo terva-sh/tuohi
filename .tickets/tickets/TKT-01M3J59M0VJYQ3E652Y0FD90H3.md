@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:46:06Z
+updated_at: 2026-09-27T19:49:30Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -67,8 +67,8 @@ Do this before the security tickets change the bridge, so each one lands once ra
 
 ## Acceptance criteria
 
-- [ ] An unexported engine interface lists every method the shared code calls, and each platform's webview satisfies it at compile time
-- [ ] Message parsing, reply, bind and unbind, and internal-message dispatch live in shared code, not in each engine
+- [x] An unexported engine interface lists every method the shared code calls, and each platform's webview satisfies it at compile time
+- [x] Message parsing, reply, bind and unbind, and internal-message dispatch live in shared code, not in each engine
 - [ ] just ci and just test-gui pass, and GitHub CI passes on macOS and Windows
 
 ## Implementation plan
@@ -104,3 +104,22 @@ Behaviour-preserving throughout: no change to what any engine does, only to wher
 
 - **Linux:** `just ci`, and `just test-gui` on both stacks.
 - **macOS and Windows:** cross-build and `go vet` for each. Their engines run only on GitHub's runners, so they are tested after the merge. That is the gap TKT-01M3HWWRXMN56AG2GNC3M92GWZ owns.
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:49:30Z
+
+### Verified at efa7e06 (2026-09-27)
+
+- **Linux:** `just ci` passes, and `just test-gui` passed 2 of 2 runs on both WebKitGTK stacks with all five scenarios, `CGO_ENABLED=0`.
+- **Every target:** `go vet` is clean for linux, darwin, windows, freebsd, and netbsd.
+- **Lint:** golangci-lint v2.13.1, the version GitHub runs, reports 0 issues for darwin, linux, and windows.
+- **Size:** the three engines lose 376 lines and gain 101, and `engine.go` adds about 200.
+
+### Criterion 3 is not yet satisfied
+
+The macOS and Windows engines have been compiled, vetted, and linted, but not run. GitHub CI runs them only once `main` moves, so the criterion can be ticked only after the merge and `just sync-github`. The risk is in the moved code: `handleInternal` for macOS and Windows, macOS's `updateBindings` inside `performOnMain`, and Windows's rebuild after unlock. Each is a move of the existing lines, not new logic.
+
+### Differences from the plan
+
+None of substance. The plan's list of engine methods gained `Run` and `Init`. Both are called through `View.w` by tests and by `View.Close` respectively, so the interface lists them.
