@@ -127,8 +127,13 @@ func embedScenario() string {
 	owns := w.w.ownsWindow
 	w.Close()
 	// Host must still be alive after Close (this call would fault on a freed
-	// widget), then tear it down ourselves.
-	gtkWindowResize(host, 300, 200)
+	// widget), then tear it down ourselves. gtk_window_resize is GTK3-only;
+	// GTK4 has no resize and gtkWindowResize is nil there.
+	if gtk4 {
+		gtkWindowSetDefaultSize(host, 300, 200)
+	} else {
+		gtkWindowResize(host, 300, 200)
+	}
 	gtkWindowClose(host)
 	if owns {
 		return "owns=true (BUG: should not own external window)"
