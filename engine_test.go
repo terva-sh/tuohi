@@ -32,6 +32,13 @@ func TestOriginOf(t *testing.T) {
 		"http://256.0.0.1/":              "",
 		"http://1.2.3.4.5/":              "",
 		"http://example.123/":            "",
+		"http://[::ffff:127.0.0.1]/":     "http://[::ffff:7f00:1]",
+		"http://[2001:DB8:0:0:1:0:0:1]/": "http://[2001:db8::1:0:0:1]",
+		"http://[1:0:0:2:0:0:0:3]/":      "http://[1:0:0:2::3]",
+		"http://[::]/":                   "http://[::]",
+		"http://[1:2:3:4:5:6:7:8]/":      "http://[1:2:3:4:5:6:7:8]",
+		"http://[1::]/":                  "http://[1::]",
+		"http://１２７.１:8080/":             "http://127.0.0.1:8080",
 		"http://1.example/":              "http://1.example",
 	}
 	for in, want := range cases {
@@ -56,7 +63,8 @@ func TestViewCoreTrusts(t *testing.T) {
 		}
 	}
 	refused := []string{
-		"http://127.0.0.1:8081/", // another port is another origin
+		"http://127.0.0.1:8081/",          // another port is another origin
+		"http://[::ffff:127.0.0.1]:8080/", // IPv4-mapped IPv6 is not the IPv4 origin
 		"https://127.0.0.1:8080/",
 		"http://localhost:8080/", // same machine, different origin
 		"about:blank",

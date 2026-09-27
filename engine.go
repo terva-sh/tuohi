@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -193,28 +194,74 @@ func originOf(rawurl string) string {
 	return scheme + "://" + host
 }
 
-// canonicalHost returns host as a browser serializes it: an IPv6 address in
-// its compressed form, an IPv4 address in dotted decimal however it was
-// written (127.1, 0x7f.0.0.1, 2130706433), and a domain name lower case in
-// its IDNA ASCII form (bücher.example becomes xn--bcher-kva.example).
+// canonicalHost returns host as a browser serializes it, following the
+// WHATWG URL standard's host parser: an IPv6 address in the standard's
+// compressed hex form (see ipv6String), and otherwise the host's IDNA ASCII
+// form, lower case. Only after IDNA does it test for IPv4, as browsers do,
+// so full-width digits count: a host whose last label is then a number must
+// be an IPv4 address in one of the forms a browser accepts (127.1,
+// 0x7f.0.0.1, 2130706433) and is written in dotted decimal.
 func canonicalHost(host string) (string, bool) {
 	if strings.Contains(host, ":") {
-		ip := net.ParseIP(host)
-		if ip == nil {
+		ip, err := netip.ParseAddr(host)
+		if err != nil || !ip.Is6() || ip.Zone() != "" {
 			return "", false
 		}
-		return ip.String(), true
-	}
-	if endsInNumber(host) {
-		// A host whose last label is a number must be an IPv4 address; a
-		// browser rejects the URL otherwise (256.0.0.1, 1.2.3.4.5).
-		return parseWHATWGIPv4(host)
+		return ipv6String(ip), true
 	}
 	ascii, err := idna.Lookup.ToASCII(host)
 	if err != nil || ascii == "" {
 		return "", false
 	}
-	return strings.ToLower(ascii), true
+	ascii = strings.ToLower(ascii)
+	if endsInNumber(ascii) {
+		// A host whose last label is a number must be an IPv4 address; a
+		// browser rejects the URL otherwise (256.0.0.1, 1.2.3.4.5).
+		return parseWHATWGIPv4(ascii)
+	}
+	return ascii, true
+}
+
+// ipv6String serializes an IPv6 address the way the WHATWG URL standard
+// does: eight lower-case hex pieces without leading zeros, the first longest
+// run of two or more zero pieces written as "::", and never an embedded
+// dotted IPv4 part. That last rule keeps [::ffff:127.0.0.1], which the
+// standard writes as [::ffff:7f00:1], a different origin from 127.0.0.1,
+// where Go's own String would print it as dotted IPv4.
+func ipv6String(ip netip.Addr) string {
+	b := ip.As16()
+	var pieces [8]uint16
+	for i := range pieces {
+		pieces[i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
+	}
+	start, length := -1, 1
+	for i := 0; i < 8; {
+		if pieces[i] != 0 {
+			i++
+			continue
+		}
+		j := i
+		for j < 8 && pieces[j] == 0 {
+			j++
+		}
+		if j-i > length {
+			start, length = i, j-i
+		}
+		i = j
+	}
+	var sb strings.Builder
+	for i := 0; i < 8; i++ {
+		if i == start {
+			sb.WriteString("::")
+			i += length - 1
+			continue
+		}
+		if i > 0 && i != start+length {
+			sb.WriteByte(':')
+		}
+		sb.WriteString(strconv.FormatUint(uint64(pieces[i]), 16))
+	}
+	return sb.String()
 }
 
 // endsInNumber reports whether host's last label, ignoring one trailing dot,
