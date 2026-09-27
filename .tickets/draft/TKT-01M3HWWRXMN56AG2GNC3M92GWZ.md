@@ -22,7 +22,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T16:59:09Z
+updated_at: 2026-09-27T17:02:39Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -56,3 +56,9 @@ Decide tuohi's support tiers and make CI match them.
 - [ ] Support tiers are documented in the README
 - [ ] Each question in this ticket has a recorded decision
 - [ ] Both workflows match the decisions
+
+## Notes
+
+**agent:claude-code/d3685535** at 2026-09-27T17:02:39Z
+
+Forgejo CI runs in golang:1.27-alpine and needs gcompat: every binary that reaches pure/ requests glibc's loader (/lib64/ld-linux-x86-64.so.2) even with CGO_ENABLED=0. That was found when the first CI run failed on 2026-09-27, and reproduced in an Alpine 3.24 minirootfs under bubblewrap. With gcompat, the tuohi, dialog, notify, and tray tests pass there. The same fact means a consumer's binary runs only on glibc desktops. The support-tier decision should say so, and decide whether a glibc CI image is better than gcompat.

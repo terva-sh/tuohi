@@ -22,7 +22,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T16:59:09Z
+updated_at: 2026-09-27T17:02:39Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -57,3 +57,9 @@ Replace `pure/`, a modified copy of purego v0.11.0 (7,472 lines), with a depende
 - [ ] tuohi depends on github.com/ebitengine/purego and pure/ is removed
 - [ ] Every target in just cross still builds, and the GUI scenarios pass
 - [ ] NOTICE and docs/provenance.md reflect the change
+
+## Notes
+
+**agent:claude-code/d3685535** at 2026-09-27T17:02:39Z
+
+Forgejo CI skips ./pure/... (added 2026-09-27 in the scaffolding pull request). Its tests are upstream purego's: they compile C fixtures with the toolchain's C compiler, which the Alpine image lacks, and GitHub CI runs them on Ubuntu. Removing pure/ removes the exception, so delete the grep in .forgejo/workflows/ci.yml's test step as part of this ticket.

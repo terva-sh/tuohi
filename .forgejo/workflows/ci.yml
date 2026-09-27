@@ -29,7 +29,11 @@ jobs:
       image: container.local.sothr.com/library/golang:1.27-alpine
     steps:
       - name: Install dependencies
-        run: apk add --no-cache git bash make nodejs
+        # gcompat: every test binary that reaches pure/ is linked for glibc's
+        # loader, /lib64/ld-linux-x86-64.so.2, even with CGO_ENABLED=0, and
+        # cannot start on musl without it. The same holds for any consumer's
+        # binary, which is why tuohi targets glibc desktops.
+        run: apk add --no-cache git bash make nodejs gcompat
 
       - name: Checkout
         uses: Actions-Mirrors/forgejo-actions-checkout@v6
@@ -52,8 +56,12 @@ jobs:
       - name: Embedded JavaScript
         run: make --no-print-directory js-check
 
+      # pure/ is excluded here. Its suite is upstream purego's: it compiles C
+      # fixtures with the toolchain's C compiler, which this image does not
+      # carry, and GitHub CI runs it on Ubuntu. The ticket replacing pure/
+      # with upstream purego removes the exception.
       - name: go test
-        run: go test ./...
+        run: go test $(go list ./... | grep -v '/pure')
 
       - name: Cross-build every target
         run: |
