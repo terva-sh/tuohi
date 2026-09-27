@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:49:30Z
+updated_at: 2026-09-27T19:49:51Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -123,3 +123,7 @@ The macOS and Windows engines have been compiled, vetted, and linted, but not ru
 ### Differences from the plan
 
 None of substance. The plan's list of engine methods gained `Run` and `Init`. Both are called through `View.w` by tests and by `View.Close` respectively, so the interface lists them.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:49:51Z
+
+Corrects the previous note's 'Differences from the plan'. Init is in the interface because installEvents (bind_evt.go:113), which is shared code, calls it. Run is there because the GUI tests call it through View.w. Nothing in View.Close calls either.
