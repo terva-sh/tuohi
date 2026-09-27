@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T20:22:18Z
+updated_at: 2026-09-27T20:25:48Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -139,3 +139,16 @@ Both findings fixed in 0a37dc4.
   - `TestViewCoreTrusts` checks that a view trusting `http://127.0.0.1:8080` refuses `http://[::ffff:127.0.0.1]:8080`.
   - Both the trusted URL and the sender pass through `originOf`, so the gate needs only that distinct browser origins never share a key, whatever spelling WebKit reports.
 - **medium: apply IDNA before deciding whether a host is IPv4. Fixed.** IDNA runs first, then the ends-in-a-number test and IPv4 parsing on the ASCII host. `http://１２７.１:8080/` gives `http://127.0.0.1:8080`, and has a test.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T20:25:48Z
+
+### Review disposition, PR #7, terva-review run ed91918d on bd98d08
+
+Both findings fixed in 508953d.
+
+- **high: do not treat every about:blank document as trusted. Fixed.**
+  - `originOf` gives `about:` URLs no origin, so neither `trustURL` nor the gate can ever match one. That also covers `Navigate("")`, which loads `about:blank` in production.
+  - A `data:` URL keeps an exact-URL key, because its URL is its whole content.
+  - The Linux `loadHTML` is used only by tests. It now loads its page with the base URI `http://loadhtml.tuohi.invalid/` and trusts that. Every GUI bridge scenario passes through the gate with it, which shows WebKit reports the base URI as the page's URI.
+  - `loadHTML` on macOS and Windows no longer trusts `about:blank`. Their senders are still unknown, and their own PRs must key test pages the same way.
+- **medium: normalize percent-encoded hostnames. Fixed.** When `url.Parse` refuses a URL, `unescapeHost` percent-decodes only the host and `originOf` parses again. A decoded host containing a delimiter is refused. Tests cover `%65xample.com`, userinfo with a port, and an escaped slash.
