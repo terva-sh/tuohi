@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRT7X1RZZYY6KFEP0ERE
 title: Let only trusted origins call a view's Go bindings
 type: task
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -21,10 +21,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-92c88910
+  branch: feat/bridge-origin-gate
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
+  commit: 9f7a0af129d0cb3b3d51f03c20ff3315750ea679
+  session: null
+  claimed_at: 2026-09-27T20:10:52Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:36:38Z
+updated_at: 2026-09-27T20:10:52Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
