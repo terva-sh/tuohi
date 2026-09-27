@@ -1,11 +1,11 @@
 //go:build windows && arm64
 
-package appkit
+package tuohi
 
 import (
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 // putBounds (arm64): per AAPCS64, a 16-byte integer aggregate (RECT) is passed

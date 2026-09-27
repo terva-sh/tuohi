@@ -11,8 +11,8 @@ import (
 	"image/png"
 	"os"
 
-	"github.com/malivvan/appkit/notify"
-	"github.com/malivvan/appkit/tray"
+	"github.com/terva-sh/tuohi/notify"
+	"github.com/terva-sh/tuohi/tray"
 )
 
 func main() {

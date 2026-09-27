@@ -1,6 +1,6 @@
 //go:build linux || freebsd || netbsd
 
-package appkit
+package tuohi
 
 import (
 	"bytes"

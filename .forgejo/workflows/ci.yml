@@ -1,0 +1,74 @@
+# Forgejo CI for tuohi, the gate for internal pull requests.
+#
+# The steps match `just ci`. The commands are inline because the container
+# does not install just, so a change to one belongs in the other.
+#
+# Everything runs with CGO_ENABLED=0, the way consumers build tuohi. The GUI
+# scenarios skip here because the container has no display or WebKitGTK; the
+# macOS and Windows engines are exercised by .github/workflows/ci.yml on the
+# GitHub mirror. Checkout comes from the Actions-Mirrors org and Go from the
+# internal registry's golang image, as in the other terva-sh repositories.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  check:
+    name: Vet, test and cross-build
+    runs-on: docker
+    container:
+      image: container.local.sothr.com/library/golang:1.27-alpine
+    steps:
+      - name: Install dependencies
+        # gcompat: every test binary that reaches pure/ is linked for glibc's
+        # loader, /lib64/ld-linux-x86-64.so.2, even with CGO_ENABLED=0, and
+        # cannot start on musl without it. The same holds for any consumer's
+        # binary, which is why tuohi targets glibc desktops.
+        run: apk add --no-cache git bash make nodejs gcompat
+
+      - name: Checkout
+        uses: Actions-Mirrors/forgejo-actions-checkout@v6
+
+      - name: Install ticket checker
+        run: GOBIN=/usr/local/bin go install github.com/terva-sh/git-ticket/cmd/git-ticket@v0.24.0
+
+      - name: go vet (linux, darwin, windows)
+        run: |
+          go vet ./...
+          GOOS=darwin go vet ./...
+          GOOS=windows go vet ./...
+
+      - name: gofmt check
+        run: test -z "$(gofmt -l . | tee /dev/stderr)"
+
+      - name: Import restrictions
+        run: make --no-print-directory check-imports
+
+      - name: Embedded JavaScript
+        run: make --no-print-directory js-check
+
+      # pure/ is excluded here. Its suite is upstream purego's: it compiles C
+      # fixtures with the toolchain's C compiler, which this image does not
+      # carry, and GitHub CI runs it on Ubuntu. The ticket replacing pure/
+      # with upstream purego removes the exception.
+      - name: go test
+        run: go test $(go list ./... | grep -v '/pure')
+
+      - name: Cross-build every target
+        run: |
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 freebsd/amd64 netbsd/amd64; do
+            echo "== $t"
+            GOOS=${t%/*} GOARCH=${t#*/} go build ./...
+          done
+
+      - name: Ticket store
+        run: git ticket check --fix --dry-run --strict

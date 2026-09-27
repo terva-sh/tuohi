@@ -66,9 +66,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/malivvan/appkit"
-	"github.com/malivvan/appkit/dialog"
-	"github.com/malivvan/appkit/tray"
+	"github.com/terva-sh/tuohi"
+	"github.com/terva-sh/tuohi/dialog"
+	"github.com/terva-sh/tuohi/tray"
 )
 
 // assetsFS embeds the single-page UI (index.html + app.css + app.js). The
@@ -90,8 +90,8 @@ func assetsRoot() fs.FS {
 // the View (for dialogs, exit and the per-view events bridge), plus the
 // self-test plumbing.
 type windowDemo struct {
-	w     *appkit.View
-	app   *appkit.App
+	w     *tuohi.View
+	app   *tuohi.App
 	self  *selfTest
 	close chan struct{} // closed once the page asks to quit
 }
@@ -140,13 +140,13 @@ func main() {
 	// it, so the demo no longer ships its own resize code. The Dock icon
 	// stays by default; it disappears only when -tray is requested (the
 	// tray package runs the app under the menu-bar "accessory" policy).
-	app := &appkit.App{Name: "appkit demo x", Exit: true}
+	app := &tuohi.App{Name: "appkit demo x", Exit: true}
 
 	// The tray menu captures w; it is assigned right after App.Show returns.
 	// It is OFF by default (the windowed showcase keeps its Dock/taskbar
 	// icon); pass -tray to showcase View.Show/View.Hide from a menu-bar
 	// (macOS) tray. Skipped under --selftest (runs headless, no tray host).
-	var w *appkit.View
+	var w *tuohi.View
 	if *trayFn && !*selftest {
 		app.Tray = &tray.Config{
 			Tooltip: "appkit demo",
@@ -248,7 +248,7 @@ func main() {
 	pairValue := "left"
 
 	var d *windowDemo
-	view := &appkit.View{
+	view := &tuohi.View{
 		Debug:  true, // the showcase always opens its inspector
 		Frame:  *framed,
 		Left:   10,

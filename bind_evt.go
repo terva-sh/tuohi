@@ -1,4 +1,4 @@
-package appkit
+package tuohi
 
 // The per-view events bridge (Go <-> JS publish/subscribe): the page side is
 // window.<App.Events> with on/off/emit (eventsInitScript), the Go side is

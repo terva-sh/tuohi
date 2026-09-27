@@ -22,7 +22,7 @@
 // Platform code lives in *_unix.go / *_windows.go / *_darwin.go files; a
 // capability that a platform cannot provide returns an Err* sentinel or is a
 // documented best-effort no-op rather than failing at compile time.
-package appkit
+package tuohi
 
 import (
 	"bufio"
@@ -49,8 +49,8 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
-	"github.com/malivvan/appkit/notify"
-	"github.com/malivvan/appkit/tray"
+	"github.com/terva-sh/tuohi/notify"
+	"github.com/terva-sh/tuohi/tray"
 
 	_ "embed"
 )
@@ -1705,6 +1705,10 @@ func autostartIdentifier(cfg appConfig) (string, error) {
 	}
 	return defaultAutostartSlug, nil
 }
+
+// The autostart support below is derived from Wails v3
+// pkg/application/autostart.go (MIT, Copyright (c) 2018-Present Lea Anthony).
+// See NOTICE.
 
 // defaultAutostartSlug is the registration identifier used when the app has
 // neither App.ID nor App.Name and the executable name slugifies to nothing.

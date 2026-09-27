@@ -1,11 +1,11 @@
 //go:build windows && 386
 
-package appkit
+package tuohi
 
 import (
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 // putBounds (386): the 32-bit Windows (MS x86 __stdcall) convention passes a

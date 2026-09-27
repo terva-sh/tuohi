@@ -9,7 +9,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure/objc"
+	"github.com/terva-sh/tuohi/pure/objc"
 )
 
 const nsModalResponseOK = 1

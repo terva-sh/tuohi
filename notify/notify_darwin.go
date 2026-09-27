@@ -24,8 +24,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
-	"github.com/malivvan/appkit/pure/objc"
+	"github.com/terva-sh/tuohi/pure"
+	"github.com/terva-sh/tuohi/pure/objc"
 )
 
 var (

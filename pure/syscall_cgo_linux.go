@@ -6,7 +6,7 @@
 package pure
 
 import (
-	"github.com/malivvan/appkit/pure/internal/cgo"
+	"github.com/terva-sh/tuohi/pure/internal/cgo"
 )
 
 var syscallXABI0 = uintptr(cgo.SyscallXABI0)

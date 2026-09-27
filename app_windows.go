@@ -6,7 +6,7 @@
 // single-instance lock; the same pipe then carries the forwarded arguments.
 // Windows has no dlopen, so the kernel32 symbols are resolved with
 // LoadLibrary/GetProcAddress and bound with pure.RegisterFunc.
-package appkit
+package tuohi
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 	winregistry "golang.org/x/sys/windows/registry"
 )
 
@@ -375,6 +375,10 @@ type registryAutostart struct {
 	// overridable by tests).
 	subKey string
 }
+
+// The autostart support below is derived from Wails v3
+// pkg/application/autostart_windows.go (MIT, Copyright (c) 2018-Present Lea Anthony).
+// See NOTICE.
 
 // newAutostartBackend returns the registry autostart backend for the
 // committed App settings.

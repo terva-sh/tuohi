@@ -37,10 +37,10 @@
 // goroutine.
 //
 // Set/Remove are the non-loop-owning pair for hosts that already run the UI
-// event loop - an appkit.App, for example. Set shows the icon and menu
+// event loop - an tuohi.App, for example. Set shows the icon and menu
 // (call it on the UI thread before the loop runs), the host's own loop
 // dispatches the menu events, and Remove hides the icon without touching
-// that loop. An appkit.App with Tray set wires exactly this up around
+// that loop. An tuohi.App with Tray set wires exactly this up around
 // App.Wait.
 //
 // Only one tray may be active per process. Bounds reports the icon's

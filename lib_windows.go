@@ -14,7 +14,7 @@
 // (kept alive, and Go's GC is non-moving) so the pointers handed to WebView2
 // stay valid across the async creation window.
 
-package appkit
+package tuohi
 
 import (
 	"encoding/json"
@@ -30,7 +30,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 var errNoWindow = errors.New("webview2: failed to create window")
@@ -804,7 +804,9 @@ const (
 
 // findEmbeddedBrowserDLL locates the installed Edge WebView2 Runtime's
 // EmbeddedBrowserWebView.dll via the registry (HKLM then HKCU), reimplementing
-// loader.hh's built-in discovery so no DLL is bundled.
+// loader.hh's built-in discovery so no DLL is bundled. This is a Go translation
+// of github.com/webview/webview's WebView2 loader (MIT, Copyright (c) 2017 Serge
+// Zaitsev, Copyright (c) 2022 Steffen André Langnes). See NOTICE.
 func findEmbeddedBrowserDLL() (string, error) {
 	for _, root := range []uintptr{hkeyLocalMachine, hkeyCurrentUser} {
 		val, err := regReadString(root, edgeClientStateKey, "EBWebView")

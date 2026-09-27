@@ -1,6 +1,6 @@
 //go:build !js
 
-package appkit
+package tuohi
 
 // The generated JS: the document-start bridge and the bind/unbind scripts
 // (and the marshalling helpers they embed). These strings are the page-side

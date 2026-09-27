@@ -1,4 +1,4 @@
-package appkit
+package tuohi
 
 // The binding registry model and value-to-binding conversion: what a Bind
 // entry becomes on the page (function / constant / accessor), the dotted-name

@@ -1,0 +1,46 @@
+tuohi
+Copyright (c) 2026 terva-sh contributors
+
+tuohi is a fork of github.com/malivvan/appkit v0.1.0 (commit
+39a4df248b7497a67a4bcd4cd781877de568eded), which is released under the MIT
+licence in LICENSE: Copyright (c) 2026 malivvan. The upstream repository no
+longer exists; docs/provenance.md records where the imported source came from
+and how it was verified.
+
+This product includes software derived from the following projects.
+
+------------------------------------------------------------------------------
+purego  (pure/)
+https://github.com/ebitengine/purego
+Licensed under the Apache License, Version 2.0: pure/LICENSE.
+SPDX-FileCopyrightText: The Ebitengine Authors
+
+pure/ is a modified copy of purego v0.11.0: the package and its linker
+symbols are renamed from purego to pure, Android and iOS support is removed,
+and FreeBSD's cgo_export_dynamic directives are dropped. Files that carry an
+Ebitengine SPDX header and differ from upstream were modified by appkit's
+author and are distributed here as modified.
+
+pure/internal/fakecgo contains code from the Go project, under the BSD-style
+licence in pure/LICENSE-GO: Copyright 2009 The Go Authors.
+
+------------------------------------------------------------------------------
+Wails  (autostart support)
+https://github.com/wailsapp/wails, v3 pkg/application/autostart*.go
+MIT License. Copyright (c) 2018-Present Lea Anthony
+
+The autostart helpers in app.go, app_unix.go, app_darwin.go and
+app_windows.go are derived from Wails v3's autostart implementation.
+
+------------------------------------------------------------------------------
+webview  (WebView2 loader)
+https://github.com/webview/webview
+MIT License. Copyright (c) 2017 Serge Zaitsev
+            Copyright (c) 2022 Steffen André Langnes
+
+The WebView2 runtime discovery and environment creation in lib_windows.go is
+a Go translation of webview's built-in WebView2 loader.
+
+------------------------------------------------------------------------------
+The MIT licence text that applies to Wails and webview is the same text as
+LICENSE, with each project's copyright line above in place of appkit's.

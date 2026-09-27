@@ -1,4 +1,4 @@
-package appkit
+package tuohi
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/malivvan/appkit/dialog"
+	"github.com/terva-sh/tuohi/dialog"
 )
 
 // Custom CSS attribute implemented by appkit for frameless windows:
@@ -902,7 +902,7 @@ func notShown() error {
 // served by App.FS, an https:// URL, a properly encoded data URI, or any
 // other URL the platform engine accepts. Examples:
 //
-//	v.Navigate("https://github.com/malivvan/appkit")
+//	v.Navigate("https://github.com/terva-sh/tuohi")
 //	v.Navigate("app://app/index.html")
 //	v.Navigate("data:text/html,%3Ch1%3EHello%3C%2Fh1%3E")
 func (v *View) Navigate(url string) { v.mustEngine().Navigate(url) }
@@ -1003,7 +1003,7 @@ func (v *View) Unmaximize() { v.mustEngine().Unmaximize() }
 
 // Dialog presents a native, application-modal file panel chosen by
 // opts.Type (open, multi-open, save or directory) and built on the
-// github.com/malivvan/appkit/dialog package. Unlike the other View
+// github.com/terva-sh/tuohi/dialog package. Unlike the other View
 // methods it BLOCKS the calling goroutine until the user dismisses the
 // dialog and therefore must NOT be called from the UI thread (doing so
 // deadlocks). Call it from a Bind callback - which runs on a background
@@ -1022,7 +1022,7 @@ func (v *View) Dialog(opts dialog.Options) ([]string, error) {
 
 // The View dialog method presents the platform's native open, save and
 // choose-directory panels. It is a thin wrapper over the standalone
-// github.com/malivvan/appkit/dialog package: that package requires the panel
+// github.com/terva-sh/tuohi/dialog package: that package requires the panel
 // to run on the main/UI thread, so the method dispatches the call onto the UI
 // thread and blocks the calling goroutine until the panel is dismissed.
 //

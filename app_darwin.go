@@ -2,7 +2,7 @@
 // NSImage handed to AppKit, which the Dock draws), the single-instance lock
 // and hand-off socket (flock + Unix socket) and Open/Reveal (NSWorkspace) -
 // all via pure's Objective-C runtime (no cgo).
-package appkit
+package tuohi
 
 import (
 	"encoding/json"
@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
-	"github.com/malivvan/appkit/pure/objc"
+	"github.com/terva-sh/tuohi/pure"
+	"github.com/terva-sh/tuohi/pure/objc"
 )
 
 var (
@@ -312,6 +312,10 @@ func appExitRequested() bool {
 
 // darwinAutostart implements autostartBackend on macOS.
 type darwinAutostart struct{}
+
+// The autostart support below is derived from Wails v3
+// pkg/application/autostart_darwin*.go (MIT, Copyright (c) 2018-Present Lea Anthony).
+// See NOTICE.
 
 // newAutostartBackend returns the darwin autostart backend.
 func newAutostartBackend(cfg appConfig) autostartBackend {

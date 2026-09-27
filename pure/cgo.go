@@ -14,5 +14,5 @@ package pure
 import (
 	_ "runtime/cgo"
 
-	_ "github.com/malivvan/appkit/pure/internal/cgo"
+	_ "github.com/terva-sh/tuohi/pure/internal/cgo"
 )

@@ -5,7 +5,7 @@
 
 package load
 
-import "github.com/malivvan/appkit/pure"
+import "github.com/terva-sh/tuohi/pure"
 
 func OpenLibrary(name string) (uintptr, error) {
 	return pure.Dlopen(name, pure.RTLD_NOW|pure.RTLD_GLOBAL)

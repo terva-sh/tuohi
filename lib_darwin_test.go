@@ -1,4 +1,4 @@
-package appkit
+package tuohi
 
 import (
 	"errors"
@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure/objc"
+	"github.com/terva-sh/tuohi/pure/objc"
 
-	"github.com/malivvan/appkit/dialog"
+	"github.com/terva-sh/tuohi/dialog"
 )
 
 // AppKit runs on one OS thread, so the GUI scenarios run in TestMain (the main

@@ -1,4 +1,4 @@
-module github.com/malivvan/appkit
+module github.com/terva-sh/tuohi
 
 go 1.27
 

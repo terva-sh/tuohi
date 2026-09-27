@@ -1,0 +1,56 @@
+---
+schema: 4
+id: TKT-01M3HWWRRXTAR4T01SK79Z4BSM
+title: Linux GUI scenarios crash in view teardown on both WebKitGTK stacks
+type: bug
+status: draft
+status_reason: null
+priority: high
+due_on: null
+labels:
+  - area/engine-linux
+assignees: []
+milestone: v0.1.0
+parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
+origin: null
+dependencies:
+  - TKT-01M3HWWRR6V1YA9Q01NKW6E6ZG
+blocks_on: none
+references: []
+moved_to: null
+claim: null
+archive: null
+created_at: 2026-09-27T16:59:08Z
+updated_at: 2026-09-27T16:59:08Z
+created_by:
+  id: agent:claude-code/d3685535
+  name: Claude Code local agent
+updated_by:
+  id: agent:claude-code/d3685535
+  name: Claude Code local agent
+extensions: {}
+---
+
+## Description
+
+### What
+
+With the GUI probe fixed, the Linux GUI scenarios crash the test binary on both WebKitGTK stacks, built with `CGO_ENABLED=0`, under `xvfb-run` and `dbus-run-session`, on Debian 13 with WebKitGTK 2.52.6:
+
+- **WebKitGTK 4.1 (GTK3):** SIGSEGV at address 0x18 during a `pure` call in the teardown path, reached from `lib_unix.go:1025` in `(*webview).Destroy`.
+- **WebKitGTK 6.0 (GTK4):** SIGABRT. GDK warns `gdk_gl_context_make_current() failed`, then libepoxy asserts "Couldn't find current GLX or EGL context". This one may be Xvfb having no GL rather than tuohi. Check with `LIBGL_ALWAYS_SOFTWARE=1`, `WEBKIT_DISABLE_COMPOSITING_MODE=1`, or `-screen 0 1600x1000x24 +extension GLX`.
+- **With cgo on:** an earlier run crashed in `View.Close` → `(*webview).Destroy` at `lib_unix.go:1050`, with a GLib `g_object_unref` assertion. Only the no-cgo build matters, but the trace points at the same teardown.
+
+### Why it matters
+
+A consumer that opens and closes windows during its lifetime hits `Destroy`. The git-ticket-canvas prototypes did not notice, because they exit through `App.Quit` and never close a view directly.
+
+### Depends on
+
+The probe fix, which is what lets these scenarios run at all.
+
+## Acceptance criteria
+
+- [ ] The cause of the WebKitGTK 4.1 SIGSEGV in Destroy is found and fixed
+- [ ] The GTK4 abort is either fixed or shown to be the test display's missing GL, with the harness adjusted
+- [ ] just test-gui passes on both stacks with CGO_ENABLED=0

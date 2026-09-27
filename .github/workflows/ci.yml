@@ -1,3 +1,8 @@
+# CI for tuohi on the GitHub mirror, inherited from appkit. This is where the
+# macOS and Windows engines are tested, on GitHub's hosted runners, since
+# nothing internal can run them. Internal pull requests are gated by
+# .forgejo/workflows/ci.yml; docs/pr-reviews.md has both. Changes from
+# appkit's copy: no Coveralls upload, and the demo binaries are named tuohi-demo.
 # Everything CI runs from this one file: the lint/Tier-1 platform matrix that
 # validates every push and pull request, the demo build, and the release the
 # first two gate.
@@ -97,12 +102,7 @@ jobs:
       # Coverage over the headless-safe tests (the GUI scenarios skip here, as
       # this runner has no display).
       - name: Run Unit tests and coverage
-        env:
-          COVERALLS_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        run: |
-          go test -race -covermode atomic -coverprofile=covprofile ./...
-          go install github.com/mattn/goveralls@latest
-          goveralls -coverprofile=covprofile -service=github
+        run: go test -race -covermode atomic -coverprofile=covprofile ./...
 
       # Tier 2 (FreeBSD/NetBSD): cgo-disabled cross-builds and lint, no extra
       # flags (see README "Supported platforms").
@@ -285,7 +285,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          out="dist/appkit_${{ matrix.target }}"
+          out="dist/tuohi-demo_${{ matrix.target }}"
           if [ "$GOOS" = windows ]; then out="$out.exe"; fi
           # CGO_ENABLED=0 is the README's no-cgo promise: a released binary
           # carries no C toolchain dependency. -trimpath and the linker flags

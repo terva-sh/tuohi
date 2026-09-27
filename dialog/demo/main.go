@@ -16,7 +16,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/malivvan/appkit/dialog"
+	"github.com/terva-sh/tuohi/dialog"
 )
 
 func main() {

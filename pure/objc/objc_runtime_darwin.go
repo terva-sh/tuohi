@@ -18,8 +18,8 @@ import (
 	"unicode"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
-	"github.com/malivvan/appkit/pure/internal/strings"
+	"github.com/terva-sh/tuohi/pure"
+	"github.com/terva-sh/tuohi/pure/internal/strings"
 )
 
 var hostLayoutType = reflect.TypeFor[structs.HostLayout]()

@@ -3,7 +3,7 @@
 // This backend drives AppKit and WebKit directly, so appkit needs no cgo and
 // no bundled native library on macOS.
 
-package appkit
+package tuohi
 
 import (
 	"encoding/json"
@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
-	"github.com/malivvan/appkit/pure/objc"
+	"github.com/terva-sh/tuohi/pure"
+	"github.com/terva-sh/tuohi/pure/objc"
 
-	"github.com/malivvan/appkit/dialog"
+	"github.com/terva-sh/tuohi/dialog"
 )
 
 const (
