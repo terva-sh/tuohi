@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/terva-sh/tuohi/pure"
@@ -66,6 +67,7 @@ type gdkGeometry struct {
 var (
 	gIdleAddFull                     func(priority int, function, data, notify uintptr) uint32
 	gMainContextIteration            func(context uintptr, mayBlock bool) bool
+	gThreadSelf                      func() uintptr
 	gFree                            func(ptr uintptr)
 	gObjectRefSink                   func(obj uintptr) uintptr
 	gObjectUnref                     func(obj uintptr)
@@ -204,6 +206,9 @@ var (
 	initOnce     sync.Once
 	initErr      error
 	uiThreadOnce sync.Once
+	// uiThread is the GThread of the thread newView pinned, the one that owns
+	// GTK. Zero until the first view is created.
+	uiThread atomic.Uintptr
 
 	dispatchSourceFn uintptr
 	messageHandlerFn uintptr
@@ -408,6 +413,7 @@ func ensureInit() error {
 
 		pure.RegisterLibFunc(&gIdleAddFull, glib, "g_idle_add_full")
 		pure.RegisterLibFunc(&gMainContextIteration, glib, "g_main_context_iteration")
+		pure.RegisterLibFunc(&gThreadSelf, glib, "g_thread_self")
 		pure.RegisterLibFunc(&gFree, glib, "g_free")
 		pure.RegisterLibFunc(&gBytesNew, glib, "g_bytes_new")
 		pure.RegisterLibFunc(&gListAppend, glib, "g_list_append")
@@ -1009,11 +1015,36 @@ func (w *webview) Window() unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
 }
 
+// onUIThread reports whether the caller runs on the thread that owns GTK. It
+// is true before any view exists, when there is no other thread to defer to.
+func onUIThread() bool {
+	t := uiThread.Load()
+	return t == 0 || gThreadSelf() == t
+}
+
+// Destroy tears the window and web view down. GTK is not thread-safe, so when
+// Destroy runs on another goroutine (View.Close is documented safe from any
+// goroutine, and bindings run on their own goroutines) the GTK part is
+// marshalled onto the UI thread's main context, as the Windows engine does.
+// Running it in place raced the main loop and crashed in gtk_window_close or
+// g_object_unref. The marshalled teardown runs when the UI thread next
+// iterates the default main context; a Close from another goroutine after the
+// loop has stopped for good leaves it queued, like every other marshalled
+// call here. It never waits, so such a Close cannot hang.
 func (w *webview) Destroy() {
 	// A window closed before its first load finished (blank window, early
 	// close) still owns a temporary loopback server: stop it here - the
 	// load-finished path (fireReady) never ran.
 	w.releaseLoopback()
+	if !onUIThread() {
+		dispatchMain(w.destroyOnUI)
+		return
+	}
+	w.destroyOnUI()
+}
+
+// destroyOnUI performs the GTK part of Destroy, on the UI thread. See Destroy.
+func (w *webview) destroyOnUI() {
 	// Remember whether this Destroy actually owns an open window: closing it
 	// below reports the close to the App scope, and a Destroy that merely
 	// cleans up after an OS close must not report twice (the destroy-signal
@@ -1708,7 +1739,10 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	if err != nil {
 		return nil, err
 	}
-	uiThreadOnce.Do(runtime.LockOSThread)
+	uiThreadOnce.Do(func() {
+		runtime.LockOSThread()
+		uiThread.Store(gThreadSelf())
+	})
 
 	w := &webview{
 		ownsWindow: true,
