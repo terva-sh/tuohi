@@ -640,6 +640,9 @@ func (a *App) showFirst(view *View) error {
 	}
 	var w engine = nw
 	view.w = w
+	for _, o := range view.Origins {
+		w.core().trustURL(o)
+	}
 	fail := func(err error) error {
 		w.Close()
 		view.w = nil
@@ -730,12 +733,21 @@ type View struct {
 	FirstMouse bool
 
 	// URL is the page the window loads first. App.Show navigates the view
-	// here once the window exists (Navigate). The URL may be a
-	// uniform "app://" URL served by App.FS, an https:// URL, or a data: URI.
-	// Empty (the default) starts a blank window and no navigation happens -
-	// and because Ready fires on a completed load, it will not fire until a
-	// later Navigate completes.
+	// here once the window exists (Navigate). The URL may be the loopback
+	// address of a server the program runs itself, such as
+	// http://127.0.0.1:8080/, a uniform "app://" URL served by App.FS, an
+	// https:// URL, or a data: URI. Empty (the default) starts a blank window
+	// and no navigation happens - and because Ready fires on a completed
+	// load, it will not fire until a later Navigate completes.
 	URL string
+
+	// Origins lists origins, besides the ones the view is navigated to from
+	// Go, whose pages may call the view's bindings and use its events, such
+	// as "https://auth.example.com". Every URL given to Navigate, including
+	// URL, is trusted already. A page on any other origin, reached through a
+	// link, a redirect, or a frame, cannot reach Go. An about:blank page is
+	// never trusted, because any page can create one.
+	Origins []string
 
 	// Ready, when non-nil, is called exactly once, on the UI thread, the
 	// first time a page finishes loading after Show (the initial Navigate to URL

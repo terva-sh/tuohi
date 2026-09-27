@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"unsafe"
 
 	"github.com/terva-sh/tuohi/dialog"
+	"golang.org/x/net/idna"
 )
 
 // engine is the platform boundary: everything the shared code needs from a
@@ -101,9 +107,276 @@ type viewCore struct {
 	// scheme-served. releaseLoopback stops it when the window is destroyed,
 	// and it also stops itself after loopbackIdleTimeout without a request.
 	transient *loopbackServer
+
+	// origins is the set of origins whose pages may use the bridge: every
+	// origin the application itself navigated the view to, plus View.Origins.
+	// Guarded by mu.
+	origins map[string]bool
 }
 
 func (c *viewCore) core() *viewCore { return c }
+
+// trustURL adds the origin of a URL the application chose to load to the
+// view's trusted origins. Every engine calls it from Navigate with the URL
+// it is about to load, after any app:// rewrite, so the trusted origin is
+// the one the page really has: the loopback port on macOS and under
+// App.HTTP, the app scheme or its https vhost otherwise.
+func (c *viewCore) trustURL(raw string) {
+	o := originOf(raw)
+	if o == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.origins == nil {
+		c.origins = map[string]bool{}
+	}
+	c.origins[o] = true
+}
+
+// trusts reports whether a message from a page at senderURL may use the
+// bridge. known is false when the engine cannot say where a message came
+// from; such a message is allowed, which keeps an engine without a sender
+// check working as before until it has one.
+func (c *viewCore) trusts(senderURL string, known bool) bool {
+	if !known {
+		return true
+	}
+	o := originOf(senderURL)
+	if o == "" {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.origins[o]
+}
+
+// originOf returns the origin of rawurl in the form the bridge compares, and
+// in the form a browser reports it, so a URL given to Navigate matches the
+// URI the engine later names as the sender: scheme://host[:port] with the
+// scheme in lower case, the host canonicalized as the WHATWG URL standard
+// does (see canonicalHost), and the port as a number with the scheme's
+// default dropped. An unparsable URL, or one with no scheme, has no origin
+// and is never trusted.
+//
+// A URL with no host has an opaque origin that the URL cannot name:
+//   - about: URLs, about:blank above all, have no origin of their own. The
+//     document inherits the origin of whoever created it, so any page can
+//     make one. They are never trusted.
+//   - Any other hostless URL, such as data:, is keyed by the whole URL without
+//     its fragment. A data: URL is its own content, so only the exact page Go
+//     loaded matches.
+func originOf(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		// Go's parser refuses a percent-escaped host, which a browser
+		// decodes before loading: %65xample.com is example.com.
+		fixed, ok := unescapeHost(rawurl)
+		if !ok {
+			return ""
+		}
+		if u, err = url.Parse(fixed); err != nil {
+			return ""
+		}
+	}
+	if u.Scheme == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if u.Host == "" {
+		if scheme == "about" {
+			return ""
+		}
+		u.Fragment, u.RawFragment = "", ""
+		u.Scheme = scheme
+		return u.String()
+	}
+	host, ok := canonicalHost(u.Hostname())
+	if !ok {
+		return ""
+	}
+	port := ""
+	if p := u.Port(); p != "" {
+		n, err := strconv.ParseUint(p, 10, 16)
+		if err != nil {
+			return ""
+		}
+		isDefault := (scheme == "http" && n == 80) || (scheme == "https" && n == 443)
+		if !isDefault {
+			port = strconv.FormatUint(n, 10)
+		}
+	}
+	if port != "" {
+		return scheme + "://" + net.JoinHostPort(host, port)
+	}
+	if strings.Contains(host, ":") {
+		return scheme + "://[" + host + "]"
+	}
+	return scheme + "://" + host
+}
+
+// unescapeHost percent-decodes the host of a scheme://host[:port]/... URL and
+// reports whether it changed anything, the way a browser's host parser
+// decodes the host before IDNA. The userinfo, port, and path are untouched.
+func unescapeHost(rawurl string) (string, bool) {
+	i := strings.Index(rawurl, "://")
+	if i < 0 {
+		return "", false
+	}
+	rest := rawurl[i+3:]
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	authority := rest[:end]
+	hostStart := strings.LastIndex(authority, "@") + 1
+	hostport := authority[hostStart:]
+	host, port := hostport, ""
+	if !strings.HasPrefix(hostport, "[") {
+		if c := strings.LastIndex(hostport, ":"); c >= 0 {
+			host, port = hostport[:c], hostport[c:]
+		}
+	}
+	decoded, err := url.PathUnescape(host)
+	if err != nil || decoded == host || strings.ContainsAny(decoded, "/?#@:[]%") {
+		return "", false
+	}
+	return rawurl[:i+3] + authority[:hostStart] + decoded + port + rest[end:], true
+}
+
+// canonicalHost returns host as a browser serializes it, following the
+// WHATWG URL standard's host parser: an IPv6 address in the standard's
+// compressed hex form (see ipv6String), and otherwise the host's IDNA ASCII
+// form, lower case. Only after IDNA does it test for IPv4, as browsers do,
+// so full-width digits count: a host whose last label is then a number must
+// be an IPv4 address in one of the forms a browser accepts (127.1,
+// 0x7f.0.0.1, 2130706433) and is written in dotted decimal.
+func canonicalHost(host string) (string, bool) {
+	if strings.Contains(host, ":") {
+		ip, err := netip.ParseAddr(host)
+		if err != nil || !ip.Is6() || ip.Zone() != "" {
+			return "", false
+		}
+		return ipv6String(ip), true
+	}
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err != nil || ascii == "" {
+		return "", false
+	}
+	ascii = strings.ToLower(ascii)
+	if endsInNumber(ascii) {
+		// A host whose last label is a number must be an IPv4 address; a
+		// browser rejects the URL otherwise (256.0.0.1, 1.2.3.4.5).
+		return parseWHATWGIPv4(ascii)
+	}
+	return ascii, true
+}
+
+// ipv6String serializes an IPv6 address the way the WHATWG URL standard
+// does: eight lower-case hex pieces without leading zeros, the first longest
+// run of two or more zero pieces written as "::", and never an embedded
+// dotted IPv4 part. That last rule keeps [::ffff:127.0.0.1], which the
+// standard writes as [::ffff:7f00:1], a different origin from 127.0.0.1,
+// where Go's own String would print it as dotted IPv4.
+func ipv6String(ip netip.Addr) string {
+	b := ip.As16()
+	var pieces [8]uint16
+	for i := range pieces {
+		pieces[i] = uint16(b[2*i])<<8 | uint16(b[2*i+1])
+	}
+	start, length := -1, 1
+	for i := 0; i < 8; {
+		if pieces[i] != 0 {
+			i++
+			continue
+		}
+		j := i
+		for j < 8 && pieces[j] == 0 {
+			j++
+		}
+		if j-i > length {
+			start, length = i, j-i
+		}
+		i = j
+	}
+	var sb strings.Builder
+	for i := 0; i < 8; i++ {
+		if i == start {
+			sb.WriteString("::")
+			i += length - 1
+			continue
+		}
+		if i > 0 && i != start+length {
+			sb.WriteByte(':')
+		}
+		sb.WriteString(strconv.FormatUint(uint64(pieces[i]), 16))
+	}
+	return sb.String()
+}
+
+// endsInNumber reports whether host's last label, ignoring one trailing dot,
+// is all decimal digits or a 0x hex number: the WHATWG test for a host that
+// must parse as IPv4.
+func endsInNumber(host string) bool {
+	labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+	last := labels[len(labels)-1]
+	if last == "" {
+		return false
+	}
+	if strings.Trim(last, "0123456789") == "" {
+		return true
+	}
+	if len(last) >= 2 && (last[:2] == "0x" || last[:2] == "0X") {
+		return strings.Trim(last[2:], "0123456789abcdefABCDEF") == ""
+	}
+	return false
+}
+
+// parseWHATWGIPv4 parses host by the WHATWG URL standard's IPv4 rules: one to
+// four dot-separated parts, each decimal, octal with a leading 0, or hex with
+// 0x; the last part fills the remaining bytes. It reports false for a host
+// that is not a valid IPv4 address.
+func parseWHATWGIPv4(host string) (string, bool) {
+	parts := strings.Split(strings.TrimSuffix(host, "."), ".")
+	if len(parts) == 0 || len(parts) > 4 {
+		return "", false
+	}
+	nums := make([]uint64, len(parts))
+	for i, p := range parts {
+		base := 10
+		switch {
+		case len(p) > 1 && (strings.HasPrefix(p, "0x") || strings.HasPrefix(p, "0X")):
+			p, base = p[2:], 16
+		case len(p) > 1 && p[0] == '0':
+			p, base = p[1:], 8
+		}
+		if p == "" {
+			if base == 16 {
+				nums[i] = 0 // "0x" alone is zero
+				continue
+			}
+			return "", false
+		}
+		n, err := strconv.ParseUint(p, base, 64)
+		if err != nil {
+			return "", false
+		}
+		nums[i] = n
+	}
+	var v uint64
+	for i, n := range nums[:len(nums)-1] {
+		if n > 255 {
+			return "", false
+		}
+		v |= n << (8 * uint(3-i))
+	}
+	last := nums[len(nums)-1]
+	if last >= 1<<(8*uint(5-len(nums))) {
+		return "", false
+	}
+	v |= last
+	return fmt.Sprintf("%d.%d.%d.%d", v>>24, (v>>16)&0xff, (v>>8)&0xff, v&0xff), true
+}
 
 // bridgeMessage is the envelope window.__webview__ posts for every call.
 type bridgeMessage struct {
@@ -112,11 +385,17 @@ type bridgeMessage struct {
 	Params json.RawMessage `json:"params"`
 }
 
-// onMessage is where every engine hands over a message the page posted. It
-// handles the bridge's internal messages, and runs any other method as a
-// call of the binding with that name on the view's serial call queue, off
-// the UI thread.
-func (w *webview) onMessage(body string) {
+// onMessage is where every engine hands over a message the page posted,
+// with the URL of the page that sent it when the engine knows it. A message
+// from an origin the view does not trust is dropped before anything reads
+// it, so bindings, events, and the internal window messages share one gate.
+// Otherwise it handles the bridge's internal messages, and runs any other
+// method as a call of the binding with that name on the view's serial call
+// queue, off the UI thread.
+func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
+	if !w.trusts(senderURL, senderKnown) {
+		return
+	}
 	var m bridgeMessage
 	if err := json.Unmarshal([]byte(body), &m); err != nil {
 		return

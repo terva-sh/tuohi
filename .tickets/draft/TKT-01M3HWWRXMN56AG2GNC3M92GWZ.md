@@ -22,7 +22,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T19:36:38Z
+updated_at: 2026-09-27T20:10:52Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -74,3 +74,7 @@ Rejected: pinning an old `x/sys` to keep 1.25. It trades a one-time move by one 
 **agent:claude-code/t3code-92c88910** at 2026-09-27T19:36:38Z
 
 Tier decision from TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape). Tier 1 is Linux (WebKitGTK 4.1 and 6.0, amd64 and arm64), macOS, and Windows: built, and tested on the real engine on every change to main. Tier 2 is FreeBSD and NetBSD: they must cross-build, and nothing runs them. This keeps appkit's claim, which matches what CI does now that the Linux GUI scenarios run. Rejected: dropping the BSDs, because cross-building them costs one CI step and the owner asked for functionality kept; and promoting them, because no runner exists. This ticket still owns the CI questions: testing macOS and Windows before a merge rather than after, the inherited GitHub workflow, action pinning, and GUI scenarios on Forgejo.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T20:10:52Z
+
+Owner decision, 2026-09-27: macOS and Windows keep being tested after merge only. Pull-request branches are not pushed to the GitHub mirror, so work in progress stays off the public mirror. The cost is accepted: a macOS or Windows regression turns GitHub main red until a fix lands on Forgejo. To keep that window short, new native code for macOS and Windows lands in small pull requests, one engine per pull request where possible. The rejected option was pushing each branch to GitHub and merging only after its macOS and Windows jobs pass.
