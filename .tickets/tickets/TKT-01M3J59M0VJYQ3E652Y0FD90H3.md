@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M0VJYQ3E652Y0FD90H3
 title: Declare the engine interface and share the bridge core
 type: task
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -18,10 +18,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-92c88910
+  branch: refactor/engine-interface
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
+  commit: c5ffbcae0b57fbb91d8243274d741646fd29f888
+  session: null
+  claimed_at: 2026-09-27T19:44:42Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-27T19:44:42Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
