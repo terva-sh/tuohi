@@ -49,11 +49,15 @@ test-pure:
     go test ./pure/...
 
 # The GUI scenarios on both WebKitGTK stacks, under Xvfb and a private bus.
+# TUOHI_REQUIRE_GUI=1 fails a scenario that would skip, so a green run means
+# the scenarios ran. Both stacks run even when the first fails.
 test-gui:
+    failed=""; \
     for backend in webkitgtk-6.0 webkit2gtk-4.1; do \
         echo "== $backend"; \
-        APPKIT_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 {{packages}}; \
-    done
+        TUOHI_REQUIRE_GUI=1 APPKIT_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 {{packages}} || failed="$failed $backend"; \
+    done; \
+    if [ -n "$failed" ]; then echo "test-gui failed on:$failed" >&2; exit 1; fi
 
 # Build every package for every target.
 cross:
