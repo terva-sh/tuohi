@@ -1027,7 +1027,10 @@ func onUIThread() bool {
 // goroutine, and bindings run on their own goroutines) the GTK part is
 // marshalled onto the UI thread's main context, as the Windows engine does.
 // Running it in place raced the main loop and crashed in gtk_window_close or
-// g_object_unref.
+// g_object_unref. The marshalled teardown runs when the UI thread next
+// iterates the default main context; a Close from another goroutine after the
+// loop has stopped for good leaves it queued, like every other marshalled
+// call here. It never waits, so such a Close cannot hang.
 func (w *webview) Destroy() {
 	// A window closed before its first load finished (blank window, early
 	// close) still owns a temporary loopback server: stop it here - the
