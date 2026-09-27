@@ -1,0 +1,531 @@
+//go:build windows
+
+// Windows backend: a single named pipe is both the lock and the hand-off
+// channel. CreateNamedPipeW with FILE_FLAG_FIRST_PIPE_INSTANCE succeeds only for
+// the first instance and fails once one exists, so it doubles as the
+// single-instance lock; the same pipe then carries the forwarded arguments.
+// Windows has no dlopen, so the kernel32 symbols are resolved with
+// LoadLibrary/GetProcAddress and bound with pure.RegisterFunc.
+package appkit
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/malivvan/appkit/pure"
+	winregistry "golang.org/x/sys/windows/registry"
+)
+
+const (
+	pipeAccessInbound         = 0x00000001
+	fileFlagFirstPipeInstance = 0x00080000
+	pipeWaitByte              = 0x00000000 // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT
+	genericWrite              = 0x40000000
+	openExisting              = 3
+	pipeInBufferSize          = 64 * 1024
+)
+
+// invalidHandle is INVALID_HANDLE_VALUE ((HANDLE)-1).
+var invalidHandle = ^uintptr(0)
+
+// avoid "unused" linter error
+var _ = writeFileAtomic
+
+var (
+	initOnce sync.Once
+	initErr  error
+
+	createNamedPipeW    func(name *uint16, openMode, pipeMode, maxInstances, outBuf, inBuf, timeout uint32, sa uintptr) uintptr
+	connectNamedPipe    func(h, overlapped uintptr) int32
+	disconnectNamedPipe func(h uintptr) int32
+	readFile            func(h uintptr, buf *byte, n uint32, read *uint32, overlapped uintptr) int32
+	writeFile           func(h uintptr, buf *byte, n uint32, written *uint32, overlapped uintptr) int32
+	createFileW         func(name *uint16, access, share uint32, sa uintptr, disp, flags uint32, template uintptr) uintptr
+	closeHandle         func(h uintptr) int32
+)
+
+func ensureInit() error {
+	initOnce.Do(func() {
+		k32, err := syscall.LoadLibrary("kernel32.dll")
+		if err != nil {
+			initErr = err
+			return
+		}
+		reg := func(p any, name string) {
+			if initErr != nil {
+				return
+			}
+			addr, e := syscall.GetProcAddress(k32, name)
+			if e != nil {
+				initErr = e
+				return
+			}
+			pure.RegisterFunc(p, addr)
+		}
+		reg(&createNamedPipeW, "CreateNamedPipeW")
+		reg(&connectNamedPipe, "ConnectNamedPipe")
+		reg(&disconnectNamedPipe, "DisconnectNamedPipe")
+		reg(&readFile, "ReadFile")
+		reg(&writeFile, "WriteFile")
+		reg(&createFileW, "CreateFileW")
+		reg(&closeHandle, "CloseHandle")
+	})
+	return initErr
+}
+
+func pipeName(id string) string { return `\\.\pipe\native-si-` + instanceKey(id) }
+
+func acquire(id string, onMessage func([]string)) (*instanceLock, error) {
+	err := ensureInit()
+	if err != nil {
+		return nil, err
+	}
+	name, err := syscall.UTF16PtrFromString(pipeName(id))
+	if err != nil {
+		return nil, err
+	}
+	h := createNamedPipeW(name,
+		pipeAccessInbound|fileFlagFirstPipeInstance,
+		pipeWaitByte,
+		1, 0, pipeInBufferSize, 0, 0)
+	if h == invalidHandle {
+		// FILE_FLAG_FIRST_PIPE_INSTANCE fails once an instance exists: the pipe
+		// name is derived deterministically and always valid, so a failure here
+		// means another instance already owns it.
+		return nil, errAlreadyRunning
+	}
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		servePipe(h, onMessage, stop)
+	}()
+
+	return &instanceLock{release: func() error {
+		close(stop)
+		// CloseHandle does NOT cancel a synchronous ConnectNamedPipe a thread is
+		// blocked in, and closing the handle while that call is still pending
+		// blocks this thread until it completes - so the server owns the handle
+		// and closes it on the way out (see servePipe). Wake it by connecting to
+		// the pipe ourselves: its ConnectNamedPipe returns, it sees stop closed
+		// and exits. That connect fails with ERROR_PIPE_BUSY whenever the server
+		// is between iterations (handling a message, disconnecting), so keep
+		// trying until it has actually exited instead of racing it once.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			select {
+			case <-done:
+				return nil
+			default:
+			}
+			if time.Now().After(deadline) {
+				return nil
+			}
+			if c := createFileW(name, genericWrite, 0, 0, openExisting, 0, 0); c != invalidHandle {
+				closeHandle(c)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}}, nil
+}
+
+func servePipe(h uintptr, onMessage func([]string), stop chan struct{}) {
+	// The server thread owns the pipe handle and closes it on the way out.
+	// Release runs on another thread, and closing a handle whose synchronous
+	// ConnectNamedPipe is still pending blocks until that call completes - so
+	// closing it here, after the connect has returned, frees the pipe instance
+	// without that hazard.
+	defer closeHandle(h)
+	buf := make([]byte, pipeInBufferSize)
+	for {
+		// Blocks until a client connects. Release wakes this call by connecting
+		// to the pipe itself, which is how the stop check below is reached and
+		// this loop exits (closing h on the way out).
+		connectNamedPipe(h, 0)
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		var total []byte
+		for {
+			var n uint32
+			ok := readFile(h, &buf[0], uint32(len(buf)), &n, 0)
+			if n > 0 {
+				total = append(total, buf[:n]...)
+			}
+			if ok == 0 {
+				break // client closed its end (ERROR_BROKEN_PIPE) or an error
+			}
+		}
+		if len(total) > 0 {
+			var args []string
+			if json.Unmarshal(total, &args) == nil && onMessage != nil {
+				onMessage(args)
+			}
+		}
+		disconnectNamedPipe(h)
+	}
+}
+
+func send(id string, args []string) error {
+	err := ensureInit()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(args)
+	if err != nil {
+		return err
+	}
+	name, err := syscall.UTF16PtrFromString(pipeName(id))
+	if err != nil {
+		return err
+	}
+	h := createFileW(name, genericWrite, 0, 0, openExisting, 0, 0)
+	if h == invalidHandle {
+		return errors.New("appkit: no running instance to receive the message")
+	}
+	defer closeHandle(h)
+	var written uint32
+	if writeFile(h, &data[0], uint32(len(data)), &written, 0) == 0 {
+		return errors.New("appkit: failed to write to the running instance")
+	}
+	return nil
+}
+
+// --- Runtime application icon (App.Icon) ------------------------------------
+
+// appWindowIconPNG is the PNG most recently handed to setAppIcon (App.Icon,
+// or the embedded default when it is unset). Windows has no process-wide
+// runtime icon - the executable's own resources set the default - so the icon
+// is applied per top-level window instead.
+var appWindowIconPNG []byte
+
+// setAppIcon remembers the application icon for the windows the engine shows
+// next. It cannot fail for icon reasons (a PNG that cannot be decoded is
+// simply never applied), so it always stores the bytes and returns nil; the
+// caller runs it before the first window exists.
+func setAppIcon(png []byte, _ string) error {
+	if len(png) == 0 {
+		return errors.New("appkit: the application icon is empty")
+	}
+	appWindowIconPNG = png
+	return nil
+}
+
+var (
+	windowIconOnce  sync.Once
+	windowIconBig   uintptr // 32px HICON (ICON_BIG), cached for the process
+	windowIconSmall uintptr // 16px HICON (ICON_SMALL)
+)
+
+// windowIconHandles returns the cached 32px and 16px HICONs derived from
+// appWindowIconPNG (0 when they could not be built). CreateIconFromResourceEx
+// decodes PNG payloads on Vista+, but does not rescale them, so the PNG is
+// downscaled to the exact icon size first.
+func windowIconHandles() (uintptr, uintptr) {
+	windowIconOnce.Do(func() {
+		src, err := png.Decode(bytes.NewReader(appWindowIconPNG))
+		if err != nil {
+			return
+		}
+		b := src.Bounds()
+		if b.Dx() <= 0 || b.Dy() <= 0 {
+			return
+		}
+		// Normalize to straight-alpha NRGBA for the box downscaler.
+		img := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+		draw.Draw(img, img.Bounds(), src, b.Min, draw.Src)
+		for _, sz := range []int{32, 16} {
+			pngBytes := encodeWindowIconPNG(boxDownscale(img, sz))
+			if len(pngBytes) == 0 {
+				continue
+			}
+			h := createIconFromResourceEx(&pngBytes[0], uint32(len(pngBytes)), 1, 0x00030000, int32(sz), int32(sz), 0)
+			if h == 0 {
+				continue
+			}
+			if sz == 32 {
+				windowIconBig = h
+			} else {
+				windowIconSmall = h
+			}
+		}
+	})
+	return windowIconBig, windowIconSmall
+}
+
+// applyWindowAppIcon sets the cached application icon on a top-level window:
+// WM_SETICON with the big (32px) and small (16px) HICONs is what the taskbar
+// button, the title bar and Alt-Tab display. The engine calls it for every
+// owned window right before the window is first shown. The handles are cached
+// for the process lifetime and never destroyed (the OS reclaims them at exit),
+// so every window shares them safely.
+func applyWindowAppIcon(hwnd uintptr) {
+	if hwnd == 0 || len(appWindowIconPNG) == 0 || createIconFromResourceEx == nil {
+		return
+	}
+	big, small := windowIconHandles()
+	if big != 0 {
+		sendMessageW(hwnd, wmSetIcon, iconBig, big)
+	}
+	if small != 0 {
+		sendMessageW(hwnd, wmSetIcon, iconSmall, small)
+	}
+}
+
+// encodeWindowIconPNG encodes an icon image back to PNG bytes for
+// CreateIconFromResourceEx.
+func encodeWindowIconPNG(img image.Image) []byte {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+const swShowNormal = 1 // SW_SHOWNORMAL
+
+var (
+	openInitOnce sync.Once
+	openInitErr  error
+
+	shellExecuteW func(hwnd uintptr, op, file, params, dir *uint16, showCmd int32) uintptr
+)
+
+func openEnsureInit() error {
+	openInitOnce.Do(func() {
+		shell32, err := syscall.LoadLibrary("shell32.dll")
+		if err != nil {
+			openInitErr = fmt.Errorf("open: load shell32.dll: %w", err)
+			return
+		}
+		addr, err := syscall.GetProcAddress(shell32, "ShellExecuteW")
+		if err != nil {
+			openInitErr = fmt.Errorf("open: resolve ShellExecuteW: %w", err)
+			return
+		}
+		pure.RegisterFunc(&shellExecuteW, addr)
+	})
+	return openInitErr
+}
+
+func openURL(rawurl string) error {
+	err := openEnsureInit()
+	if err != nil {
+		return err
+	}
+	op, _ := syscall.UTF16PtrFromString("open") // constant, never contains NUL
+	file, err := syscall.UTF16PtrFromString(rawurl)
+	if err != nil {
+		return fmt.Errorf("open: %q: %w", rawurl, err)
+	}
+	// ShellExecuteW returns a value > 32 on success, an error code otherwise.
+	r := shellExecuteW(0, op, file, nil, nil, swShowNormal)
+	if r <= 32 {
+		return fmt.Errorf("open: ShellExecuteW(%q) failed (code %d)", rawurl, r)
+	}
+	return nil
+}
+
+func revealFile(absPath string) error {
+	err := openEnsureInit()
+	if err != nil {
+		return err
+	}
+	file, _ := syscall.UTF16PtrFromString("explorer.exe") // constant
+	// "explorer /select,<path>" opens the containing folder and highlights the
+	// file. The path is quoted so spaces don't split it into two arguments.
+	params, err := syscall.UTF16PtrFromString(`/select,"` + absPath + `"`)
+	if err != nil {
+		return fmt.Errorf("open: %q: %w", absPath, err)
+	}
+	r := shellExecuteW(0, nil, file, params, nil, swShowNormal)
+	if r <= 32 {
+		return fmt.Errorf("open: reveal %q failed (code %d)", absPath, r)
+	}
+	return nil
+}
+
+// --- Autostart (Windows: the HKCU Run registry key) ------------------------
+
+// The Windows autostart backend: a string value under the per-user Run
+// registry key
+// HKCU\Software\Microsoft\Windows\CurrentVersion\Run, whose command line
+// starts with the registered executable. Windows runs every value found
+// there at login.
+
+// autostartRunSubKey is the per-user registry key Windows executes at login.
+const autostartRunSubKey = `Software\Microsoft\Windows\CurrentVersion\Run`
+
+// registryAutostart implements autostartBackend with the HKCU Run key.
+type registryAutostart struct {
+	// subKey is the registry key read/written (the Run key in production;
+	// overridable by tests).
+	subKey string
+}
+
+// newAutostartBackend returns the registry autostart backend for the
+// committed App settings.
+func newAutostartBackend(cfg appConfig) autostartBackend {
+	return &registryAutostart{subKey: autostartRunSubKey}
+}
+
+func (a *registryAutostart) enable(id string, args []string) error {
+	exe, err := resolvedExecutable()
+	if err != nil {
+		return err
+	}
+	cmd := quoteWindowsArg(exe)
+	for _, arg := range args {
+		cmd += " " + quoteWindowsArg(arg)
+	}
+	key, _, err := winregistry.CreateKey(winregistry.CURRENT_USER, a.subKey, winregistry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("appkit: autostart: open registry key: %w", err)
+	}
+	defer func() { _ = key.Close() }()
+	// Remove a stale entry pointing at this binary under a different value
+	// name, so Enable never leaves two autostart entries behind.
+	if existing, _, ferr := a.find(); ferr == nil && existing != "" && existing != id {
+		_ = key.DeleteValue(existing)
+	}
+	if err := key.SetStringValue(id, cmd); err != nil {
+		return fmt.Errorf("appkit: autostart: write registry value: %w", err)
+	}
+	return nil
+}
+
+func (a *registryAutostart) disable() error {
+	id, _, err := a.find()
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		return nil
+	}
+	key, err := winregistry.OpenKey(winregistry.CURRENT_USER, a.subKey, winregistry.SET_VALUE)
+	if err != nil {
+		if errors.Is(err, winregistry.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("appkit: autostart: open registry key: %w", err)
+	}
+	defer func() { _ = key.Close() }()
+	if err := key.DeleteValue(id); err != nil && !errors.Is(err, winregistry.ErrNotExist) {
+		return fmt.Errorf("appkit: autostart: delete registry value: %w", err)
+	}
+	return nil
+}
+
+func (a *registryAutostart) status() (bool, string, string) {
+	id, _, err := a.find()
+	if err != nil || id == "" {
+		return false, "", ""
+	}
+	return true, `HKCU\` + a.subKey + `\` + id, autostartBackendRegistryRun
+}
+
+// find returns the value name and command of the Run entry whose first token
+// is the current executable. Empty name means not registered.
+func (a *registryAutostart) find() (string, string, error) {
+	exe, err := resolvedExecutable()
+	if err != nil {
+		return "", "", err
+	}
+	key, err := winregistry.OpenKey(winregistry.CURRENT_USER, a.subKey, winregistry.QUERY_VALUE)
+	if err != nil {
+		if errors.Is(err, winregistry.ErrNotExist) {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("appkit: autostart: open registry key: %w", err)
+	}
+	defer func() { _ = key.Close() }()
+	names, err := key.ReadValueNames(-1)
+	if err != nil {
+		return "", "", fmt.Errorf("appkit: autostart: list registry values: %w", err)
+	}
+	exeLower := strings.ToLower(exe)
+	for _, name := range names {
+		val, _, err := key.GetStringValue(name)
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(parseWindowsCommandExe(val), exeLower) {
+			return name, val, nil
+		}
+	}
+	return "", "", nil
+}
+
+// parseWindowsCommandExe returns the first token of a Windows command line,
+// honouring surrounding double quotes for paths with spaces, lower-cased for
+// case-insensitive comparison.
+func parseWindowsCommandExe(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return ""
+	}
+	if cmd[0] == '"' {
+		end := strings.IndexByte(cmd[1:], '"')
+		if end < 0 {
+			return strings.ToLower(cmd[1:])
+		}
+		return strings.ToLower(cmd[1 : 1+end])
+	}
+	if i := strings.IndexAny(cmd, " \t"); i >= 0 {
+		return strings.ToLower(cmd[:i])
+	}
+	return strings.ToLower(cmd)
+}
+
+// quoteWindowsArg double-quotes an argument when it contains whitespace or
+// quotes and escapes embedded quotes; backslashes preceding a quote are
+// doubled per CommandLineToArgvW rules.
+func quoteWindowsArg(s string) string {
+	if s != "" && !strings.ContainsAny(s, `" `+"\t") {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	backslashes := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		case '\\':
+			backslashes++
+		case '"':
+			// Per CommandLineToArgvW a literal quote preceded by N
+			// backslashes must be encoded as 2N+1 backslashes + the quote.
+			for j := 0; j < 2*backslashes; j++ {
+				b.WriteByte('\\')
+			}
+			b.WriteByte('\\')
+			b.WriteByte('"')
+			backslashes = 0
+		default:
+			for j := 0; j < backslashes; j++ {
+				b.WriteByte('\\')
+			}
+			backslashes = 0
+			b.WriteByte(c)
+		}
+	}
+	for j := 0; j < backslashes; j++ {
+		b.WriteByte('\\')
+		b.WriteByte('\\')
+	}
+	b.WriteByte('"')
+	return b.String()
+}

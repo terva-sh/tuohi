@@ -1,0 +1,354 @@
+# Everything CI runs from this one file: the lint/Tier-1 platform matrix that
+# validates every push and pull request, the demo build, and the release the
+# first two gate.
+#
+# The release is a job here rather than a separate workflow on purpose. Jobs in
+# one run are ordered by `needs:`, so `release` cannot start unless the tests
+# AND the demo build have already succeeded in the same run - there is no
+# window in which a failing matrix and a published release can coexist, and no
+# second workflow to keep in sync.
+#
+#   every run          -> lint + unix + macos + windows + demo
+#   vX.Y.Z tag         -> the same, plus release: skipped when anything above
+#                         failed, so a broken build can never publish
+#   workflow_dispatch  -> as above; the release fires when the dispatched ref
+#                         is a vX.Y.Z tag
+#
+# `demo` runs unconditionally so a target that stopped compiling is caught on
+# the pull request that broke it rather than on the tag. Those binaries are
+# only uploaded - and so only stored - for a tag, the only thing that consumes
+# them.
+#
+# Every build here - the demo matrix, the `go build ./...` checks, the test
+# binaries, and the go invocations inside `make` and golangci-lint - shares the
+# single GOFLAGS definition below, so no step spells the flags out.
+#
+# Cutting a release: `git tag v1.2.3 && git push origin v1.2.3`. To re-publish
+# after a transient failure, re-run the failed jobs (the original ref is kept)
+# or dispatch the workflow with the tag selected as the ref.
+name: ci
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*'] # releases are cut from vX.Y.Z tags; see the `release` job
+  pull_request:
+  workflow_dispatch:
+
+# A superseded branch/PR run is cancelled; a tag run never is, because
+# cancelling it would take the release job down with it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+# Least privilege by default; the release job raises `contents` to write.
+permissions:
+  contents: read
+
+# The reproducible build/link args every build in this file uses, defined once.
+# Go parses GOFLAGS itself and applies it to every `go` command - including the
+# ones `make` and golangci-lint invoke underneath - so no job or step repeats
+# the flags.
+#
+# The whole `-ldflags=...` field MUST be quoted: GOFLAGS is a whitespace-
+# separated list of flags, and an unquoted space inside the value is read as a
+# second flag (`go: parsing $GOFLAGS: unknown flag -buildid`). Note too that
+# repeating `-ldflags=` does not accumulate - the last one wins - so the three
+# linker flags have to travel together in one quoted field.
+env:
+  GOFLAGS: -trimpath "-ldflags=-s -w -buildid="
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint & static analysis (OS-independent checks)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Run golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # Verify code formatting
+      - name: gofmt check
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      # Install and run linter for all target platforms
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+
+      - name: Run linter (all GOOS variants)
+        run: |
+          for os in darwin linux windows; do
+            echo "== GOOS=$os =="
+            GOOS=$os $(go env GOPATH)/bin/golangci-lint run ./...
+          done
+
+      # Ensure no unwanted HTTP/TLS imports creep in per platform
+      - name: Verify import restrictions (all GOOS variants)
+        run: |
+          for os in darwin linux windows; do
+            echo "== GOOS=$os =="
+            GOOS=$os make check-imports
+          done
+
+      # Coverage over the headless-safe tests (the GUI scenarios skip here, as
+      # this runner has no display).
+      - name: Run Unit tests and coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        run: |
+          go test -race -covermode atomic -coverprofile=covprofile ./...
+          go install github.com/mattn/goveralls@latest
+          goveralls -coverprofile=covprofile -service=github
+
+      # Tier 2 (FreeBSD/NetBSD): cgo-disabled cross-builds and lint, no extra
+      # flags (see README "Supported platforms").
+      - name: FreeBSD & NetBSD (Tier 2)
+        run: |
+          make cross-bsd
+          make lint-bsd
+
+  # ---------------------------------------------------------------------------
+  # Unix – GTK3 & GTK4 on x86 and ARM
+  # ---------------------------------------------------------------------------
+  unix:
+    name: Test ${{ matrix.runner }}-${{ matrix.stack }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        stack: [gtk4, gtk3]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # Install the desired GTK stack plus X virtual framebuffer
+      - name: Setup GTK and Xvfb
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.stack }}" = "gtk4" ]; then
+            sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-4-1 libwebkitgtk-6.0-4 libjavascriptcoregtk-6.0-1
+          else
+            sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libgtk-4-1 libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0
+          fi
+
+      # Build and vet first (fast checks before heavier tests)
+      - run: go build ./...
+      - run: go vet ./...
+
+      # On Ubuntu 24.04, unprivileged user namespaces are restricted by default.
+      # WebKitGTK's bubblewrap sandbox (used by GTK4/webkitgtk-6.0 network process)
+      # requires this, so relax the restriction so the WebProcess can launch under Xvfb.
+      - name: Relax user namespace restrictions
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # First test run: no DISPLAY set, so GUI tests must gracefully skip (not fail).
+      # This validates the headless/CI-safe path. Use -count=1 to avoid caching
+      # these skips for the subsequent Xvfb run.
+      - name: Headless run (GUI tests must skip)
+        run: go test -count=1 ./...
+
+      # Second test run: actually exercise GUI functionality under Xvfb.
+      # Use a shorter timeout to catch hangs (e.g., gtk_init blocking on D-Bus).
+      # Several env vars disable GPU-accelerated rendering to avoid driver issues.
+      - name: GUI tests under Xvfb
+        timeout-minutes: 6
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+        run: xvfb-run -a go test -count=1 -timeout 150s ./...
+
+  # ---------------------------------------------------------------------------
+  # MacOS – native WebKit
+  # ---------------------------------------------------------------------------
+  macos:
+    name: Test MacOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./...
+
+  # ---------------------------------------------------------------------------
+  # Windows – WebView2
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Test Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - run: go build ./...
+      - run: go vet ./...
+
+      # The test opens a real WebView2 window and exercises the JS↔Go bridge.
+      # Windows runners come with the Edge WebView2 Runtime preinstalled.
+      #
+      # `go test -timeout` panics the binary and dumps every goroutine when it
+      # trips - the fastest way to see what wedged a run - so it stays on. The
+      # external watchdog is the hard cap for the case the panic itself cannot
+      # unwind (a thread stuck in an uncancellable Win32/COM call), and it also
+      # guarantees the step cannot outlive its budget.
+      - name: Run WebView2 tests
+        timeout-minutes: 5
+        env:
+          WEBVIEW2_DEBUG: '1'
+        shell: pwsh
+        run: |
+          # Pre-compile the test binary – the build can be slow on Windows,
+          # so separate it from the test execution timeout.
+          go test -c -o appkit_test.exe .
+
+          # Capture stdout/stderr, kill if it exceeds the limit, and preserve exit code.
+          $p = Start-Process -FilePath .\appkit_test.exe `
+            -ArgumentList '-test.v','-test.timeout=180s' `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+
+          $exited = $p.WaitForExit(210000)
+          if (Test-Path out.txt) { Get-Content out.txt }
+          if (Test-Path err.txt) { Get-Content err.txt }
+
+          if (-not $exited) {
+            Write-Host "::error::Test timed out after 210s – force-killing"
+            Stop-Process -Id $p.Id -Force
+            exit 1
+          }
+          exit $p.ExitCode
+
+  # ---------------------------------------------------------------------------
+  # Demo build + release.
+  #
+  # `demo` cross-builds the demo app for the targets the README ships, on every
+  # run. `release` - only on a vX.Y.Z tag, and only once every test job AND the
+  # build have succeeded - attaches those binaries to a GitHub release with
+  # notes GitHub generates from the commits since the previous tag. Consumer
+  # installs of the library itself are unaffected either way: they resolve
+  # through the Go module proxy against the same tag.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.target }})
+    # Deliberately no `needs:` and no tag gate: the build runs on every push
+    # and pull request, so a target that stopped compiling is caught on the
+    # commit that broke it. The `release` job below is what waits for it.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One leg per target: a failure names the target, and the legs build in
+        # parallel. Mirrors the Makefile's `build` target.
+        include:
+          - { target: linux_amd64, goos: linux, goarch: amd64 }
+          - { target: linux_arm64, goos: linux, goarch: arm64 }
+          - { target: linux_386, goos: linux, goarch: '386' }
+          - { target: linux_armv7, goos: linux, goarch: arm, goarm: '7' }
+          - { target: linux_armv6, goos: linux, goarch: arm, goarm: '6' }
+          - { target: linux_armv5, goos: linux, goarch: arm, goarm: '5' }
+          - { target: linux_loong64, goos: linux, goarch: loong64 }
+          - { target: linux_ppc64le, goos: linux, goarch: ppc64le }
+          - { target: linux_riscv64, goos: linux, goarch: riscv64 }
+          - { target: linux_s390x, goos: linux, goarch: s390x }
+          - { target: darwin_amd64, goos: darwin, goarch: amd64 }
+          - { target: darwin_arm64, goos: darwin, goarch: arm64 }
+          - { target: windows_amd64, goos: windows, goarch: amd64 }
+          - { target: windows_arm64, goos: windows, goarch: arm64 }
+          - { target: windows_386, goos: windows, goarch: '386' }
+          - { target: freebsd_amd64, goos: freebsd, goarch: amd64 }
+          - { target: freebsd_arm64, goos: freebsd, goarch: arm64 }
+          - { target: netbsd_amd64, goos: netbsd, goarch: amd64 }
+          - { target: netbsd_arm64, goos: netbsd, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          out="dist/appkit_${{ matrix.target }}"
+          if [ "$GOOS" = windows ]; then out="$out.exe"; fi
+          # CGO_ENABLED=0 is the README's no-cgo promise: a released binary
+          # carries no C toolchain dependency. -trimpath and the linker flags
+          # come from the workflow-level GOFLAGS above, shared by every build.
+          # GOARM only applies to GOARCH=arm and is ignored elsewhere.
+          CGO_ENABLED=0 GOARM="${{ matrix.goarm }}" go build -o "$out" ./demo
+
+      # Only a tag consumes the binaries, and nineteen of them on every run is
+      # real artifact storage - so a non-release run builds but does not upload.
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Release ${{ github.ref_name }}
+    needs: [lint, unix, macos, windows, build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read # download-artifact
+    steps:
+      # The tag is the only input, so validate it before anything is published.
+      - name: Validate semver tag
+        run: |
+          if [[ ! "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '${{ github.ref_name }}' is not a semver release tag (want vX.Y.Z). Aborting."
+            exit 1
+          fi
+
+      # Every demo leg's artifact, flattened into one directory.
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Idempotent: a re-run refreshes the assets of an existing release
+      # instead of failing on the name collision.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ github.ref_name }}"
+          repo="${{ github.repository }}"
+          if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+            echo "Release $tag already exists – refreshing its assets."
+            gh release upload "$tag" --repo "$repo" dist/* --clobber
+          else
+            gh release create "$tag" --repo "$repo" \
+              --title "$tag" --generate-notes --verify-tag dist/*
+          fi
+
+      - name: Summarise the release
+        run: |
+          {
+            echo "### Released \`${{ github.ref_name }}\`"
+            echo
+            echo "| asset | size |"
+            echo "| --- | --- |"
+            for f in dist/*; do
+              printf '| `%s` | %s |\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

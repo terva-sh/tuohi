@@ -1,0 +1,469 @@
+package appkit
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestBindEntryFuncBindsDirectly(t *testing.T) {
+	w := &bindMethodsWebViewStub{bound: map[string]any{}}
+	sum := func(a, b int) int { return a + b }
+	names, err := bindEntry(w, "sum", sum)
+	if err != nil {
+		t.Fatalf("bindEntry: %v", err)
+	}
+	if len(names) != 1 || names[0] != "sum" {
+		t.Fatalf("bindEntry names = %v, want [sum]", names)
+	}
+	if _, ok := w.bound["sum"]; !ok {
+		t.Fatal("bindEntry did not bind the function under its name")
+	}
+	if len(w.bound) != 1 {
+		t.Fatalf("bindEntry bound %d names, want exactly 1 (no method expansion)", len(w.bound))
+	}
+}
+
+func TestMakeBindingFuncAndConstant(t *testing.T) {
+	// A function value becomes a callable binding; any other value - scalar,
+	// struct, map or slice - becomes a constant binding carrying the value's
+	// JSON. Nothing is derived from the value's type: one value, one name.
+	sum := func(a, b int) int { return a + b }
+	b, err := makeBinding(sum)
+	if err != nil {
+		t.Fatalf("makeBinding(func): %v", err)
+	}
+	if b.kind != bindingFunc || b.fn == nil {
+		t.Fatalf("func value: kind = %v, wrapper present = %v; want bindingFunc with a wrapper", b.kind, b.fn != nil)
+	}
+
+	cases := []struct {
+		name string
+		v    any
+		want string
+	}{
+		{"int", 42, "42"},
+		{"string", "hi", `"hi"`},
+		{"bool", true, "true"},
+		{"slice", []int{1, 2}, "[1,2]"},
+		{"map", map[string]int{"a": 1}, `{"a":1}`},
+		{"struct", struct{ X int }{X: 3}, `{"X":3}`},
+	}
+	for _, c := range cases {
+		b, err := makeBinding(c.v)
+		if err != nil {
+			t.Fatalf("makeBinding(%s): %v", c.name, err)
+		}
+		if b.kind != bindingConst || b.fn != nil {
+			t.Fatalf("makeBinding(%s): kind = %v, want bindingConst", c.name, b.kind)
+		}
+		if b.value != c.want {
+			t.Fatalf("makeBinding(%s): value = %s, want %s", c.name, b.value, c.want)
+		}
+	}
+}
+
+func TestMakeBindingCallableArity(t *testing.T) {
+	// A function's arity decides its variable semantics: zero arguments make
+	// a callable getter (function AND readable variable), one argument a
+	// callable setter (function AND writable variable), anything else a plain
+	// callable.
+	cases := []struct {
+		name     string
+		fn       any
+		settable bool
+	}{
+		{"getter", func() (string, error) { return "", nil }, false},
+		{"setter", func(s string) error { return nil }, true},
+		{"plain2", func(a, b int) int { return a + b }, false},
+		{"variadic", func(xs ...int) int { return 0 }, false},
+	}
+	for _, c := range cases {
+		b, err := makeBinding(c.fn)
+		if err != nil {
+			t.Fatalf("makeBinding(%s): %v", c.name, err)
+		}
+		if b.kind != bindingFunc {
+			t.Fatalf("makeBinding(%s): kind = %v, want bindingFunc", c.name, b.kind)
+		}
+		if b.settable != c.settable {
+			t.Fatalf("makeBinding(%s): settable = %v, want %v", c.name, b.settable, c.settable)
+		}
+	}
+	// The zero-argument getter is the awaitable "read as variable" form.
+	getter := func() (string, error) { return "now", nil }
+	b, err := makeBinding(getter)
+	if err != nil || b.settable {
+		t.Fatalf("getter classification: %+v, %v", b, err)
+	}
+}
+
+func TestMakeBindingRejectsNilAndUnmarshalable(t *testing.T) {
+	if _, err := makeBinding(nil); err == nil {
+		t.Fatal("makeBinding(nil) should fail")
+	}
+	if _, err := makeBinding((func())(nil)); err == nil {
+		t.Fatal("makeBinding(nil func) should fail")
+	}
+	if _, err := makeBinding(make(chan int)); err == nil {
+		t.Fatal("makeBinding(chan) should fail: not JSON-encodable")
+	}
+	if _, err := makeBinding(func() {}); err != nil {
+		t.Fatalf("makeBinding(func) should succeed: %v", err)
+	}
+}
+
+func TestMakeBindingAccessorPair(t *testing.T) {
+	// A length-2 array/slice of functions is an accessor pair: the getter
+	// must take no arguments, the setter exactly one.
+	getSize := func() string { return "7px" }
+	setSize := func(v string) {}
+	for _, pair := range []any{
+		[2]any{getSize, setSize},
+		[]any{getSize, setSize},
+		[]any{func() string { return "x" }, func(string) {}},
+	} {
+		b, err := makeBinding(pair)
+		if err != nil {
+			t.Fatalf("makeBinding(pair %T): %v", pair, err)
+		}
+		if b.kind != bindingAccessor || b.fn == nil || b.set == nil {
+			t.Fatalf("pair %T: kind = %v, want bindingAccessor with get+set wrappers", pair, b.kind)
+		}
+	}
+	// Not a pair: a single element or a non-func element keeps the constant
+	// path and fails as unmarshalable (functions cannot be JSON-encoded).
+	if _, err := makeBinding([]any{getSize}); err == nil {
+		t.Fatal("one-element func slice should fail (not JSON-encodable)")
+	}
+	if _, err := makeBinding([]any{getSize, "not a func"}); err == nil {
+		t.Fatal("pair with a non-func element should fail")
+	}
+	// Signature validation.
+	if _, err := makeAccessorBinding(func(v string) {}, func(string) {}); err == nil {
+		t.Fatal("getter with arguments must be rejected")
+	}
+	if _, err := makeAccessorBinding(func() string { return "" }, func(a, b string) {}); err == nil {
+		t.Fatal("setter with two arguments must be rejected")
+	}
+	// One-sided accessors are valid (read-only / write-only variables).
+	if _, err := makeAccessorBinding(func() string { return "x" }, nil); err != nil {
+		t.Fatalf("getter-only accessor: %v", err)
+	}
+	if _, err := makeAccessorBinding(nil, func(v string) {}); err != nil {
+		t.Fatalf("setter-only accessor: %v", err)
+	}
+	if _, err := makeAccessorBinding(nil, nil); err == nil {
+		t.Fatal("accessor with neither side must be rejected")
+	}
+}
+
+func TestBindEntriesExpansion(t *testing.T) {
+	// A plain value yields one registry entry; an accessor pair yields three:
+	// the marker entry plus the two synthetic dispatch keys. The marker keeps
+	// the page name, so the doc-start script installs the accessor property
+	// and the JS dispatch finds the getter/setter under the synthetic keys.
+	entries, err := bindEntries("sum", func(a, b int) int { return a + b })
+	if err != nil || len(entries) != 1 || entries[0].name != "sum" || entries[0].kind != bindingFunc {
+		t.Fatalf("bindEntries(func) = %+v, %v; want one func entry", entries, err)
+	}
+	entries, err = bindEntries("app.size", func() string { return "x" }, func(v string) {})
+	if err != nil {
+		t.Fatalf("bindEntries(pair): %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("bindEntries(pair) len = %d, want 3 entries", len(entries))
+	}
+	if entries[0].name != "app.size" || entries[0].kind != bindingAccessor {
+		t.Fatalf("marker entry = %+v, want accessor at app.size", entries[0])
+	}
+	want := []string{accessorGetKey("app.size"), accessorSetKey("app.size")}
+	for i, n := range []string{entries[1].name, entries[2].name} {
+		if n != want[i] || entries[i+1].kind != bindingFunc {
+			t.Fatalf("dispatch entry %d = %+v, want func at %s", i, entries[i+1], want[i])
+		}
+	}
+	// A pair passed as a single map-style value expands identically.
+	asValue, err := bindEntries("app.size", []any{
+		func() string { return "x" },
+		func(v string) {},
+	})
+	if err != nil || len(asValue) != 3 || asValue[0].name != "app.size" {
+		t.Fatalf("bindEntries(pair as value) = %+v, %v", asValue, err)
+	}
+	// Arity and nil-name validation.
+	if _, err := bindEntries("", func() {}); err == nil {
+		t.Fatal("empty binding name must be rejected")
+	}
+	if _, err := bindEntries("x", func() {}, func() {}, func() {}); err == nil {
+		t.Fatal("three values must be rejected")
+	}
+}
+
+// --- Bind-name validation (RE2), bindingsReplace (R1/RE4) and script
+// builders (P2/E2), install error reporting (R5) ---------------------------
+
+func TestValidateBindNameSegmentRules(t *testing.T) {
+	// RE2: names with empty dot segments or whitespace are rejected loudly;
+	// names that install cleanly pass.
+	bad := []string{"", ".x", "x.", "a..b", "a b", "a.b c", "a\tb"}
+	for _, name := range bad {
+		if err := validateBindName(name); err == nil {
+			t.Errorf("validateBindName(%q) = nil, want error", name)
+		}
+	}
+	good := []string{"a", "a.b.c", "demo.theme", "appkit", "x1._y"}
+	for _, name := range good {
+		if err := validateBindName(name); err != nil {
+			t.Errorf("validateBindName(%q) = %v, want nil", name, err)
+		}
+	}
+	// NUL stays rejected - it is the accessor synthetic-key separator.
+	if err := validateBindName("a\x00b"); err == nil {
+		t.Error("validateBindName with NUL must be rejected")
+	}
+}
+
+func TestBindingsReplaceRemovesOldSyntheticKeys(t *testing.T) {
+	// R1(a)/RE4: storing a new binding under a page name removes every key the
+	// old binding could own, including the accessor's synthetic dispatch keys
+	// - replacing a function with an accessor (or vice versa) can never leak
+	// stale entries.
+	m := map[string]binding{}
+	replace := func(entries []binding) { bindingsReplace(m, entries) }
+
+	fn := binding{name: "demo.x", kind: bindingFunc, settable: true}
+	replace([]binding{fn})
+	if len(m) != 1 {
+		t.Fatalf("after function bind: %d entries, want 1: %v", len(m), m)
+	}
+	acc, err := bindEntries("demo.x", func() string { return "v" }, func(string) error { return nil })
+	if err != nil {
+		t.Fatalf("bindEntries: %v", err)
+	}
+	replace(acc)
+	if len(m) != 3 { // marker + get + set
+		t.Fatalf("after accessor bind: %d entries, want 3: %v", len(m), sortedMapKeys(m))
+	}
+	// Replacing the accessor with a plain function must drop the synthetic keys.
+	replace([]binding{binding{name: "demo.x", kind: bindingFunc, gettable: true}})
+	if len(m) != 1 {
+		t.Fatalf("after replace accessor with function: %d entries, want 1 (no stale synthetic keys): %v", len(m), sortedMapKeys(m))
+	}
+	if _, ok := m["demo.x\x00get"]; ok {
+		t.Fatal("stale accessor get key survived a replace")
+	}
+}
+
+// installCallFor builds one entry through bindEntries and returns its install
+// call expression, so the arity/kind -> installer selection is asserted
+// directly (E2 and the onBindFn split).
+func installCallFor(t *testing.T, val any) string {
+	t.Helper()
+	entries, err := bindEntries("demo.fn", val)
+	if err != nil {
+		t.Fatalf("bindEntries(%T): %v", val, err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	return bindInstallCall(entries[0])
+}
+
+func TestInstallCallAritySelection(t *testing.T) {
+	// Zero-argument functions install through onBind (awaitable getters -
+	// E2's .then lives there); one-argument functions through onBindSetter;
+	// any other arity through onBindFn (plain callable, no .then).
+	if got := installCallFor(t, func() string { return "x" }); got != `onBind("demo.fn")` {
+		t.Errorf("zero-arg -> %s", got)
+	}
+	if got := installCallFor(t, func(s string) string { return s }); got != `onBindSetter("demo.fn")` {
+		t.Errorf("one-arg -> %s", got)
+	}
+	if got := installCallFor(t, func(a, b int) int { return a + b }); got != `onBindFn("demo.fn")` {
+		t.Errorf("two-arg -> %s", got)
+	}
+	if got := installCallFor(t, func(args ...string) {}); got != `onBind("demo.fn")` {
+		// variadic with no required arguments is callable with zero args
+		t.Errorf("empty variadic -> %s", got)
+	}
+	if got := installCallFor(t, func(prefix string, args ...string) {}); got != `onBindFn("demo.fn")` {
+		t.Errorf("variadic with required arg -> %s", got)
+	}
+}
+
+func TestCreateBindScriptSortedDeterministic(t *testing.T) {
+	// P2: the document-start bind script emits entries in alphabetical name
+	// order no matter how the registry map iterated, so the output is
+	// deterministic and golden-testable.
+	entries := []binding{
+		{name: "zeta", kind: bindingFunc, settable: true},
+		{name: "demo.a", kind: bindingConst, value: `{"k":1}`},
+		{name: "alpha", kind: bindingFunc, gettable: true},
+		{name: "demo.b", kind: bindingFunc}, // plain multi-arg function
+	}
+	script := createBindScript(entries)
+	zPos := strings.Index(script, `w.onBindSetter("zeta")`)
+	aPos := strings.Index(script, `w.onBindValue("demo.a",`)
+	alphaPos := strings.Index(script, `w.onBind("alpha")`)
+	bPos := strings.Index(script, `w.onBindFn("demo.b")`)
+	order := []int{alphaPos, aPos, bPos, zPos}
+	for i, p := range order {
+		if p < 0 {
+			t.Fatalf("installer call %d missing from script:\n%s", i, script)
+		}
+	}
+	for i := 1; i < len(order); i++ {
+		if order[i-1] > order[i] {
+			t.Fatalf("script not sorted by name:\n%s", script)
+		}
+	}
+	if !strings.HasSuffix(script, "w.freezeBinds();\n})()") {
+		t.Fatalf("script must end with freezeBinds:\n%s", script)
+	}
+	// Deterministic: same input, same output.
+	if again := createBindScript(entries); again != script {
+		t.Fatal("createBindScript is not deterministic for the same entries")
+	}
+}
+
+func TestLiveBindScriptGuardsAndReports(t *testing.T) {
+	// R5/R6: a live bind batch is a no-op before the bridge exists and every
+	// install failure is reported to Go through internalBindError instead of
+	// being swallowed by the fire-and-forget Eval.
+	script := liveBindScript([]binding{{name: "demo.x", kind: bindingFunc, gettable: true}})
+	if !strings.Contains(script, "var w=window.__webview__;if(!w){return;}") {
+		t.Fatalf("live bind script lost its bridge guard: %s", script)
+	}
+	if !strings.Contains(script, `method:"`+internalBindError+`"`) {
+		t.Fatalf("live bind script does not report install failures: %s", script)
+	}
+	if !strings.Contains(script, "w.freezeBinds()") {
+		t.Fatalf("live bind script must freeze after installs: %s", script)
+	}
+	unbind := liveUnbindJS("demo.x")
+	if !strings.Contains(unbind, `w.onUnbind("demo.x")`) {
+		t.Fatalf("live unbind script: %s", unbind)
+	}
+	if !strings.Contains(unbind, `method:"`+internalBindError+`"`) {
+		t.Fatalf("live unbind script does not report failures: %s", unbind)
+	}
+	if empty := liveBindScript(nil); empty != "" {
+		t.Fatalf("liveBindScript(nil) = %q, want empty", empty)
+	}
+}
+
+// FuzzValidateBindName pins the dotted-name validator (RE2): it must never
+// panic, and a name it accepts must split into non-empty, whitespace-free
+// segments.
+func FuzzValidateBindName(f *testing.F) {
+	for _, seed := range []string{"demo.theme", "a..b", ".x", "x.", "a b", "", "\x00"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, name string) {
+		err := validateBindName(name)
+		if err != nil {
+			return
+		}
+		if name == "" {
+			t.Fatal("accepted an empty name")
+		}
+		for _, seg := range strings.Split(name, ".") {
+			if seg == "" {
+				t.Fatalf("accepted name with an empty segment: %q", name)
+			}
+			if strings.ContainsAny(seg, " \t\r\n") {
+				t.Fatalf("accepted name with whitespace: %q", name)
+			}
+		}
+	})
+}
+
+// FuzzMakeFuncWrapperArgDecode feeds arbitrary JSON argument payloads into a
+// bound-function wrapper (variadic and typed); decoding must never panic and
+// must either succeed or return an error.
+func FuzzMakeFuncWrapperArgDecode(f *testing.F) {
+	fn := func(prefix string, n int, rest ...float64) string { return prefix }
+	wrapper, err := makeFuncWrapper(fn)
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, seed := range []string{`["p"]`, `["p",1]`, `["p",1,2.5]`, `["p","x"]`, `[]`, `{"a":1}`, `"p"`, `[1,2]`} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		_, _ = wrapper("", raw)
+	})
+}
+
+// TestGeneratedScriptsParse runs node --check over every script appkit
+// generates and injects (RD2): the scripts live inside Go raw strings, where
+// a syntax error has no editor support and would only surface as a silent
+// page failure. The behavioral harnesses below exercise them too, but this
+// parse gate fails FAST with a clear message naming the broken script. It
+// skips when node is missing (the Makefile js-check target makes it
+// mandatory in CI).
+func TestGeneratedScriptsParse(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	// One generated script per family: the app-region tracker, the bridge
+	// (createInitScript), the events bridge and the bind script with every
+	// installer kind present (constant, accessor, setter, getter, plain fn).
+	scripts := map[string]string{
+		"appRegions": createAppRegionScript(true, true, "linux"),
+		"bridge":     createInitScript("function(m){}"),
+		"events":     eventsInitScript("events"),
+		"bind": createBindScript([]binding{
+			{name: "demo.a", kind: bindingConst, value: `{"k":1}`},
+			{name: "demo.b", kind: bindingAccessor},
+			{name: "demo.c", kind: bindingFunc, settable: true},
+			{name: "demo.d", kind: bindingFunc, gettable: true},
+			{name: "demo.e", kind: bindingFunc},
+		}),
+		"liveBind":   liveBindScript([]binding{{name: "demo.x", kind: bindingFunc, gettable: true}}),
+		"liveUnbind": liveUnbindJS("demo.x"),
+	}
+	for name, src := range scripts {
+		file := filepath.Join(t.TempDir(), name+".js")
+		if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		out, err := exec.Command(node, "--check", file).CombinedOutput()
+		if err != nil {
+			t.Fatalf("node --check failed for the %s script: %v\n%s", name, err, out)
+		}
+	}
+}
+
+// TestSerialQueueRunsInOrder pins the ordering the engines rely on for
+// read-after-write: tasks submitted to a view's serialQueue must run in
+// submission order, so a read issued after a write cannot observe the old
+// value. The queue is the only access to got, so no lock is needed.
+func TestSerialQueueRunsInOrder(t *testing.T) {
+	var q serialQueue
+	const n = 200
+	got := make([]int, 0, n)
+	done := make(chan struct{})
+	for i := 0; i < n; i++ {
+		i, last := i, i == n-1
+		q.do(func() {
+			got = append(got, i)
+			if last {
+				close(done)
+			}
+		})
+	}
+	<-done
+	if len(got) != n {
+		t.Fatalf("ran %d tasks, want %d", len(got), n)
+	}
+	for pos, task := range got {
+		if task != pos {
+			t.Fatalf("task %d ran at position %d - serialQueue is out of order", task, pos)
+		}
+	}
+}
