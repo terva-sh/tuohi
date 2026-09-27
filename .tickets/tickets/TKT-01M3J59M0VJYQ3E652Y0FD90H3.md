@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:44:42Z
+updated_at: 2026-09-27T19:46:06Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -70,3 +70,37 @@ Do this before the security tickets change the bridge, so each one lands once ra
 - [ ] An unexported engine interface lists every method the shared code calls, and each platform's webview satisfies it at compile time
 - [ ] Message parsing, reply, bind and unbind, and internal-message dispatch live in shared code, not in each engine
 - [ ] just ci and just test-gui pass, and GitHub CI passes on macOS and Windows
+
+## Implementation plan
+
+### Approach
+
+Behaviour-preserving throughout: no change to what any engine does, only to where the code lives.
+
+1. **`viewCore`.** A struct in a new shared file, `engine.go`, holds the eleven fields all three engines declare identically:
+   - `mu`, `bindings`, `userScriptSrcs`, `events`, `calls`;
+   - `eventsGlobal`, `onReady`, `onReadyFired`;
+   - `serve`, `contentBase`, `transient`.
+
+   Each platform's `webview` embeds it. Promoted fields keep every `w.bindings`-style reference compiling unchanged.
+2. **The `engine` interface.** It lives in `engine.go` and lists every method the shared code calls. `var _ engine = (*webview)(nil)` checks it on each platform. `View.w` becomes `engine`, so shared code can reach an engine only through the interface. Tests that read platform fields assert to `*webview`.
+3. **Shared bridge core** in `engine.go`:
+   - `onMessage` parses the envelope, handles `internalBindError`, asks the engine's `handleInternal(method, params) bool` for the window messages, and otherwise dispatches the binding on `calls`;
+   - `resolve` formats the reply and runs `Eval` through `Dispatch`. macOS's `Eval` already makes its own autorelease pool, so dropping the outer pool its `resolve` had changes nothing;
+   - `BindBatch` and `Unbind` share every step except the script rebuild. Each engine implements `updateBindings(mutate)`, which keeps its own lock and thread choice exactly:
+
+     | Engine | Rebuild |
+     |---|---|
+     | Unix | under `mu` |
+     | macOS | on the main thread, under `mu` |
+     | Windows | after unlocking, because the rebuild pumps messages |
+
+### Not in this ticket
+
+- **URL rewrite, geometry defaults, and the engine registry.** These are the other duplicates the ticket lists. They differ in more than placement: the macOS rewrite is inlined into `Navigate`, Windows uses a per-engine dispatch map, and geometry is interleaved with native calls. The description names them as examples of duplication, and the acceptance criteria require only message parsing, reply, bind and unbind, and internal-message dispatch to be shared. Leave them for the threading work, which rewrites those paths anyway.
+- **Marshalling.** Which methods marshal to the UI thread is TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to call from any goroutine).
+
+### Verification
+
+- **Linux:** `just ci`, and `just test-gui` on both stacks.
+- **macOS and Windows:** cross-build and `go vet` for each. Their engines run only on GitHub's runners, so they are tested after the merge. That is the gap TKT-01M3HWWRXMN56AG2GNC3M92GWZ owns.
