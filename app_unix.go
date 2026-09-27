@@ -5,7 +5,7 @@
 // runtime application icon (App.Icon), installed into the GTK stack by
 // lib_unix.go.
 
-package appkit
+package tuohi
 
 import (
 	"bytes"
@@ -462,6 +462,10 @@ func runXdgOpen(arg string) error {
 type xdgAutostart struct {
 	name string // display name for the Name= key (App.Name, or the executable base)
 }
+
+// The autostart support below is derived from Wails v3
+// pkg/application/autostart_linux.go (MIT, Copyright (c) 2018-Present Lea Anthony).
+// See NOTICE.
 
 // newAutostartBackend returns the XDG autostart backend for the committed
 // App settings.
