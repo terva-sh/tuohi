@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:35:06Z
+updated_at: 2026-09-27T19:36:38Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -123,3 +123,7 @@ Review disposition, PR #4, terva-review run c5d9701a. Medium finding, do not iss
 **agent:claude-code/t3code-92c88910** at 2026-09-27T19:35:06Z
 
 Review disposition, PR #4, terva-review run 58d99346. Two medium findings, both fixed. (1) Do not offer unlinking a held lock file as a fix: it still permits two primaries. A superseding note on TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 requires the lock file never be unlinked, and the doc now says so. (2) Prevent timed-out UI work from executing later: the timeout rule was wrong. The threading rule is now a pending, running, or cancelled state on each operation, with atomic claim and cancel, and callers give up only when the loop owner marks the loop stopped. It is recorded in a superseding note on TKT-01M3J1H8CPMZX9EJX8R2CQRA6P and in the doc's 'One threading rule'.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:36:38Z
+
+Supersedes 'On criterion 2' in the owner-decisions note. The review now records a tier decision, with rationale, in docs/architecture.md and on TKT-01M3HWWRXMN56AG2GNC3M92GWZ: Tier 1 is Linux, macOS, and Windows, and Tier 2 is FreeBSD and NetBSD, cross-built only. Every input now has a decision, so the tick on criterion 2 stands. Review disposition, PR #4, terva-review run 711b661d. Medium, define the App.FS allowlist using the origin actually loaded: fixed, with a superseding note on TKT-01M3HWWRT7X1RZZYY6KFEP0ERE and the doc. Low, record a support-tier decision: fixed as above.

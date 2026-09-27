@@ -54,7 +54,7 @@ different directions, the loopback consumer wins.
 | Borrowed code | Wails autostart kept and credited, with its quoting rewritten. The WebView2 loader is kept and credited. | TKT-01M3J59M535T9QH2RS1ZY6PSJM |
 | Side effects | The GTK3 Wayland desktop-file writing becomes opt-in. | TKT-01M3HWWRYD7GNZEZA2JCGWGDJS |
 | Hygiene | Review tags, stale docs, and "appkit" strings go with the rename. | TKT-01M3HWWRWX3D9XTA5RTW5AC26R |
-| Support tiers and testing | Left to its own ticket, with the facts below. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
+| Support tiers and testing | Tier 1: Linux, macOS, Windows, tested on the real engine. Tier 2: FreeBSD and NetBSD, cross-built only. CI mechanics stay with their ticket. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
 | Go minimum | 1.26. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
 
 The review also found four defects outside those inputs:
@@ -227,9 +227,12 @@ The design, which TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins
 call a view's Go bindings) carries out:
 
 - **Each view has an allowlist of origins.** By default it holds the origin of
-  the first URL the view opens, so a loopback consumer's
-  `http://127.0.0.1:PORT` is trusted with no configuration. `View` gets a
-  field to add more.
+  the first URL the engine actually loads, after `resolveURL`. For a loopback
+  consumer that is its own `http://127.0.0.1:PORT`, trusted with no
+  configuration. For `App.FS` it is `app://` on Linux, `https://app.localhost`
+  on Windows, and the temporary server's `http://localhost:PORT` on macOS or
+  under `App.HTTP`. That port changes with every server, so the gate reads it
+  from the resolved URL. `View` gets a field to add more origins.
 - **The bridge is injected only into allowed origins,** and the reply side
   refuses the rest where an engine cannot filter at injection.
 - **Every engine checks the sender at its one entry point,** with what that
@@ -411,9 +414,19 @@ and decides whether tuohi works around it.
 
 ## Support tiers, CI, and the Go minimum
 
-TKT-01M3HWWRXMN56AG2GNC3M92GWZ (Decide tuohi's support tiers and make CI match
-them) owns these questions. The review settles one of them and records facts
-for the rest:
+The review settles the tiers and the Go minimum. TKT-01M3HWWRXMN56AG2GNC3M92GWZ
+(Decide tuohi's support tiers and make CI match them) keeps the CI questions:
+testing macOS and Windows before a merge rather than after, the inherited
+GitHub workflow, action pinning, and GUI scenarios on Forgejo.
+
+- **Tier 1 is Linux, macOS, and Windows.** Each is built and tested on its
+  real engine on every change to `main`: WebKitGTK 4.1 and 6.0 on amd64 and
+  arm64, WKWebView, and WebView2. That keeps appkit's claim, and CI now
+  matches it.
+- **Tier 2 is FreeBSD and NetBSD.** They must cross-build, and nothing runs
+  them. Dropping them lost, because cross-building costs one CI step and the
+  owner asked for functionality kept. Promoting them lost, because no runner
+  exists.
 
 - **Go 1.26 is the minimum.** The owner chose it on 2026-09-27. The code needs
   about Go 1.23: `reflect.TypeFor`, range over int, and
@@ -427,7 +440,6 @@ for the rest:
   Forgejo CI, whose Alpine container has no WebKitGTK.
 - **GitHub's Linux jobs build with cgo on** and run without `-v`, so they
   exercise a different path from what ships.
-- **FreeBSD and NetBSD are compile-only.**
 
 ## What this review did not settle
 
