@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T20:19:47Z
+updated_at: 2026-09-27T20:22:18Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -127,3 +127,15 @@ Supersedes the Allowlist bullet in the decisions note, which said an App.FS view
   - `originOf` now canonicalizes by the WHATWG URL rules: IDNA ASCII, compressed IPv6, WHATWG IPv4 parsing including the ends-in-a-number rule, and a numeric port with the default dropped.
   - The dependency added is `golang.org/x/net/idna`. The standard library has no public IDNA function. x/net v0.59.0 needs Go 1.26, the chosen minimum, and brings `x/text`.
   - `TestOriginGate` now navigates with a mixed-case host and a zero-padded port. With the old comparison it fails with `trusted=0`, which reproduces the finding end to end.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T20:22:18Z
+
+### Review disposition, PR #7, terva-review run 1766fcd1 on bbb7758
+
+Both findings fixed in 0a37dc4.
+
+- **high: keep IPv4-mapped IPv6 origins distinct from IPv4 origins. Fixed.**
+  - `canonicalHost` parses IPv6 with `net/netip` and serializes it with `ipv6String`, the WHATWG form: hex pieces, the first longest zero run compressed, never dotted IPv4. `[::ffff:127.0.0.1]` becomes `[::ffff:7f00:1]`.
+  - `TestViewCoreTrusts` checks that a view trusting `http://127.0.0.1:8080` refuses `http://[::ffff:127.0.0.1]:8080`.
+  - Both the trusted URL and the sender pass through `originOf`, so the gate needs only that distinct browser origins never share a key, whatever spelling WebKit reports.
+- **medium: apply IDNA before deciding whether a host is IPv4. Fixed.** IDNA runs first, then the ends-in-a-number test and IPv4 parsing on the ASCII host. `http://１２７.１:8080/` gives `http://127.0.0.1:8080`, and has a test.
