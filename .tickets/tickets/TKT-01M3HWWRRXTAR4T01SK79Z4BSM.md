@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T18:15:31Z
+updated_at: 2026-09-27T18:20:25Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -58,9 +58,31 @@ The probe fix, which is what lets these scenarios run at all.
 
 ## Acceptance criteria
 
-- [ ] The cause of the WebKitGTK 4.1 SIGSEGV in Destroy is found and fixed
-- [ ] The GTK4 abort is either fixed or shown to be the test display's missing GL, with the harness adjusted
-- [ ] just test-gui passes on both stacks with CGO_ENABLED=0
+- [x] The cause of the WebKitGTK 4.1 SIGSEGV in Destroy is found and fixed
+- [x] The GTK4 abort is either fixed or shown to be the test display's missing GL, with the harness adjusted
+- [x] just test-gui passes on both stacks with CGO_ENABLED=0
+
+## Implementation plan
+
+### Root cause
+
+There were two separate causes, one per symptom.
+
+1. **`Destroy` ran GTK off the UI thread.** `View.Close` is documented safe from any goroutine, and bindings run on `serialQueue` goroutines, off the UI thread. Every scenario closes its view from inside a binding, and the Unix `Destroy` called `gtk_window_close` and `g_object_unref` directly on that goroutine, racing the main loop. That caused the WebKitGTK 4.1 `g_object_unref` abort at line 1050, the SIGSEGV at `gtkWindowClose` (line 1025), and the GTK4 `g_list_store_remove`, `gtk_native_unrealize`, and `object_already_finalized` cascade on GitHub. The macOS engine already runs its teardown via `performOnMain`, and Windows dispatches `destroyOnUI` when off its UI thread. Only Unix did not.
+2. **A GTK3-only call in `embedScenario`.** The scenario calls `gtkWindowResize(host, ...)` after `Close`. `gtk_window_resize` does not exist in GTK4, so the Go func var is nil, and calling it faults. A C library in the GTK4 process has installed a SIGSEGV handler without `SA_ONSTACK`, so Go cannot turn the fault into a panic and dies with "non-Go code set up signal handler without SA_ONSTACK flag". This was a test bug, not a teardown bug.
+
+### Approach
+
+- **Record the UI thread.** When `newView` pins the UI thread, it stores GLib's `g_thread_self()` in an `atomic.Uintptr`. `onUIThread()` compares against it and is true before any view exists. `g_thread_self` is in libglib on Linux, FreeBSD, and NetBSD, so no per-OS thread-ID call is needed.
+- **Marshal `Destroy`.** `Destroy` releases the loopback server in place, then runs the GTK part (`destroyOnUI`) directly on the UI thread, or through `dispatchMain` from any other thread. This matches the Windows engine: asynchronous, not waiting on the main loop, so a caller on a goroutine cannot deadlock against a loop that has stopped.
+- **Fix the scenario.** `embedScenario` uses `gtk_window_set_default_size` on GTK4.
+
+### Alternatives considered
+
+- **Synchronous marshal that waits for the main loop, as macOS's `performOnMain` does:** rejected. On GTK nothing guarantees the loop is still iterating when a goroutine calls `Close`, for example after `Run` returned, and a wait would then hang forever. Windows made the same choice for the same reason.
+- **`g_main_context_is_owner` as the UI-thread test:** rejected. The default context is only acquired during an iteration, so it is false on the UI thread between iterations.
+- **Per-OS thread IDs (`gettid`, `thr_self`, `_lwp_self`):** rejected. That would be three code paths where GLib offers one.
+- **GL workarounds for GTK4** (`LIBGL_ALWAYS_SOFTWARE`, `WEBKIT_DISABLE_COMPOSITING_MODE`, `+extension GLX`, `GSK_RENDERER=cairo`): tried, and none changed the GTK4 crash. The missing GL was not the cause.
 
 ## Notes
 
@@ -85,3 +107,20 @@ GitHub run 36339527184 on 3adf498 fails all four Linux GUI jobs: ubuntu-latest a
 - **gtk4, both arches:** repeated `g_list_store_remove: assertion '!g_sequence_iter_is_end (it)' failed`. On arm64 that is followed by `gtk_native_unrealize: priv != NULL`, `gdk_gl_context_make_current: GDK_IS_GL_CONTEXT`, `g_object_unref: '!object_already_finalized'`, and `_gdk_frame_clock_uninhibit_freeze`, which points to a double finalize of the window. The package then FAILs.
 
 The `release` job needs `unix`, so no tag can publish until this lands.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T18:20:14Z
+
+### Verified (2026-09-27, Debian 13, WebKitGTK 2.52.6)
+
+- **`just test-gui`:** passed 3 of 3 runs, both stacks, CGO_ENABLED=0, all five scenarios running (TUOHI_REQUIRE_GUI=1).
+- **With cgo on,** as GitHub builds: both stacks pass.
+- **Without the `Destroy` change** (the test fix alone): 4.1 SIGABRT, GTK4 SIGSEGV. The marshalling is required, not incidental.
+- **Cross builds:** `GOOS=freebsd` and `GOOS=netbsd` build. `just ci` passes.
+
+### Same bug class, left out of this change
+
+On Unix, `webview.Navigate`, `webview.Eval`, and `webview.Focus` call WebKitGTK directly on the caller's goroutine. `View.Focus`'s doc says "the backends marshal to the UI thread when called from a background goroutine", which is false on Unix. `Show`, `Hide`, `Maximize`, and the other window-state methods do marshal. `View.Close` also reads and clears `v.w` without synchronization, so two concurrent `Close` calls race at the View level. None of this caused the teardown crash, so it is filed separately rather than folded in.
+
+### SA_ONSTACK
+
+Some C library in the GTK4 process installs a SIGSEGV handler without `SA_ONSTACK`. While it is installed, any nil dereference in Go code, a consumer's included, is a fatal error with no panic and no stack instead of a recoverable panic. Not investigated further here. The architecture review should decide whether it matters.
