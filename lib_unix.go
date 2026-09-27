@@ -184,7 +184,7 @@ var (
 	webkitSettingsSetEnableDeveloperExtras        func(settings uintptr, enabled bool)
 	webkitSettingsSetEnableJavascript             func(settings uintptr, enabled bool)
 	webkitWebViewLoadURI                          func(webview uintptr, uri string)
-	webkitWebViewLoadHTML                         func(webview uintptr, html string, baseURI uintptr)
+	webkitWebViewLoadHTML                         func(webview uintptr, html string, baseURI string)
 	webkitWebViewGetURI                           func(webview uintptr) uintptr
 	webkitUserContentManagerRegisterHandler       func(manager uintptr, name string)
 	webkitUserContentManagerAddScript             func(manager, script uintptr)
@@ -1260,10 +1260,14 @@ func (w *webview) Navigate(url string) {
 	webkitWebViewLoadURI(w.webview, url)
 }
 
+// loadHTMLBase is the base URI loadHTML gives its page. about:blank cannot be
+// trusted (see originOf), so the page gets an origin of its own on a host
+// that never resolves, which no other page can navigate to.
+const loadHTMLBase = "http://loadhtml.tuohi.invalid/"
+
 func (w *webview) loadHTML(html string) {
-	// With no base URI the page is at about:blank.
-	w.trustURL("about:blank")
-	webkitWebViewLoadHTML(w.webview, html, 0)
+	w.trustURL(loadHTMLBase)
+	webkitWebViewLoadHTML(w.webview, html, loadHTMLBase)
 }
 
 func (w *webview) Init(js string) {

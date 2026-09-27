@@ -1243,8 +1243,6 @@ func (w *webview) Navigate(url string) {
 }
 
 func (w *webview) loadHTML(html string) {
-	// NavigateToString puts the page at about:blank.
-	w.trustURL("about:blank")
 	if w.webview2 != 0 {
 		asWebView2(w.webview2).NavigateToString(utf16(html))
 	}

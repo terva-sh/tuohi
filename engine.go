@@ -156,16 +156,37 @@ func (c *viewCore) trusts(senderURL string, known bool) bool {
 // URI the engine later names as the sender: scheme://host[:port] with the
 // scheme in lower case, the host canonicalized as the WHATWG URL standard
 // does (see canonicalHost), and the port as a number with the scheme's
-// default dropped. A URL with no host, such as about:blank or data:, is its
-// own origin: the whole URL without its fragment. An unparsable URL, or one
-// with no scheme, has no origin and is never trusted.
+// default dropped. An unparsable URL, or one with no scheme, has no origin
+// and is never trusted.
+//
+// A URL with no host has an opaque origin that the URL cannot name:
+//   - about: URLs, about:blank above all, have no origin of their own. The
+//     document inherits the origin of whoever created it, so any page can
+//     make one. They are never trusted.
+//   - Any other hostless URL, such as data:, is keyed by the whole URL without
+//     its fragment. A data: URL is its own content, so only the exact page Go
+//     loaded matches.
 func originOf(rawurl string) string {
 	u, err := url.Parse(rawurl)
-	if err != nil || u.Scheme == "" {
+	if err != nil {
+		// Go's parser refuses a percent-escaped host, which a browser
+		// decodes before loading: %65xample.com is example.com.
+		fixed, ok := unescapeHost(rawurl)
+		if !ok {
+			return ""
+		}
+		if u, err = url.Parse(fixed); err != nil {
+			return ""
+		}
+	}
+	if u.Scheme == "" {
 		return ""
 	}
 	scheme := strings.ToLower(u.Scheme)
 	if u.Host == "" {
+		if scheme == "about" {
+			return ""
+		}
 		u.Fragment, u.RawFragment = "", ""
 		u.Scheme = scheme
 		return u.String()
@@ -192,6 +213,35 @@ func originOf(rawurl string) string {
 		return scheme + "://[" + host + "]"
 	}
 	return scheme + "://" + host
+}
+
+// unescapeHost percent-decodes the host of a scheme://host[:port]/... URL and
+// reports whether it changed anything, the way a browser's host parser
+// decodes the host before IDNA. The userinfo, port, and path are untouched.
+func unescapeHost(rawurl string) (string, bool) {
+	i := strings.Index(rawurl, "://")
+	if i < 0 {
+		return "", false
+	}
+	rest := rawurl[i+3:]
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	authority := rest[:end]
+	hostStart := strings.LastIndex(authority, "@") + 1
+	hostport := authority[hostStart:]
+	host, port := hostport, ""
+	if !strings.HasPrefix(hostport, "[") {
+		if c := strings.LastIndex(hostport, ":"); c >= 0 {
+			host, port = hostport[:c], hostport[c:]
+		}
+	}
+	decoded, err := url.PathUnescape(host)
+	if err != nil || decoded == host || strings.ContainsAny(decoded, "/?#@:[]%") {
+		return "", false
+	}
+	return rawurl[:i+3] + authority[:hostStart] + decoded + port + rest[end:], true
 }
 
 // canonicalHost returns host as a browser serializes it, following the

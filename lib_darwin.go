@@ -1348,8 +1348,6 @@ func (w *webview) Navigate(url string) {
 }
 
 func (w *webview) loadHTML(html string) {
-	// With a nil base URL the page is at about:blank.
-	w.trustURL("about:blank")
 	performOnMain(func() {
 		autorelease(func() {
 			w.webView.Send(sel("loadHTMLString:baseURL:"), nsstr(html), objc.ID(0))

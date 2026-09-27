@@ -745,7 +745,8 @@ type View struct {
 	// Go, whose pages may call the view's bindings and use its events, such
 	// as "https://auth.example.com". Every URL given to Navigate, including
 	// URL, is trusted already. A page on any other origin, reached through a
-	// link, a redirect, or a frame, cannot reach Go.
+	// link, a redirect, or a frame, cannot reach Go. An about:blank page is
+	// never trusted, because any page can create one.
 	Origins []string
 
 	// Ready, when non-nil, is called exactly once, on the UI thread, the
