@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRSJC4QVVGPW04H5CQBD
 title: Review tuohi's architecture and write down its target shape
 type: spike
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -20,17 +20,10 @@ references:
   - ref: ticket:meta/TKT-01M3HS2HHEKMNZCGCBMYMHA37P
     path: null
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-92c88910
-  branch: spike/architecture-review
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
-  commit: 9bdaa18391a56eb4df23934c6c8a0a1b28a8d22f
-  session: null
-  claimed_at: 2026-09-27T19:01:57Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:36:38Z
+updated_at: 2026-09-27T19:38:10Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -127,3 +120,30 @@ Review disposition, PR #4, terva-review run 58d99346. Two medium findings, both 
 **agent:claude-code/t3code-92c88910** at 2026-09-27T19:36:38Z
 
 Supersedes 'On criterion 2' in the owner-decisions note. The review now records a tier decision, with rationale, in docs/architecture.md and on TKT-01M3HWWRXMN56AG2GNC3M92GWZ: Tier 1 is Linux, macOS, and Windows, and Tier 2 is FreeBSD and NetBSD, cross-built only. Every input now has a decision, so the tick on criterion 2 stands. Review disposition, PR #4, terva-review run 711b661d. Medium, define the App.FS allowlist using the origin actually loaded: fixed, with a superseding note on TKT-01M3HWWRT7X1RZZYY6KFEP0ERE and the doc. Low, record a support-tier decision: fixed as above.
+
+## Summary
+
+Landed through Forgejo PR #4 (terva-sh/tuohi), branch `spike/architecture-review`.
+
+- **`docs/architecture.md`** records the target shape, and the README links it:
+  - the loopback consumer comes first;
+  - the root package is the window, and the desktop services move to subpackages;
+  - an unexported engine interface and a shared bridge core;
+  - one threading rule: safe from any goroutine, with a pending, running, or cancelled state on each marshalled operation and no timeouts;
+  - an origin allowlist per view, taken from the URL the engine actually loads, with one gate and a navigation policy;
+  - permissions denied by default;
+  - `App.FS` serving kept, with its loopback server guarded;
+  - upstream purego;
+  - Tier 1 Linux, macOS, and Windows, and Tier 2 FreeBSD and NetBSD;
+  - Go 1.26.
+- **Owner decisions,** all 2026-09-27: split the packages, Go 1.26, and drop `file:` from `App.Open`.
+- **Filed:** TKT-01M3J59M0V through TKT-01M3J59M7A, ten tickets. Decisions were noted on eight existing tickets, dependency links set, and the off-thread ticket widened to every engine.
+- **Review:** five terva-review rounds. Each finding was fixed and recorded in a note here:
+  - the navigation policy ordered after `file:` is dropped;
+  - the loopback server's two threats separated, and its cookie bootstrapped only from the token;
+  - the lock file kept for good;
+  - timeouts replaced by atomic operation states;
+  - the allowlist taken from the resolved origin;
+  - the tier decision recorded.
+
+The claims the doc marks INFERRED, and every macOS and Windows behaviour, come from reading code, not from running it.
