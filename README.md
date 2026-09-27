@@ -21,6 +21,8 @@ source came from and what the review of it found, and [NOTICE](NOTICE) credits
 the projects it draws on. The fork is being reviewed and reworked before its
 first release, so expect the API to change. Until then, the documentation below
 is appkit's, and it names the library appkit.
+[docs/architecture.md](docs/architecture.md) records the shape tuohi is moving
+to, and why.
 
 ---
 

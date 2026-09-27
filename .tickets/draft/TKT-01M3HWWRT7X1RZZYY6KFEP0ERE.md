@@ -16,19 +16,21 @@ parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
 dependencies:
   - TKT-01M3HWWRSJC4QVVGPW04H5CQBD
+  - TKT-01M3J59M0VJYQ3E652Y0FD90H3
+  - TKT-01M3J59M32VGK83J7JKYPKSHJE
 blocks_on: none
 references: []
 moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T16:59:08Z
+updated_at: 2026-09-27T19:36:38Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -62,3 +64,25 @@ A loopback consumer's origin is `http://127.0.0.1:PORT`, so the default must cov
 - [ ] Every engine's message handler checks the sender's origin
 - [ ] Top-level navigation away from allowed origins is refused or opened in the system browser
 - [ ] A loopback-served interface works with the default policy
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:26:49Z
+
+### Decisions from TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape)
+
+See `docs/architecture.md`, under "The bridge answers only the origins a view trusts". This lands after TKT-01M3J59M0VJYQ3E652Y0FD90H3 (Declare the engine interface and share the bridge core), so the gate is written once in the shared bridge.
+
+- **Allowlist.** Each view gets an allowlist of origins. It defaults to the origin of the URL the view first opens: for a loopback consumer that is `http://127.0.0.1:PORT`, and for `App.FS` it is the app origin. `View` gets a field to add more.
+- **Injection.** The bridge and bind scripts are injected only into documents on an allowed origin. Where an engine cannot filter at injection, the reply side refuses.
+- **Sender check,** in the one message entry point per engine:
+  - macOS reads `message.frameInfo.isMainFrame` and `securityOrigin`, and accepts main-frame messages from allowed origins only.
+  - Windows calls the declared but unused `GetSource` (`lib_windows.go:289`). Frame messages arrive on `ICoreWebView2Frame` and are not wired, so they stay unreachable.
+  - Linux gets no frame from `script-message-received`. Register the handler in an isolated script world, so page and iframe scripts cannot reach `messageHandlers.__webview__`, and relay from the bridge script. Also check `webkit_web_view_get_uri` at receipt.
+- **One gate.** The events binding `__appkit_event__` and the internal window messages (drag, resize, toggle maximize, app regions, bind error) pass through the same gate as ordinary bindings. `toggleMaximize` also gets the `frameless` guard it lacks on Unix and Windows. The bind-error log quotes page text with `%q`.
+- **Navigation policy.** A top-level navigation to an allowed origin proceeds. Any other goes to `App.Open` and is cancelled in the view. `window.open` and `target=_blank` are handled the same way, including WebView2's own popup windows, which today open with none of the bridge. The hooks are `decide-policy` on WebKitGTK, `decidePolicyForNavigationAction` and `createWebViewWithConfiguration` on WKWebView, and `NavigationStarting` and `NewWindowRequested` on WebView2.
+- **Rejected alternative:** a per-binding allowlist. The consumer case is one trusted origin per view, and per-binding policy multiplies configuration without a use.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:36:38Z
+
+Supersedes the Allowlist bullet in the decisions note, which said an App.FS view defaults to 'the app origin'. The default is the origin of the URL the engine actually loads, after resolveURL: `app://` on Linux, `https://app.localhost` on Windows, and the temporary loopback server's `http://localhost:PORT` on macOS, or wherever `App.HTTP` applies. The loopback port changes with every server, so the gate must read it from the resolved URL, not from a constant. Deriving it from `app://` would reject the application's own page on macOS. Found by terva-review on tuohi PR #4.
