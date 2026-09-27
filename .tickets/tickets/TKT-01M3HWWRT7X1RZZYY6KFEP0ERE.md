@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T20:15:07Z
+updated_at: 2026-09-27T20:19:47Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -118,3 +118,12 @@ Supersedes the Allowlist bullet in the decisions note, which said an App.FS view
 3. The Linux isolated script world, for frames.
 4. The navigation policy on each engine.
 5. Injection limited to trusted origins.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T20:19:47Z
+
+### Review disposition, PR #7, terva-review run 3b89eb64 on 70cda49
+
+- **medium: normalize navigated hosts and ports the same way as the browser. Fixed in 519b5e9.**
+  - `originOf` now canonicalizes by the WHATWG URL rules: IDNA ASCII, compressed IPv6, WHATWG IPv4 parsing including the ends-in-a-number rule, and a numeric port with the default dropped.
+  - The dependency added is `golang.org/x/net/idna`. The standard library has no public IDNA function. x/net v0.59.0 needs Go 1.26, the chosen minimum, and brings `x/text`.
+  - `TestOriginGate` now navigates with a mixed-case host and a zero-padded port. With the old comparison it fails with `trusted=0`, which reproduces the finding end to end.
