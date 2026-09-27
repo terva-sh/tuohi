@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRR6V1YA9Q01NKW6E6ZG
 title: GUI tests skip wherever bubblewrap is installed
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-92c88910
-  branch: t3code/read-bootstrap-handoff
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
-  commit: 3e4df6b0437c64def647e5b7fc6817b33094e831
-  session: null
-  claimed_at: 2026-09-27T17:22:08Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T17:27:43Z
+updated_at: 2026-09-27T18:06:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -112,3 +105,14 @@ The scenarios now run, but the first one, `bridgeScenario`, crashes the test bin
 ### Review disposition, PR #2, terva-review run e79f04b7 on da538f2
 
 - **medium: Keep GUI probing behind the -short check. Fixed in cb1ef0f.** The finding was correct: `TestMain` called `guiAvailable()` before checking `testing.Short()`, so `-short` with a display ran bwrap and `ensureInit()`. It now checks `-short` first. Verified with a fake `bwrap` on PATH that records its calls: it is not called under `-short`, and it is called without it. `just ci` passes.
+
+## Summary
+
+Landed through Forgejo PR #2 (terva-sh/tuohi), branch `fix/gui-probe-bubblewrap`.
+
+- **Probe:** `webkitRunnable` runs `bwrap --unshare-user --ro-bind / / -- $(command -v true)`, so it succeeds wherever bubblewrap can create a user namespace.
+- **Skip reasons:** each GUI skip names its cause: no display, the bwrap failure and its output, a read-only `XDG_RUNTIME_DIR`, a library load error, or `-short`. `-short` never probes.
+- **Strict mode:** `TUOHI_REQUIRE_GUI=1` turns a GUI skip into a failure. `just test-gui` sets it, and runs both WebKitGTK stacks before reporting which failed.
+- **Review:** terva-review found one medium issue: `-short` ran the probe. It was fixed in cb1ef0f, and the re-review on 91eff44 is clean.
+
+Criterion 3 stays unticked. The scenarios now run, but the first crashes the test binary in `Destroy`, so the other four never start. TKT-01M3HWWRRXTAR4T01SK79Z4BSM (Linux GUI scenarios crash in view teardown on both WebKitGTK stacks) owns that, and its "just test-gui passes on both stacks" criterion covers it. The owner chose to close this ticket on that basis on 2026-09-27. Until that ticket lands, `just test-gui` is red.
