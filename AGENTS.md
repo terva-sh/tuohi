@@ -189,7 +189,10 @@ licensing, attribution, or anything under `pure/`.
 ### Commands
 
 `just` lists the recipes. `just ci` runs what Forgejo CI runs: vet, gofmt, the
-import check, the headless tests, the cross builds, and `git ticket check`.
+import check, the embedded-JavaScript check, the headless tests, the cross
+builds, and `git ticket check`. Both test every package except `pure/`, whose
+suite is upstream purego's and compiles C fixtures. `just test-pure` runs it
+where a C compiler is installed, and GitHub CI runs it on every push.
 
 The GUI scenarios need a display, a session bus, and a working WebKitGTK.
 `just test-gui` runs them under `xvfb-run` and `dbus-run-session` on both

@@ -36,15 +36,23 @@ fmt-check:
 check-imports:
     make --no-print-directory check-imports
 
+# Every package but pure/, whose suite is upstream purego's and needs a C
+# compiler for its fixtures. Forgejo CI tests exactly this set.
+packages := `go list ./... | grep -v '/pure' | tr '\n' ' '`
+
 # The headless tests. GUI scenarios skip themselves without a display.
 test:
-    go test ./...
+    go test {{packages}}
+
+# purego's own suite in pure/. Needs a C compiler; GitHub CI runs it.
+test-pure:
+    go test ./pure/...
 
 # The GUI scenarios on both WebKitGTK stacks, under Xvfb and a private bus.
 test-gui:
     for backend in webkitgtk-6.0 webkit2gtk-4.1; do \
         echo "== $backend"; \
-        APPKIT_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 ./...; \
+        APPKIT_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 {{packages}}; \
     done
 
 # Build every package for every target.
