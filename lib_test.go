@@ -224,3 +224,7 @@ func TestCallSchemeHandlerContainsPanic(t *testing.T) {
 		t.Fatalf("response = %+v, want nil", resp)
 	}
 }
+
+// native returns a shown View's platform engine, for tests that reach past
+// the engine interface into platform state.
+func native(v *View) *webview { return v.w.(*webview) }

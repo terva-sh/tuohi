@@ -1329,107 +1329,41 @@ func (w *webview) rebuildScripts() {
 	w.installDocScript(createBindScript(entries))
 }
 
-// BindBatch registers every request of a declarative bind batch and installs
-// it: all entries are prepared first (one error fails the whole batch before
-// anything is stored), then stored under a single lock - replacing any
-// previous binding of the same page name (bindingsReplace: a view entry
-// overrides an app-wide one, R1) - with ONE script rebuild and ONE live
-// install Eval for the whole batch instead of one full rebuild per name
-// (P1).
-func (w *webview) BindBatch(batch []bindRequest) error {
-	prepared, live, err := prepareBindBatch(batch)
+// updateBindings changes the binding table under mu, then rebuilds the
+// document-start scripts without holding it, because rebuildScripts pumps the
+// message loop (see engine.updateBindings).
+func (w *webview) updateBindings(mutate func(bindings map[string]binding) error) error {
+	w.mu.Lock()
+	err := mutate(w.bindings)
+	w.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	w.mu.Lock()
-	for _, p := range prepared {
-		bindingsReplace(w.bindings, p.entries)
-	}
-	w.mu.Unlock()
-	// Rebuild the document-start bind script so the batch survives reloads,
-	// then install it live for the current document. Done without holding
-	// w.mu (rebuildScripts pumps the message loop).
 	w.rebuildScripts()
-	w.Eval(liveBindScript(live))
 	return nil
 }
 
-func (w *webview) Unbind(name string) error {
-	w.mu.Lock()
-	_, exists := w.bindings[name]
-	if !exists {
-		w.mu.Unlock()
-		return errors.New("name not bound")
-	}
-	// An accessor binding lives under three keys: the page name plus its two
-	// synthetic dispatch keys - remove them all.
-	for _, n := range []string{name, accessorGetKey(name), accessorSetKey(name)} {
-		delete(w.bindings, n)
-	}
-	w.mu.Unlock()
-	w.rebuildScripts()
-	// Unbinding a name on a frozen namespace throws; liveUnbindJS reports
-	// the failure to Go instead of silently doing nothing (R3/R6).
-	w.Eval(liveUnbindJS(name))
-	return nil
-}
-
-func (w *webview) onMessage(body string) {
-	var m struct {
-		ID     string          `json:"id"`
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
-	}
-	err := json.Unmarshal([]byte(body), &m)
-	if err != nil {
-		return
-	}
-	if m.Method == internalAppRegions {
-		// The app-region tracker reports the page's drag/no-drag boxes in
-		// device pixels; the WndProc hit test consumes them.
-		w.setRegions(parseAppRegionSet(m.Params))
-		return
-	}
-	if m.Method == internalWindowDrag {
+func (w *webview) handleInternal(method string, params json.RawMessage) bool {
+	switch method {
+	case internalAppRegions:
+		// The app-region tracker reports the page's drag and no-drag boxes in
+		// device pixels. The WndProc hit test consumes them.
+		w.setRegions(parseAppRegionSet(params))
+	case internalWindowDrag:
 		// The page reported a mouse-down inside a drag box: start a native
-		// window move (the JS-backed path, like macOS/Linux).
-		w.beginMoveDrag(parseDragRequest(m.Params))
-		return
-	}
-	if m.Method == internalWindowResize {
+		// window move.
+		w.beginMoveDrag(parseDragRequest(params))
+	case internalWindowResize:
 		// The page reported a mouse-down on an edge band: start a native edge
-		// resize (the JS-backed path, like Linux).
-		w.beginResizeDrag(parseDragRequest(m.Params))
-		return
-	}
-	if m.Method == internalWindowToggleMaximize {
-		// The tracker saw a double-click inside a "drag" box: toggle the
-		// maximized state.
+		// resize.
+		w.beginResizeDrag(parseDragRequest(params))
+	case internalWindowToggleMaximize:
+		// The tracker saw a double-click inside a "drag" box.
 		w.toggleMaximize()
-		return
+	default:
+		return false
 	}
-	if m.Method == internalBindError {
-		// A live bind/unbind install failed on the page (R5): the engines'
-		// install Eval is fire-and-forget, so the failure would otherwise be
-		// swallowed silently - log it.
-		handleInternalBindError(m.Params)
-		return
-	}
-	w.mu.Lock()
-	b, ok := w.bindings[m.Method]
-	w.mu.Unlock()
-	if !ok || b.kind != bindingFunc {
-		return
-	}
-	w.calls.do(func() {
-		status, result := callAndMarshal(b.fn, m.ID, string(m.Params))
-		w.resolve(m.ID, status, result)
-	})
-}
-
-func (w *webview) resolve(id string, status int, resultJSON string) {
-	js := fmt.Sprintf("window.__webview__.onReply(%s, %d, %s)", marshalJSON(id), status, marshalJSON(resultJSON))
-	w.Dispatch(func() { w.Eval(js) })
+	return true
 }
 
 // --- wide-string + small helpers -------------------------------------------
@@ -2006,23 +1940,10 @@ type webview struct {
 	scriptDone  bool
 	lastScript  string
 
-	// serve resolves the app's content (App.FS) for requests on the app
-	// scheme's https vhost (nil when the app serves no filesystem).
 	// schemeAuthority remembers the scheme:// authority used on Navigate so
 	// request-time URLs can be reconstructed (see rewriteSchemeURL /
 	// canonicalSchemeURL).
-	serve           serveFunc
 	schemeAuthority string
-
-	// contentBase is the loopback-server origin this view's app:// URLs
-	// resolve to ("" = served through the native scheme's https vhost): the
-	// base of this window's TEMPORARY per-view loopback server while its
-	// first page loads under App.HTTP.
-	contentBase string
-	// transient is the temporary per-view loopback server a window started
-	// under App.HTTP; nil when the window is scheme-served. It is stopped by
-	// releaseLoopback once the window's first load finishes or it closes.
-	transient *loopbackServer
 
 	// Window size constraints from View.State (StateMin/StateMax); enforced in
 	// wndProc's WM_GETMINMAXINFO handler.
@@ -2041,7 +1962,7 @@ type webview struct {
 
 	// regions is the page's latest drag/no-drag box set (device px, client
 	// coordinates), reported via the __appkitAppRegions message. Written on
-	// the UI thread by onMessage; read on the UI thread by the hit-test path.
+	// the UI thread by handleInternal; read on the UI thread by the hit-test path.
 	regions appRegionSet
 
 	// hostOrig is the original window proc of an embedded (caller-owned) host
@@ -2051,22 +1972,8 @@ type webview struct {
 
 	// Persistent document-start scripts (bridge + Init + app-region tracker);
 	// see userScriptSrcs / installedScriptIDs in the script section above.
-	mu                 sync.Mutex
-	bindings           map[string]binding
-	userScriptSrcs     []string
 	installedScriptIDs []string
-	events             *events // the view's events bridge (View.On/Off/Emit), installed by App.Show
-	calls              serialQueue
-
-	// eventsGlobal names the page-side JS global the events API is installed
-	// at (window.<name> with on/off/emit); "events" by default, App.Events
-	// overrides it.
-	eventsGlobal string
-
-	// onReady fires exactly once, on the UI thread, when the first page load
-	// finishes (see View.Ready / fireReady).
-	onReady      func()
-	onReadyFired bool
+	viewCore
 
 	// uiThread is the thread that created the window (GetCurrentThreadId at
 	// construction). The HWND and the WebView2 controller/environment belong

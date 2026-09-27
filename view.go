@@ -633,11 +633,12 @@ func (a *App) showFirst(view *View) error {
 	view.app = a
 	// The engines return the live *webview; keep it on the View so its
 	// methods delegate to the window (and can be called right after Show).
-	w, err := newView(view, serveAppFS(cfg.FS))
+	nw, err := newView(view, serveAppFS(cfg.FS))
 	if err != nil {
 		view.app = nil
 		return err
 	}
+	var w engine = nw
 	view.w = w
 	fail := func(err error) error {
 		w.Close()
@@ -647,7 +648,7 @@ func (a *App) showFirst(view *View) error {
 	}
 	// Name the global the events API is installed at: window.<name> with
 	// on/off/emit - the app-wide App.Events name, default "events".
-	w.eventsGlobal = cfg.Events
+	w.core().eventsGlobal = cfg.Events
 	// Every view carries the events bridge (View.On/Off/Emit): Show installs
 	// it - the document-start script plus the internal Go binding - on the
 	// view at creation, so the bridge is live before the page loads. The only
@@ -674,7 +675,7 @@ func (a *App) showFirst(view *View) error {
 	// Wire the Ready callback into the engine: it fires exactly once, on
 	// the UI thread, when the first page load after Show finishes (see the
 	// View.Ready doc).
-	w.onReady = view.Ready
+	w.core().onReady = view.Ready
 	a.registerView(view)
 	// Load the window's first page: the declarative URL. With an empty URL
 	// no navigation happens (a blank window) and Ready stays pending until
@@ -832,7 +833,7 @@ type View struct {
 	// w is the live engine handle. App.Show stores it here (nil before the
 	// first show and after Close, so the View can be shown again); methods
 	// fail with "View is not shown" while it is nil.
-	w *webview
+	w engine
 
 	// app is the App currently managing this View (set by App.Show, cleared
 	// by Close). It is used to unregister the View on Close.
@@ -883,7 +884,7 @@ const (
 
 // mustEngine returns the live engine handle of a shown View, panicking with
 // a clear message when the View was never passed to App.Show.
-func (v *View) mustEngine() *webview {
+func (v *View) mustEngine() engine {
 	if v.w == nil {
 		panic("appkit: View is not shown: pass it to App.Show first")
 	}
