@@ -22,13 +22,13 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T17:02:39Z
+updated_at: 2026-09-27T19:26:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -62,3 +62,11 @@ Decide tuohi's support tiers and make CI match them.
 **agent:claude-code/d3685535** at 2026-09-27T17:02:39Z
 
 Forgejo CI runs in golang:1.27-alpine and needs gcompat: every binary that reaches pure/ requests glibc's loader (/lib64/ld-linux-x86-64.so.2) even with CGO_ENABLED=0. That was found when the first CI run failed on 2026-09-27, and reproduced in an Alpine 3.24 minirootfs under bubblewrap. With gcompat, the tuohi, dialog, notify, and tray tests pass there. The same fact means a consumer's binary runs only on glibc desktops. The support-tier decision should say so, and decide whether a glibc CI image is better than gcompat.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:26:49Z
+
+### Decision from TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape)
+
+**Go minimum: 1.26.** The owner chose it on 2026-09-27. The source needs about Go 1.23 (`reflect.TypeFor`, range over int, `structs.HostLayout`). The real floor is `golang.org/x/sys` v0.48.0, which declares 1.26.0. The inherited `go 1.27` is not needed. git-ticket-canvas moves to 1.26 when it adopts tuohi.
+
+Rejected: pinning an old `x/sys` to keep 1.25. It trades a one-time move by one consumer for holding a security-relevant dependency back indefinitely.

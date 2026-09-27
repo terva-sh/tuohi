@@ -21,13 +21,13 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T16:59:09Z
+updated_at: 2026-09-27T19:26:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -57,3 +57,17 @@ Leave the macOS backend's references to Apple's AppKit framework alone: they are
 - [ ] No appkit name remains outside NOTICE, docs/provenance.md, and references to Apple's AppKit
 - [ ] Environment variables are TUOHI_*
 - [ ] No review-item labels remain in comments
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:26:49Z
+
+### More to fix, found by TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape)
+
+- The package doc says "Package appkit" (`app.go:1`) and points to an AGENTS.md "Source layout" section that does not exist (`app.go:16`).
+- The `App.ID` example is `com.github.malivvan.appkit` (`app.go:209`).
+- `App.Wait`'s doc says to "call View.Run" (`app.go:514-516`), and Run is not public. `View.Dialog`'s doc says "Run has been called" (`view.go:1011`).
+- A detached comment block repeats Dialog's doc (`view.go:1022-1032`).
+- `App.Bind` and `View.Bind` carry near-identical 40-line docs (`app.go:256-297`, `view.go:753-795`). Keep one and link it.
+- About 99 string literals say "appkit", mostly error prefixes such as `"appkit: ..."`. They are user-visible, so they belong in this ticket.
+- About 40 review tags such as `(P1)`, `(R2/RE2/E4)`, `(R1(a)/RE4)` remain in comments outside `pure/`, 31 of them in non-test files.

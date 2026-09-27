@@ -16,19 +16,20 @@ parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
 dependencies:
   - TKT-01M3HWWRSJC4QVVGPW04H5CQBD
+  - TKT-01M3J59M1H9PZ04J2C9JJZ7V13
 blocks_on: none
 references: []
 moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T16:59:09Z
+updated_at: 2026-09-27T19:26:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -62,3 +63,15 @@ Another local user could squat on the names in a shared `/tmp`. That is inferred
 - [ ] The primary instance checks the connecting peer's user and caps message size
 - [ ] The Windows pipe has an explicit per-user security descriptor
 - [ ] The documentation says forwarded arguments are untrusted input
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:26:49Z
+
+### Findings and decisions from TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape)
+
+- **Where it lands.** This lands in the new `tuohi/instance` package (TKT-01M3J59M1H9PZ04J2C9JJZ7V13, Move desktop services out of the root package). The Unix and darwin copies (`app_unix.go:28-141`, `app_darwin.go:106-194`) become one `//go:build unix` file.
+- **Unlock race.** `release` unlocks and then unlinks the lock file (`app_unix.go:101-103`). A launcher that opened the old file before the unlink can lock an unlinked inode while a newer one creates a fresh file, which gives two primaries. Do not unlink the lock file, or unlink it while still holding the lock.
+- **Dropped launches on Windows.** With `maxInstances=1` and no `WaitNamedPipe`, a launch that arrives while the server is busy is dropped silently (`app_windows.go:85-104`). Any pipe create failure is also read as "already running".
+- **Working directory.** It is not forwarded, so relative paths in forwarded arguments resolve against the primary's directory. Forward it.
+- **No deadline on Unix.** `io.ReadAll` has no deadline as well as no cap.

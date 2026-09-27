@@ -1,7 +1,7 @@
 ---
 schema: 4
 id: TKT-01M3J1H8CPMZX9EJX8R2CQRA6P
-title: Unix Navigate, Eval, and Focus call GTK off the UI thread
+title: Make every View method safe to call from any goroutine
 type: bug
 status: draft
 status_reason: null
@@ -14,14 +14,15 @@ assignees: []
 milestone: v0.1.0
 parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
-dependencies: []
+dependencies:
+  - TKT-01M3J59M0VJYQ3E652Y0FD90H3
 blocks_on: none
 references: []
 moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-27T18:20:14Z
+updated_at: 2026-09-27T19:26:49Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -52,3 +53,18 @@ The architecture review, TKT-01M3HWWRSJC4QVVGPW04H5CQBD, may prefer one rule for
 - [ ] Navigate, Eval, and Focus on Unix run their GTK calls on the UI thread from any goroutine
 - [ ] A GUI scenario calls each from a binding goroutine on both WebKitGTK stacks
 - [ ] Concurrent View.Close calls do not race under go test -race
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:26:49Z
+
+### Scope widened by TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape)
+
+Retitled from "Unix Navigate, Eval, and Focus call GTK off the UI thread". Windows has the same gaps.
+
+| Method | Unix | macOS | Windows |
+|---|---|---|---|
+| Navigate, Eval, Focus, Raise | direct | synchronous marshal | direct |
+| Internal BindBatch | direct | synchronous marshal | direct; pumps `GetMessageW` on the caller's thread |
+
+**The rule, from `docs/architecture.md` "One threading rule":** every exported `View` and `App` method is safe from any goroutine on every engine. On the UI thread it runs in place. Elsewhere it is marshalled asynchronously, except where the caller needs a result; those wait with a timeout and return an error rather than hang when the loop has stopped. This lands in the shared engine layer from TKT-01M3J59M0VJYQ3E652Y0FD90H3 (Declare the engine interface and share the bridge core), so each method is marshalled once rather than three times.

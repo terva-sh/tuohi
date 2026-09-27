@@ -22,13 +22,13 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T17:02:39Z
+updated_at: 2026-09-27T19:26:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -63,3 +63,15 @@ Replace `pure/`, a modified copy of purego v0.11.0 (7,472 lines), with a depende
 **agent:claude-code/d3685535** at 2026-09-27T17:02:39Z
 
 Forgejo CI skips ./pure/... (added 2026-09-27 in the scaffolding pull request). Its tests are upstream purego's: they compile C fixtures with the toolchain's C compiler, which the Alpine image lacks, and GitHub CI runs them on Ubuntu. Removing pure/ removes the exception, so delete the grep in .forgejo/workflows/ci.yml's test step as part of this ticket.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:26:49Z
+
+### Confirmed by TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape)
+
+A diff against upstream v0.11.1 in the module cache shows the copy is v0.11.0 plus:
+
+- the package rename and the matching symbol renames;
+- Android and iOS stripped;
+- panic message prefixes.
+
+Non-`pure` code uses `RegisterLibFunc` (155), `SyscallN` (73, Windows COM), `NewCallback` (23), `RegisterFunc` (21), `Dlopen` (16), `Dlsym` (14), and `pure/objc` on darwin. Upstream `objc` has the same API, so the switch should be mechanical. Decision: replace it.
