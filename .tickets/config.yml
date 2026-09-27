@@ -1,0 +1,35 @@
+schema: 4
+actors:
+  - id: human:sothr
+    name: Drew Short
+  - id: agent:claude-code/d3685535
+    name: Claude Code local agent
+labels:
+  - area/bridge
+  - area/engine-linux
+  - area/engine-darwin
+  - area/engine-windows
+  - area/ffi
+  - area/single-instance
+  - area/dialog
+  - area/notify
+  - area/tray
+  - area/autostart
+  - area/api
+  - area/ci
+  - area/docs
+  - area/provenance
+  - area/release
+  - security
+  - policy
+  - question
+milestones:
+  - v0.1.0
+series: []
+defaults:
+  type: task
+  priority: normal
+  actor: null
+  claim_expiry: null
+lock:
+  timeout: 10s
