@@ -23,13 +23,13 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T16:59:09Z
+updated_at: 2026-09-27T18:22:05Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -65,3 +65,9 @@ From terva-sh/meta TKT-01M3HS2HHEKMNZCGCBMYMHA37P (Create the tuohi repository a
 - [ ] A design doc in docs/ records package boundaries, the platform interface, and the public API
 - [ ] Each input listed in this ticket has a recorded decision
 - [ ] A ticket is filed for each change the review calls for
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T18:22:05Z
+
+An input from PR #3's review of TKT-01M3HWWRRXTAR4T01SK79Z4BSM: decide the lifecycle rule for UI calls made after the main loop has stopped for good. On Unix every marshalled call, now including Destroy, queues on the default GLib context and runs only if the UI thread iterates again. Windows behaves the same, and macOS's performOnMain waits instead. Pick one rule, and say what happens to a Close from a goroutine after App.Wait returns.

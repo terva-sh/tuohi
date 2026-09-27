@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T18:20:25Z
+updated_at: 2026-09-27T18:22:05Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -124,3 +124,13 @@ On Unix, `webview.Navigate`, `webview.Eval`, and `webview.Focus` call WebKitGTK 
 ### SA_ONSTACK
 
 Some C library in the GTK4 process installs a SIGSEGV handler without `SA_ONSTACK`. While it is installed, any nil dereference in Go code, a consumer's included, is a fatal error with no panic and no stack instead of a recoverable panic. Not investigated further here. The architecture review should decide whether it matters.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T18:22:05Z
+
+### Review disposition, PR #3, terva-review run dc571f2f on 74e2143
+
+- **medium: Background Close can leave GTK teardown pending after the main loop stops. Documented in 5d14eb5; the behaviour is kept, and the lifecycle rule goes to the architecture review.**
+  - **What happens:** the queued idle source stays on GLib's default context and runs when the UI thread next iterates it: the next `Run`, `App.Wait`, or a UI-thread `Destroy`'s drain loop. It is lost only if the UI thread never iterates again, which in practice means the process is exiting.
+  - **Why this is not new:** `Terminate`, `Show`, `Hide`, and the window-state methods on Unix rely on the loop the same way, as does the Windows engine's `Destroy`.
+  - **Why the alternatives lose:** the only other ways to "complete teardown" are to run GTK off the UI thread, which is the crash this PR fixes, or to wait for the loop, which hangs when the loop has stopped.
+  - **Follow-up:** a lifecycle rule for calls made after the loop stops belongs to TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape). A note there records it.
