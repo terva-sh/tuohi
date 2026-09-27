@@ -3,8 +3,10 @@
 package tuohi
 
 import (
+	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -32,25 +34,32 @@ func hasDisplay() bool {
 }
 
 // webkitRunnable reports whether WebKitGTK can spawn its helper processes
-// here. The GUI scenarios crash the whole test binary (SIGABRT inside WebKit)
-// when it cannot: the bubblewrap sandbox needs an unprivileged user namespace,
-// which many containers forbid, and the helpers place their sockets under
-// XDG_RUNTIME_DIR, which some sandboxes mount read-only. bwrap's own exit
-// code is the ground truth for the first half - the /proc/sys knobs lie when
-// the restriction comes from seccomp/AppArmor - so probe it directly. A
-// machine without bwrap is NOT a skip reason: WebKitGTK then runs its helpers
-// unsandboxed.
-func webkitRunnable() bool {
+// here, and why not when it cannot. The GUI scenarios crash the whole test
+// binary (SIGABRT inside WebKit) when it cannot: the bubblewrap sandbox needs
+// an unprivileged user namespace, which many containers forbid, and the
+// helpers place their sockets under XDG_RUNTIME_DIR, which some sandboxes
+// mount read-only. bwrap's own exit code is the ground truth for the first
+// half - the /proc/sys knobs lie when the restriction comes from
+// seccomp/AppArmor - so probe it directly. The probe binds the host root
+// read-only: without a bind, bwrap starts in an empty root where no command
+// exists, and fails wherever it is installed. A machine without bwrap is NOT a
+// skip reason: WebKitGTK then runs its helpers unsandboxed.
+func webkitRunnable() (bool, string) {
 	bwrap, err := exec.LookPath("bwrap")
 	if err == nil {
-		if exec.Command(bwrap, "--unshare-user", "--", "/bin/true").Run() != nil {
-			return false // bubblewrap cannot create a user namespace
+		truePath, err := exec.LookPath("true")
+		if err != nil {
+			return false, "no true(1) on PATH to probe bubblewrap with"
+		}
+		out, err := exec.Command(bwrap, "--unshare-user", "--ro-bind", "/", "/", "--", truePath).CombinedOutput()
+		if err != nil {
+			return false, fmt.Sprintf("bubblewrap cannot create a user namespace: %v: %s", err, bytes.TrimSpace(out))
 		}
 	}
 	if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" && !isWritableDir(d) {
-		return false // WebKit cannot create its helper sockets there
+		return false, "XDG_RUNTIME_DIR " + d + " is not writable, so WebKit cannot create its helper sockets"
 	}
-	return true
+	return true, ""
 }
 
 // guiAvailable reports whether the GTK/WebKitGTK stack can actually run here:
@@ -60,14 +69,32 @@ func webkitRunnable() bool {
 // the loader path (minimal containers, Nix, etc.) and in restricted sandboxes
 // (no unprivileged user namespaces, read-only XDG_RUNTIME_DIR) instead of
 // failing. CI installs the libraries and runs under xvfb, which sets DISPLAY.
-func guiAvailable() bool {
-	return hasDisplay() && webkitRunnable() && ensureInit() == nil
+// The reason names the first check that failed, for the skip message.
+func guiAvailable() (bool, string) {
+	if !hasDisplay() {
+		return false, "no display: neither DISPLAY nor WAYLAND_DISPLAY is set; run under xvfb-run"
+	}
+	if ok, why := webkitRunnable(); !ok {
+		return false, why
+	}
+	if err := ensureInit(); err != nil {
+		return false, "WebKitGTK did not load: " + err.Error() + "; install libwebkit2gtk-4.1-0 or libwebkitgtk-6.0-4"
+	}
+	return true, ""
 }
+
+// guiSkipReason is why the GUI scenarios did not run, empty when they did.
+var guiSkipReason string
 
 func TestMain(m *testing.M) {
 	flag.Parse()
 	runtime.LockOSThread()
-	if !testing.Short() && guiAvailable() {
+	ok, why := guiAvailable()
+	if testing.Short() {
+		ok, why = false, "GUI scenarios skipped under -short"
+	}
+	guiSkipReason = why
+	if ok {
 		resBridge.Store(bridgeScenario())
 		resErrorUnbind.Store(errorUnbindScenario())
 		resRichTypes.Store(richTypesScenario())
@@ -238,12 +265,18 @@ window.addEventListener('load', async function(){
 	}
 }
 
-// requireGUI skips a GUI assertion when its scenario did not run (no display).
+// requireGUI skips a GUI assertion when its scenario did not run, or fails it
+// when TUOHI_REQUIRE_GUI=1. `just test-gui` sets that, so a run meant to
+// exercise the GUI cannot pass by testing nothing.
 func requireGUI(t *testing.T, got string) {
 	t.Helper()
-	if got == "" {
-		t.Skip("WebKitGTK/display not available; install libwebkit2gtk and run under xvfb-run")
+	if got != "" {
+		return
 	}
+	if os.Getenv("TUOHI_REQUIRE_GUI") == "1" {
+		t.Fatalf("GUI scenario did not run, and TUOHI_REQUIRE_GUI=1: %s", guiSkipReason)
+	}
+	t.Skip(guiSkipReason)
 }
 
 func TestBridge(t *testing.T) {
