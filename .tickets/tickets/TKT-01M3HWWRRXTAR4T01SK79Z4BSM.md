@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRRXTAR4T01SK79Z4BSM
 title: Linux GUI scenarios crash in view teardown on both WebKitGTK stacks
 type: bug
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -18,10 +18,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-92c88910
+  branch: fix/sync-github-flags
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
+  commit: 92c6ca54a2c7cec77437d49005b0010dc597980d
+  session: null
+  claimed_at: 2026-09-27T18:15:31Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T18:11:16Z
+updated_at: 2026-09-27T18:15:31Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
