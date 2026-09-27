@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRSJC4QVVGPW04H5CQBD
 title: Review tuohi's architecture and write down its target shape
 type: spike
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -20,10 +20,17 @@ references:
   - ref: ticket:meta/TKT-01M3HS2HHEKMNZCGCBMYMHA37P
     path: null
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-92c88910
+  branch: spike/architecture-review
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
+  commit: 9bdaa18391a56eb4df23934c6c8a0a1b28a8d22f
+  session: null
+  claimed_at: 2026-09-27T19:01:57Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T18:22:05Z
+updated_at: 2026-09-27T19:01:57Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
