@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRRXTAR4T01SK79Z4BSM
 title: Linux GUI scenarios crash in view teardown on both WebKitGTK stacks
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-92c88910
-  branch: fix/sync-github-flags
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
-  commit: 92c6ca54a2c7cec77437d49005b0010dc597980d
-  session: null
-  claimed_at: 2026-09-27T18:15:31Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T18:22:05Z
+updated_at: 2026-09-27T18:23:11Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -134,3 +127,13 @@ Some C library in the GTK4 process installs a SIGSEGV handler without `SA_ONSTAC
   - **Why this is not new:** `Terminate`, `Show`, `Hide`, and the window-state methods on Unix rely on the loop the same way, as does the Windows engine's `Destroy`.
   - **Why the alternatives lose:** the only other ways to "complete teardown" are to run GTK off the UI thread, which is the crash this PR fixes, or to wait for the loop, which hangs when the loop has stopped.
   - **Follow-up:** a lifecycle rule for calls made after the loop stops belongs to TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture and write down its target shape). A note there records it.
+
+## Summary
+
+Landed through Forgejo PR #3 (terva-sh/tuohi), branch `fix/gtk-view-teardown`.
+
+- **Teardown on the UI thread:** the Unix `Destroy` runs its GTK part (`destroyOnUI`) on the UI thread, recorded as the `g_thread_self()` that `newView` pinned. From any other goroutine it goes through `dispatchMain`, as the Windows engine does. That was the crash on both stacks: bindings run off the UI thread and every scenario closes its view from one.
+- **Test fix:** `embedScenario` called GTK3-only `gtk_window_resize` on GTK4, a nil func there. It now uses `gtk_window_set_default_size`. The GTK4 abort was neither teardown nor the test display's GL.
+- **Result:** `just test-gui` passes on both stacks with all five scenarios running, both with `CGO_ENABLED=0` and with cgo on. Without the `Destroy` change it crashes.
+- **Review:** terva-review found one medium issue: a Close from a goroutine after the loop stops leaves teardown queued. It was declined with reasons, documented in `Destroy`, and the lifecycle rule was handed to TKT-01M3HWWRSJC4QVVGPW04H5CQBD. The re-review on 3ff4530 is clean.
+- **Follow-up:** TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Unix Navigate, Eval, and Focus call GTK off the UI thread) covers the same bug class elsewhere.
