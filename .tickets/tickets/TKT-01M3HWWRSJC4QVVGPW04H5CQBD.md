@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:29:11Z
+updated_at: 2026-09-27T19:32:26Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -103,3 +103,15 @@ An input from PR #3's review of TKT-01M3HWWRRXTAR4T01SK79Z4BSM: decide the lifec
 ### On criterion 2
 
 "Support tiers and testing" was answered by handing the tier choice to TKT-01M3HWWRXMN56AG2GNC3M92GWZ, which already owns it, with the facts it needs recorded in the doc. The review chose no tiers itself. Every other input has a decision in `docs/architecture.md`.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:32:26Z
+
+### Review disposition, PR #4, terva-review run 15d45699 on 03bddbe
+
+- **high: order file-scheme rejection before external-navigation forwarding. Fixed.** TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins call a view's Go bindings) now depends on TKT-01M3J59M32VGK83J7JKYPKSHJE (Drop file: from the schemes App.Open accepts), and `docs/architecture.md` states the ordering and why.
+- **medium: do not present a Host check as protection from local processes. Fixed.** TKT-01M3J59M4EJRPMKHWBS7K4XD3S is retitled "Guard tuohi's loopback server and settle its idle shutdown", and now separates the two threats:
+  - a Host check stops DNS rebinding;
+  - an unguessable per-server token keeps out other local users;
+  - processes running as the same user are documented as able to read `App.FS` regardless.
+
+  A criterion for the token was added, and the doc says the same.

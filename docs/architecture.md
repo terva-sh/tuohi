@@ -49,7 +49,7 @@ different directions, the loopback consumer wins.
 | Threading | Every exported method is safe from any goroutine on every engine. | TKT-01M3J1H8CPMZX9EJX8R2CQRA6P |
 | Package boundaries | The root package is the window. Desktop services move to subpackages. | TKT-01M3J59M1H9PZ04J2C9JJZ7V13 |
 | `atotto/clipboard` | Replaced by native clipboards. | TKT-01M3J59M2BR91XQBDT1TPPM4G5 |
-| `App.HTTP` loopback server | Kept. It must check Host, and its idle shutdown gets tested. | TKT-01M3J59M4EJRPMKHWBS7K4XD3S |
+| `App.HTTP` loopback server | Kept. It gets a Host check and a per-server token, and its idle shutdown gets tested. | TKT-01M3J59M4EJRPMKHWBS7K4XD3S |
 | `App.Open` | `file:` is dropped. | TKT-01M3J59M32VGK83J7JKYPKSHJE |
 | Borrowed code | Wails autostart kept and credited, with its quoting rewritten. The WebView2 loader is kept and credited. | TKT-01M3J59M535T9QH2RS1ZY6PSJM |
 | Side effects | The GTK3 Wayland desktop-file writing becomes opt-in. | TKT-01M3HWWRYD7GNZEZA2JCGWGDJS |
@@ -235,8 +235,9 @@ call a view's Go bindings) carries out:
   bind errors. Today a page can maximise any window, because `toggleMaximize`
   has no `frameless` guard on Unix or Windows. On Windows it can also turn the
   whole client area into a title bar.
-- **A navigation policy.** A top-level navigation to an allowed origin goes
-  ahead. Anything else is cancelled in the view and handed to `App.Open`,
+- **A navigation policy.** It lands only after `App.Open` stops accepting
+  `file:`, because it hands `App.Open` URLs that a page chose. A top-level
+  navigation to an allowed origin goes ahead. Anything else is cancelled in the view and handed to `App.Open`,
   which sends it to the system browser. This is exactly what git-ticket-canvas
   asked for. `window.open` and `target=_blank` follow the same rule. On
   Windows that matters twice, because WebView2 opens its own popup window
@@ -302,9 +303,14 @@ ships its interface, and the owner asked for functionality kept. They are not
 free, though:
 
 - **The loopback server checks nothing about who connects.** It reads the
-  Host header only to build URLs (`app.go:1455`), so any local process can
-  read `App.FS` while it is up. INFERRED: a web page can too, through DNS
-  rebinding.
+  Host header only to build URLs (`app.go:1455`). Two different readers can
+  reach `App.FS` while it is up, and each needs its own fix. A web page can
+  reach it through DNS rebinding (INFERRED), and a Host check stops that.
+  Another local process sends whatever Host it likes, so it needs an
+  unguessable per-server token in the URL the view loads. That keeps out
+  other users on the machine. A process running as the same user can read
+  `App.FS` anyway, from the binary or from memory, and the docs should say
+  so rather than claim more.
 - **It shuts down 3 seconds after its last request** (`loopbackIdleTimeout`,
   `app.go:1306`). That is deliberate, "so it serves exactly the page's initial
   load". But the page's origin is that server. Reading the code, a lazy
@@ -314,8 +320,8 @@ free, though:
   (`app.go:1273`, `lib_unix.go:1809-1810`). Only `Destroy` and the idle timer
   stop it.
 
-TKT-01M3J59M4EJRPMKHWBS7K4XD3S (Check Host on tuohi's loopback server and
-settle its idle shutdown) adds the Host check. It also tests a late fetch and
+TKT-01M3J59M4EJRPMKHWBS7K4XD3S (Guard tuohi's loopback server and settle its
+idle shutdown) adds the Host check and the token. It also tests a late fetch and
 settles the lifetime from the result. A consumer that serves its own
 interface never starts this server, and should send its own COOP and COEP
 headers if it wants cross-origin isolation.
