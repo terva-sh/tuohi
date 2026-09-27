@@ -19,7 +19,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 // --- CLSIDs / IIDs ---------------------------------------------------------

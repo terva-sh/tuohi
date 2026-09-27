@@ -9,7 +9,7 @@
 // environment variable pins one of the two stacks when both are installed;
 // see linuxBackendOverride below.
 
-package appkit
+package tuohi
 
 import (
 	"encoding/json"
@@ -21,7 +21,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 const (

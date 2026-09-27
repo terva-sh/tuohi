@@ -11,7 +11,7 @@ import (
 	stdstrings "strings"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure/internal/strings"
+	"github.com/terva-sh/tuohi/pure/internal/strings"
 )
 
 // structReturnInMemory always reports false on arm64: a struct returned in

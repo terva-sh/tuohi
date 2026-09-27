@@ -9,8 +9,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
-	"github.com/malivvan/appkit/pure/internal/load"
+	"github.com/terva-sh/tuohi/pure"
+	"github.com/terva-sh/tuohi/pure/internal/load"
 )
 
 func TestOS(t *testing.T) {

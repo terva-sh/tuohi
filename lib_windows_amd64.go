@@ -1,11 +1,11 @@
 //go:build windows && amd64
 
-package appkit
+package tuohi
 
 import (
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 // putBounds (amd64): per the Win64 ABI, a struct larger than 8 bytes (RECT is

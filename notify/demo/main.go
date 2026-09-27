@@ -30,7 +30,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/malivvan/appkit/notify"
+	"github.com/terva-sh/tuohi/notify"
 )
 
 const source = "appkit notify demo"

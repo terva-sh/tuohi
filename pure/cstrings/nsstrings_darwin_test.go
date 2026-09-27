@@ -6,8 +6,8 @@ package cstrings_test
 import (
 	"testing"
 
-	"github.com/malivvan/appkit/pure/cstrings"
-	"github.com/malivvan/appkit/pure/objc"
+	"github.com/terva-sh/tuohi/pure/cstrings"
+	"github.com/terva-sh/tuohi/pure/objc"
 )
 
 func TestNSStringToString(t *testing.T) {

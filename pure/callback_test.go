@@ -13,7 +13,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 // TestCallGoFromSharedLib is a test that checks for stack corruption on arm64

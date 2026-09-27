@@ -1,4 +1,4 @@
-package appkit
+package tuohi
 
 import (
 	"errors"

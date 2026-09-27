@@ -1,4 +1,4 @@
-package appkit
+package tuohi
 
 import (
 	"bufio"
@@ -17,8 +17,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/malivvan/appkit/dialog"
-	"github.com/malivvan/appkit/tray"
+	"github.com/terva-sh/tuohi/dialog"
+	"github.com/terva-sh/tuohi/tray"
 )
 
 // uniqueID keeps parallel CI jobs and reruns from colliding on the same lock.

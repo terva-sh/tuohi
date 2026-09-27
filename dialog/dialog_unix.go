@@ -24,7 +24,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 const (

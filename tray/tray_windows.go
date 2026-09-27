@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )

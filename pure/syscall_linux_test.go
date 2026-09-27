@@ -16,7 +16,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure"
+	"github.com/terva-sh/tuohi/pure"
 )
 
 func TestAllThreadsSyscall(t *testing.T) {

@@ -2,7 +2,7 @@
 // parsed from the window edge-hover script message (internalWindowCursor).
 // Only the darwin engine reacts to that message (setEdgeCursor), so the
 // declarations live here instead of in the platform-neutral view.go.
-package appkit
+package tuohi
 
 import "encoding/json"
 

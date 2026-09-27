@@ -1,0 +1,66 @@
+# Forgejo CI for tuohi, the gate for internal pull requests.
+#
+# The steps match `just ci`. The commands are inline because the container
+# does not install just, so a change to one belongs in the other.
+#
+# Everything runs with CGO_ENABLED=0, the way consumers build tuohi. The GUI
+# scenarios skip here because the container has no display or WebKitGTK; the
+# macOS and Windows engines are exercised by .github/workflows/ci.yml on the
+# GitHub mirror. Checkout comes from the Actions-Mirrors org and Go from the
+# internal registry's golang image, as in the other terva-sh repositories.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  check:
+    name: Vet, test and cross-build
+    runs-on: docker
+    container:
+      image: container.local.sothr.com/library/golang:1.27-alpine
+    steps:
+      - name: Install dependencies
+        run: apk add --no-cache git bash make nodejs
+
+      - name: Checkout
+        uses: Actions-Mirrors/forgejo-actions-checkout@v6
+
+      - name: Install ticket checker
+        run: GOBIN=/usr/local/bin go install github.com/terva-sh/git-ticket/cmd/git-ticket@v0.24.0
+
+      - name: go vet (linux, darwin, windows)
+        run: |
+          go vet ./...
+          GOOS=darwin go vet ./...
+          GOOS=windows go vet ./...
+
+      - name: gofmt check
+        run: test -z "$(gofmt -l . | tee /dev/stderr)"
+
+      - name: Import restrictions
+        run: make --no-print-directory check-imports
+
+      - name: Embedded JavaScript
+        run: make --no-print-directory js-check
+
+      - name: go test
+        run: go test ./...
+
+      - name: Cross-build every target
+        run: |
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 freebsd/amd64 netbsd/amd64; do
+            echo "== $t"
+            GOOS=${t%/*} GOARCH=${t#*/} go build ./...
+          done
+
+      - name: Ticket store
+        run: git ticket check --fix --dry-run --strict

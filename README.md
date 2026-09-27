@@ -1,3 +1,29 @@
+# tuohi
+
+tuohi puts a Go program's web interface in a native desktop window, using the
+web engine the operating system already has: WebKitGTK on Linux, WKWebView on
+macOS, and WebView2 on Windows. It needs no cgo, so a program that embeds it
+still cross-compiles to every desktop from one machine with `CGO_ENABLED=0`,
+and it ships no browser engine of its own.
+
+*Tuohi* is Finnish for birch bark: the thin, light outer layer of the tree, and
+the traditional material for light containers. terva and other terva-sh tools
+embed tuohi to offer a desktop window over the web interface they already
+serve, instead of an Electron package.
+
+```sh
+go get github.com/terva-sh/tuohi
+```
+
+tuohi is a fork of `github.com/malivvan/appkit` v0.1.0, whose repository no
+longer exists. [docs/provenance.md](docs/provenance.md) records where the
+source came from and what the review of it found, and [NOTICE](NOTICE) credits
+the projects it draws on. The fork is being reviewed and reworked before its
+first release, so expect the API to change. Until then, the documentation below
+is appkit's, and it names the library appkit.
+
+---
+
 # appkit [![Go Reference](https://pkg.go.dev/badge/github.com/malivvan/appkit.svg)](https://pkg.go.dev/github.com/malivvan/appkit) ![test](https://github.com/malivvan/appkit/workflows/test/badge.svg) [![Release](https://img.shields.io/github/v/release/malivvan/appkit.svg?sort=semver)](https://github.com/malivvan/appkit/releases/latest) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 appkit is a pure-Go foundation for building web-based desktop applications. It

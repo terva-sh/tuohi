@@ -14,7 +14,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/malivvan/appkit/pure/internal/strings"
+	"github.com/terva-sh/tuohi/pure/internal/strings"
 )
 
 const (

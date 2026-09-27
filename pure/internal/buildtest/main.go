@@ -6,7 +6,7 @@
 package main
 
 import (
-	_ "github.com/malivvan/appkit/pure"
+	_ "github.com/terva-sh/tuohi/pure"
 )
 
 import "C"

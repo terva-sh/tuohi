@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/malivvan/appkit/pure"
-	"github.com/malivvan/appkit/pure/internal/load"
+	"github.com/terva-sh/tuohi/pure"
+	"github.com/terva-sh/tuohi/pure/internal/load"
 )
 
 // BenchmarkCallingMethods compares RegisterFunc, SyscallN, and Callback methods
