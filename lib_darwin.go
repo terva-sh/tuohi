@@ -219,7 +219,9 @@ func registerClasses() error {
 			Fn: func(self objc.ID, _cmd objc.SEL, ucc objc.ID, message objc.ID) {
 				w := lookupEngine(self)
 				if w != nil {
-					w.onMessage(cstr(message.Send(sel("body")).Send(sel("UTF8String"))))
+					// The sender is not checked on macOS yet, so it is
+					// reported as unknown (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
+					w.onMessage(cstr(message.Send(sel("body")).Send(sel("UTF8String"))), "", false)
 				}
 			},
 		}})
@@ -1335,6 +1337,7 @@ func (w *webview) Navigate(url string) {
 			url = rewriteAppURL(w.contentBase, url)
 		}
 	}
+	w.trustURL(url)
 	performOnMain(func() {
 		autorelease(func() {
 			nsurl := class("NSURL").Send(sel("URLWithString:"), nsstr(url))
@@ -1345,6 +1348,8 @@ func (w *webview) Navigate(url string) {
 }
 
 func (w *webview) loadHTML(html string) {
+	// With a nil base URL the page is at about:blank.
+	w.trustURL("about:blank")
 	performOnMain(func() {
 		autorelease(func() {
 			w.webView.Send(sel("loadHTMLString:baseURL:"), nsstr(html), objc.ID(0))
@@ -1529,8 +1534,12 @@ func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 	case internalWindowToggleMaximize:
 		// The tracker saw a double-click inside a "drag" box. Maximize is
 		// already a toggle on macOS: the native performZoom: for framed
-		// windows, the saved-frame path for borderless ones.
-		w.Maximize()
+		// windows, the saved-frame path for borderless ones. The tracker
+		// exists only on frameless windows, so a framed window ignores the
+		// message.
+		if w.frameless {
+			w.Maximize()
+		}
 	case internalWindowCursor:
 		w.setEdgeCursor(parseCursorRequest(params).Edge)
 	default:

@@ -695,7 +695,9 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 			if int32(asMessageArgs(b).TryGetWebMessageAsString(&pwstr)) >= 0 && pwstr != 0 {
 				msg := wideToString(pwstr)
 				coTaskMemFree(pwstr)
-				w.onMessage(msg)
+				// The sender is not checked on Windows yet, so it is
+				// reported as unknown (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
+				w.onMessage(msg, "", false)
 			}
 		}
 	case kindNavigationCompleted:
@@ -1236,10 +1238,13 @@ func (w *webview) Navigate(url string) {
 	if url == "" {
 		url = "about:blank"
 	}
+	w.trustURL(url)
 	asWebView2(w.webview2).Navigate(utf16(url))
 }
 
 func (w *webview) loadHTML(html string) {
+	// NavigateToString puts the page at about:blank.
+	w.trustURL("about:blank")
 	if w.webview2 != 0 {
 		asWebView2(w.webview2).NavigateToString(utf16(html))
 	}
@@ -1358,8 +1363,12 @@ func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 		// resize.
 		w.beginResizeDrag(parseDragRequest(params))
 	case internalWindowToggleMaximize:
-		// The tracker saw a double-click inside a "drag" box.
-		w.toggleMaximize()
+		// The tracker saw a double-click inside a "drag" box. The tracker
+		// exists only on frameless windows, so a framed window ignores the
+		// message.
+		if w.frameless {
+			w.toggleMaximize()
+		}
 	default:
 		return false
 	}

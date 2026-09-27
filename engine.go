@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -101,9 +104,78 @@ type viewCore struct {
 	// scheme-served. releaseLoopback stops it when the window is destroyed,
 	// and it also stops itself after loopbackIdleTimeout without a request.
 	transient *loopbackServer
+
+	// origins is the set of origins whose pages may use the bridge: every
+	// origin the application itself navigated the view to, plus View.Origins.
+	// Guarded by mu.
+	origins map[string]bool
 }
 
 func (c *viewCore) core() *viewCore { return c }
+
+// trustURL adds the origin of a URL the application chose to load to the
+// view's trusted origins. Every engine calls it from Navigate with the URL
+// it is about to load, after any app:// rewrite, so the trusted origin is
+// the one the page really has: the loopback port on macOS and under
+// App.HTTP, the app scheme or its https vhost otherwise.
+func (c *viewCore) trustURL(raw string) {
+	o := originOf(raw)
+	if o == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.origins == nil {
+		c.origins = map[string]bool{}
+	}
+	c.origins[o] = true
+}
+
+// trusts reports whether a message from a page at senderURL may use the
+// bridge. known is false when the engine cannot say where a message came
+// from; such a message is allowed, which keeps an engine without a sender
+// check working as before until it has one.
+func (c *viewCore) trusts(senderURL string, known bool) bool {
+	if !known {
+		return true
+	}
+	o := originOf(senderURL)
+	if o == "" {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.origins[o]
+}
+
+// originOf returns the origin of rawurl in the form the bridge compares:
+// scheme://host[:port] in lower case, with the scheme's default port
+// dropped. A URL with no host, such as about:blank or data:, is its own
+// origin: the whole URL without its fragment. An unparsable URL, or one with
+// no scheme, has no origin and is never trusted.
+func originOf(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Scheme == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if u.Host == "" {
+		u.Fragment, u.RawFragment = "", ""
+		u.Scheme = scheme
+		return u.String()
+	}
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return scheme + "://" + host
+}
 
 // bridgeMessage is the envelope window.__webview__ posts for every call.
 type bridgeMessage struct {
@@ -112,11 +184,17 @@ type bridgeMessage struct {
 	Params json.RawMessage `json:"params"`
 }
 
-// onMessage is where every engine hands over a message the page posted. It
-// handles the bridge's internal messages, and runs any other method as a
-// call of the binding with that name on the view's serial call queue, off
-// the UI thread.
-func (w *webview) onMessage(body string) {
+// onMessage is where every engine hands over a message the page posted,
+// with the URL of the page that sent it when the engine knows it. A message
+// from an origin the view does not trust is dropped before anything reads
+// it, so bindings, events, and the internal window messages share one gate.
+// Otherwise it handles the bridge's internal messages, and runs any other
+// method as a call of the binding with that name on the view's serial call
+// queue, off the UI thread.
+func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
+	if !w.trusts(senderURL, senderKnown) {
+		return
+	}
 	var m bridgeMessage
 	if err := json.Unmarshal([]byte(body), &m); err != nil {
 		return

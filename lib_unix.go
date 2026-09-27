@@ -565,7 +565,10 @@ func ensureInit() error {
 		messageHandlerFn = pure.NewCallback(func(_, jsResult, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w != nil {
-				w.onMessage(jsResultToString(jsResult))
+				// WebKitGTK does not say which frame posted the message, so
+				// the sender is the top-level page. A null URI means no page
+				// is loaded, and names no trusted origin.
+				w.onMessage(jsResultToString(jsResult), cstr(webkitWebViewGetURI(w.webview)), true)
 			}
 			return 0
 		})
@@ -1253,10 +1256,13 @@ func (w *webview) Navigate(url string) {
 	// the HTTP origin), or - with no server up - the engine serves the app://
 	// scheme natively.
 	url = w.resolveURL(url)
+	w.trustURL(url)
 	webkitWebViewLoadURI(w.webview, url)
 }
 
 func (w *webview) loadHTML(html string) {
+	// With no base URI the page is at about:blank.
+	w.trustURL("about:blank")
 	webkitWebViewLoadHTML(w.webview, html, 0)
 }
 
@@ -1626,8 +1632,11 @@ func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 		w.beginResizeDrag(parseDragRequest(params))
 	case internalWindowToggleMaximize:
 		// Double-click on a drag box (see the tracker in view.go): flip
-		// between maximized and normal.
-		w.toggleMaximize()
+		// between maximized and normal. The tracker exists only on frameless
+		// windows, so a framed window ignores the message.
+		if w.frameless {
+			w.toggleMaximize()
+		}
 	default:
 		return false
 	}
