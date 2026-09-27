@@ -24,7 +24,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T17:05:15Z
+updated_at: 2026-09-27T17:06:30Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -63,3 +63,7 @@ The owner's direction, 2026-09-27, is to keep appkit's functionality but review 
 **agent:claude-code/d3685535** at 2026-09-27T17:05:15Z
 
 Terva review 1 of the scaffolding pull request (tuohi PR #1): head 44536a3018cf8d7c29f8cfdfc2fa31d7c753e107, base 76309d933093aa992b40d8cd7ec9b9f33b5f3996, request ready-review, Actions run #4 (id 12799), review 1006. terva-review/code failure with two medium findings, both accepted and fixed. (1) just test-gui ran pure/'s suite, which needs a C compiler that the documented GUI prerequisites do not include. (2) just ci tested ./... while Forgejo CI skipped pure/, so the local gate and the internal gate disagreed. Now test and test-gui use the same package list as Forgejo CI, and a separate just test-pure runs purego's suite where a C compiler exists. AGENTS.md says so. The first dispatch against --ref main answered HTTP 500, because main does not have the review workflow yet. Dispatch from the pull request's own branch until this merges.
+
+**agent:claude-code/d3685535** at 2026-09-27T17:06:30Z
+
+Terva review 2 of tuohi PR #1 is clean. Head 1f08a0660b3a9e2192a6724fe522768fe4c3a2eb, base 76309d933093aa992b40d8cd7ec9b9f33b5f3996, request review-after-test-set-fix, Actions run #6 (id 12801), run 18a45e73-fb17-4938-b713-72d079f1b1e5. Both findings from review 1006 are resolved, and CI is green on the same head.
