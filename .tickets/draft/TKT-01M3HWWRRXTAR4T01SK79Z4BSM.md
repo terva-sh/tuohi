@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T17:24:52Z
+updated_at: 2026-09-27T18:11:16Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -67,3 +67,14 @@ With the probe fixed, `just test-gui` reaches the scenarios on both stacks. The 
 - **webkit2gtk-4.1 (GTK3):** `GLib-GObject-CRITICAL g_object_unref: assertion 'G_IS_OBJECT (object)' failed`, then SIGABRT at `lib_unix.go:1050`. That is the same site as the cgo-on trace recorded above, so it is not cgo-specific.
 
 The runs used no `LIBGL_ALWAYS_SOFTWARE` and no `WEBKIT_DISABLE_COMPOSITING_MODE`, both of which GitHub's unix job sets.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T18:11:16Z
+
+### GitHub mirror is red on main because of this bug (2026-09-27, 3adf498)
+
+GitHub run 36339527184 on 3adf498 fails all four Linux GUI jobs: ubuntu-latest and ubuntu-24.04-arm, gtk3 and gtk4. macOS, Windows, lint, and every build pass. Bubblewrap is installed on GitHub's runners too, so the scenarios had been skipping there as well until TKT-01M3HWWRR6V1YA9Q01NKW6E6ZG (GUI tests skip wherever bubblewrap is installed) fixed the probe. These are the first real Linux GUI runs anywhere. They run with cgo on and set `LIBGL_ALWAYS_SOFTWARE`, `WEBKIT_DISABLE_DMABUF_RENDERER`, and `WEBKIT_DISABLE_COMPOSITING_MODE`.
+
+- **gtk3, both arches:** `g_object_unref: assertion 'G_IS_OBJECT (object)' failed`, then SIGABRT at `lib_unix.go:1050`, from `Destroy` reached at lib_unix_test.go:152/162 on amd64 and 190/198 on arm64. The same site as the local no-cgo run, so the crash is not about GL or cgo.
+- **gtk4, both arches:** repeated `g_list_store_remove: assertion '!g_sequence_iter_is_end (it)' failed`. On arm64 that is followed by `gtk_native_unrealize: priv != NULL`, `gdk_gl_context_make_current: GDK_IS_GL_CONTEXT`, `g_object_unref: '!object_already_finalized'`, and `_gdk_frame_clock_uninhibit_freeze`, which points to a double finalize of the window. The package then FAILs.
+
+The `release` job needs `unix`, so no tag can publish until this lands.
