@@ -7,7 +7,6 @@ package tuohi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -636,34 +635,8 @@ type webview struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 
-	mu             sync.Mutex
-	bindings       map[string]binding
-	userScriptSrcs []string
-	events         *events // the view's events bridge (View.On/Off/Emit), installed by App.Show
-	calls          serialQueue
+	viewCore
 
-	// eventsGlobal names the page-side JS global the events API is installed
-	// at (window.<name> with on/off/emit); "events" by default, App.Events
-	// overrides it.
-	eventsGlobal string
-
-	// onReady fires exactly once, on the UI thread, when the first page load
-	// finishes (see View.Ready / fireReady).
-	onReady      func()
-	onReadyFired bool
-	serve        serveFunc
-
-	// contentBase is the loopback-server origin this view's app:// URLs
-	// resolve to ("" = served through the custom "app" scheme handler): the
-	// base of this window's TEMPORARY per-view loopback server while its
-	// first page loads. On macOS every app-content view is served over the
-	// loopback http://localhost origin (WKWebView cannot make a custom scheme
-	// a secure context), so darwin views always get a temporary server.
-	contentBase string
-	// transient is the temporary per-view loopback server a window started
-	// (see contentBase); stopped by releaseLoopback once the window's first
-	// load finishes or it closes.
-	transient *loopbackServer
 	// schemeHandlerObjs are the WKURLSchemeHandler delegate object (one per
 	// view), kept so Destroy can drop its instance-registry entry - the
 	// engine would otherwise stay pinned in the registry after Destroy.
@@ -1402,56 +1375,21 @@ func (w *webview) Eval(js string) {
 	})
 }
 
-// BindBatch registers every request of a declarative bind batch and installs
-// it: all entries are prepared first (one error fails the whole batch before
-// anything is stored), then stored - replacing any previous binding of the
-// same page name (bindingsReplace: a view entry overrides an app-wide one,
-// R1) - with ONE script rebuild and ONE live install Eval for the whole
-// batch instead of one full rebuild per name (P1).
-func (w *webview) BindBatch(batch []bindRequest) error {
-	prepared, live, err := prepareBindBatch(batch)
-	if err != nil {
-		return err
-	}
-	// The script rebuild touches the WKUserContentController, so it runs on
-	// the UI thread; taking mu inside the marshaled closure keeps every
-	// mu+AppKit section on one thread (no lock held across a thread hop).
+// updateBindings changes the binding table and rebuilds the user scripts on
+// the UI thread. The rebuild touches the WKUserContentController, and taking
+// mu inside the marshalled closure keeps every mu and AppKit section on one
+// thread, with no lock held across a thread hop (see engine.updateBindings).
+func (w *webview) updateBindings(mutate func(bindings map[string]binding) error) error {
+	var err error
 	performOnMain(func() {
 		w.mu.Lock()
 		defer w.mu.Unlock()
-		for _, p := range prepared {
-			bindingsReplace(w.bindings, p.entries)
-		}
-		w.rebuildScriptsLocked()
-	})
-	w.Eval(liveBindScript(live))
-	return nil
-}
-
-func (w *webview) Unbind(name string) error {
-	var unbindErr error
-	performOnMain(func() {
-		w.mu.Lock()
-		defer w.mu.Unlock()
-		_, exists := w.bindings[name]
-		if !exists {
-			unbindErr = errors.New("name not bound")
+		if err = mutate(w.bindings); err != nil {
 			return
 		}
-		// An accessor binding lives under three keys: the page name plus its
-		// two synthetic dispatch keys - remove them all.
-		for _, n := range []string{name, accessorGetKey(name), accessorSetKey(name)} {
-			delete(w.bindings, n)
-		}
 		w.rebuildScriptsLocked()
 	})
-	if unbindErr != nil {
-		return unbindErr
-	}
-	// Unbinding a name on a frozen namespace throws; liveUnbindJS reports
-	// the failure to Go instead of silently doing nothing (R3/R6).
-	w.Eval(liveUnbindJS(name))
-	return nil
+	return err
 }
 
 // Destroy releases the web view and closes the native window. The AppKit
@@ -1579,57 +1517,26 @@ func addWKUserScript(manager objc.ID, src string) {
 	s.Send(sel("release"))
 }
 
-func (w *webview) onMessage(body string) {
-	var m struct {
-		ID     string          `json:"id"`
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
-	}
-	err := json.Unmarshal([]byte(body), &m)
-	if err != nil {
-		return
-	}
-	if m.Method == internalWindowDrag {
+func (w *webview) handleInternal(method string, params json.RawMessage) bool {
+	switch method {
+	case internalWindowDrag:
 		// The app-region tracker saw a mouse-down inside a "drag" box. The
 		// mouse-down event is still being processed, so the current event is
-		// the one AppKit needs for performWindowDragWithEvent: - this is how
-		// frameless Electron-style apps move. If the script message was
-		// delivered after the event dispatch finished (currentEvent is nil or
-		// no longer the mouse-down), a synthetic left-mouse-down event at the
-		// reported position anchors the drag instead.
-		w.beginMoveDrag(parseDragRequest(m.Params))
-		return
-	}
-	if m.Method == internalWindowToggleMaximize {
-		// The tracker saw a double-click inside a "drag" box: toggle the
-		// maximized state. Maximize() is already a toggle on macOS - the
-		// performZoom: native zoom for framed windows, the saved-frame dance
-		// for borderless ones (see Maximize). The tracker only exists on
-		// frameless windows, but the toggle path handles both shapes.
+		// the one AppKit needs for performWindowDragWithEvent:. If the script
+		// message arrives after that dispatch finished, beginMoveDrag
+		// synthesizes a left-mouse-down at the reported position instead.
+		w.beginMoveDrag(parseDragRequest(params))
+	case internalWindowToggleMaximize:
+		// The tracker saw a double-click inside a "drag" box. Maximize is
+		// already a toggle on macOS: the native performZoom: for framed
+		// windows, the saved-frame path for borderless ones.
 		w.Maximize()
-		return
+	case internalWindowCursor:
+		w.setEdgeCursor(parseCursorRequest(params).Edge)
+	default:
+		return false
 	}
-	if m.Method == internalWindowCursor {
-		w.setEdgeCursor(parseCursorRequest(m.Params).Edge)
-		return
-	}
-	if m.Method == internalBindError {
-		// A live bind/unbind install failed on the page (R5): the engines'
-		// install Eval is fire-and-forget, so the failure would otherwise be
-		// swallowed silently - log it.
-		handleInternalBindError(m.Params)
-		return
-	}
-	w.mu.Lock()
-	b, ok := w.bindings[m.Method]
-	w.mu.Unlock()
-	if !ok || b.kind != bindingFunc {
-		return
-	}
-	w.calls.do(func() {
-		status, result := callAndMarshal(b.fn, m.ID, string(m.Params))
-		w.resolve(m.ID, status, result)
-	})
+	return true
 }
 
 // beginMoveDrag runs -[NSWindow performWindowDragWithEvent:]. Prefer the
@@ -1690,12 +1597,6 @@ func (w *webview) setEdgeCursor(edge string) {
 			}
 		})
 	})
-}
-
-func (w *webview) resolve(id string, status int, resultJSON string) {
-	js := fmt.Sprintf("window.__webview__.onReply(%s, %d, %s)",
-		marshalJSON(id), status, marshalJSON(resultJSON))
-	dispatchMain(func() { autorelease(func() { w.Eval(js) }) })
 }
 
 // bridgePostFn for the WebKit backends (macOS WKWebView, Linux WebKitGTK): the

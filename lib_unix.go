@@ -705,36 +705,9 @@ type webview struct {
 	isWindowShown bool
 	isSizeSet     bool
 
-	mu             sync.Mutex
-	bindings       map[string]binding
-	userScriptSrcs []string
-	events         *events // the view's events bridge (View.On/Off/Emit), installed by App.Show
-	calls          serialQueue
+	schemeCB uintptr // retained pure trampoline
 
-	// eventsGlobal names the page-side JS global the events API is installed
-	// at (window.<name> with on/off/emit); "events" by default, App.Events
-	// overrides it.
-	eventsGlobal string
-
-	// onReady fires exactly once, on the UI thread, when the first page load
-	// finishes (see View.Ready / fireReady).
-	onReady      func()
-	onReadyFired bool
-	serve        serveFunc
-	schemeCB     uintptr // retained pure trampoline
-
-	// contentBase is the loopback-server origin this view's app:// URLs
-	// resolve to ("" = served through the native "app" scheme): the base of
-	// this window's TEMPORARY per-view loopback server while its first page
-	// loads. Linux is scheme-first - the server only exists when App.HTTP
-	// opts this window into the loopback origin (WebKitGTK cannot deliver
-	// the isolation headers on its scheme responses, so the opt-in is what
-	// makes a Linux page crossOriginIsolated).
-	contentBase string
-	// transient is the temporary per-view loopback server a window started
-	// (see contentBase); nil when the window is scheme-served. It is stopped
-	// by releaseLoopback once the window's first load finishes or it closes.
-	transient *loopbackServer
+	viewCore
 }
 
 // registerSchemes wires the app-scope "app" scheme (when App.FS is set) onto
@@ -1608,45 +1581,15 @@ func (w *webview) Unmaximize() {
 	dispatchMain(func() { gtkWindowUnmaximize(w.window) })
 }
 
-// BindBatch registers every request of a declarative bind batch and installs
-// it: all entries are prepared first (one error fails the whole batch before
-// anything is stored), then stored under a single lock - replacing any
-// previous binding of the same page name (bindingsReplace: a view entry
-// overrides an app-wide one, R1) - with ONE script rebuild and ONE live
-// install Eval for the whole batch instead of one full rebuild per name
-// (P1).
-func (w *webview) BindBatch(batch []bindRequest) error {
-	prepared, live, err := prepareBindBatch(batch)
-	if err != nil {
+// updateBindings changes the binding table and rebuilds the user scripts
+// under one hold of mu (see engine.updateBindings).
+func (w *webview) updateBindings(mutate func(bindings map[string]binding) error) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := mutate(w.bindings); err != nil {
 		return err
 	}
-	w.mu.Lock()
-	for _, p := range prepared {
-		bindingsReplace(w.bindings, p.entries)
-	}
 	w.rebuildScriptsLocked()
-	w.mu.Unlock()
-	w.Eval(liveBindScript(live))
-	return nil
-}
-
-func (w *webview) Unbind(name string) error {
-	w.mu.Lock()
-	_, exists := w.bindings[name]
-	if !exists {
-		w.mu.Unlock()
-		return errors.New("name not bound")
-	}
-	// An accessor binding lives under three keys: the page name plus its two
-	// synthetic dispatch keys - remove them all.
-	for _, n := range []string{name, accessorGetKey(name), accessorSetKey(name)} {
-		delete(w.bindings, n)
-	}
-	w.rebuildScriptsLocked()
-	w.mu.Unlock()
-	// Unbinding a name on a frozen namespace throws; liveUnbindJS reports
-	// the failure to Go instead of silently doing nothing (R3/R6).
-	w.Eval(liveUnbindJS(name))
 	return nil
 }
 
@@ -1673,53 +1616,22 @@ func addUserScript(manager uintptr, src string) {
 	webkitUserScriptUnref(script)
 }
 
-func (w *webview) onMessage(body string) {
-	var m struct {
-		ID     string          `json:"id"`
-		Method string          `json:"method"`
-		Params json.RawMessage `json:"params"`
-	}
-	err := json.Unmarshal([]byte(body), &m)
-	if err != nil {
-		return
-	}
-	// Internal app-region messages: script-message handlers run on the GTK main
-	// context, so the window drags below can call GTK directly.
-	switch m.Method {
+func (w *webview) handleInternal(method string, params json.RawMessage) bool {
+	// Script-message handlers run on the GTK main context, so the window
+	// drags below can call GTK directly.
+	switch method {
 	case internalWindowDrag:
-		w.beginMoveDrag(parseDragRequest(m.Params))
-		return
+		w.beginMoveDrag(parseDragRequest(params))
 	case internalWindowResize:
-		w.beginResizeDrag(parseDragRequest(m.Params))
-		return
+		w.beginResizeDrag(parseDragRequest(params))
 	case internalWindowToggleMaximize:
 		// Double-click on a drag box (see the tracker in view.go): flip
 		// between maximized and normal.
 		w.toggleMaximize()
-		return
-	case internalBindError:
-		// A live bind/unbind install failed on the page (R5): the engines'
-		// install Eval is fire-and-forget, so the failure would otherwise be
-		// swallowed silently - log it.
-		handleInternalBindError(m.Params)
-		return
+	default:
+		return false
 	}
-	w.mu.Lock()
-	b, ok := w.bindings[m.Method]
-	w.mu.Unlock()
-	if !ok || b.kind != bindingFunc {
-		return
-	}
-	w.calls.do(func() {
-		status, result := callAndMarshal(b.fn, m.ID, string(m.Params))
-		w.resolve(m.ID, status, result)
-	})
-}
-
-func (w *webview) resolve(id string, status int, resultJSON string) {
-	js := fmt.Sprintf("window.__webview__.onReply(%s, %d, %s)",
-		marshalJSON(id), status, marshalJSON(resultJSON))
-	dispatchMain(func() { w.Eval(js) })
+	return true
 }
 
 // bridgePostFn for the WebKit backends (macOS WKWebView, Linux WebKitGTK): the

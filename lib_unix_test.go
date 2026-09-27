@@ -124,7 +124,7 @@ func embedScenario() string {
 	if err := testApp().Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
-	owns := w.w.ownsWindow
+	owns := native(w).ownsWindow
 	w.Close()
 	// Host must still be alive after Close (this call would fault on a freed
 	// widget), then tear it down ourselves. gtk_window_resize is GTK3-only;
@@ -168,7 +168,7 @@ func bridgeScenario() string {
 	})
 	time.AfterFunc(15*time.Second, func() { w.Close() })
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body><script>
+	native(w).loadHTML(`<!DOCTYPE html><html><body><script>
 window.addEventListener('load', async function(){
   try {
     var s = await window.add(20, 22);
@@ -207,7 +207,7 @@ func errorUnbindScenario() string {
 	_ = w.w.Unbind("temp")
 	time.AfterFunc(15*time.Second, func() { w.Close() })
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body><script>
+	native(w).loadHTML(`<!DOCTYPE html><html><body><script>
 window.addEventListener('load', async function(){
   var msg = 'temp=' + (typeof window.temp);
   try { await window.boom(); msg += ' boom=nope'; }
@@ -252,7 +252,7 @@ func richTypesScenario() string {
 	})
 	time.AfterFunc(15*time.Second, func() { w.Close() })
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body><script>
+	native(w).loadHTML(`<!DOCTYPE html><html><body><script>
 window.addEventListener('load', async function(){
   try {
     var p = await window.echoPoint({X:1, Y:2});

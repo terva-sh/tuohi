@@ -66,13 +66,13 @@ func winCloseViaUIScenario() string {
 		return "new error: " + err.Error()
 	}
 	defer w.Close()
-	hwnd := w.w.window
+	hwnd := native(w).window
 
 	var watchdogFired atomic.Bool
 	time.AfterFunc(2*time.Second, func() { postMessageW(hwnd, wmClose, 0, 0) })
 	time.AfterFunc(40*time.Second, func() { watchdogFired.Store(true); w.Close() })
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body>close test</body></html>`)
+	native(w).loadHTML(`<!DOCTYPE html><html><body>close test</body></html>`)
 	w.w.Run() // must return once WM_CLOSE posts WM_QUIT
 
 	if watchdogFired.Load() {
@@ -98,7 +98,7 @@ func winEmbedScenario() string {
 	if err := testApp().Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
-	owns := w.w.ownsWindow
+	owns := native(w).ownsWindow
 
 	// The embedded View must follow the host window. SetWindowPos SENDS
 	// WM_SIZE synchronously through the subclass chain, so right after it
@@ -107,7 +107,7 @@ func winEmbedScenario() string {
 	setWindowPos(host, 0, 0, 0, 500, 400, swpNoZOrder|swpNoActivate|swpNoMove)
 	var want, got rect
 	getClientRect(host, &want)
-	asController(w.w.controller).getBounds(&got)
+	asController(native(w).controller).getBounds(&got)
 	if got != want {
 		w.Close()
 		destroyWindow(host)
@@ -182,7 +182,7 @@ func winBridgeScenario() string {
 	})
 	time.AfterFunc(40*time.Second, func() { w.Close() }) // watchdog
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body><script>
+	native(w).loadHTML(`<!DOCTYPE html><html><body><script>
 window.addEventListener('load', async function(){
   try {
     var s = await window.add(20, 22);
@@ -226,7 +226,7 @@ func winErrorUnbindScenario() string {
 	_ = w.w.Unbind("temp")
 	time.AfterFunc(40*time.Second, func() { w.Close() })
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body><script>
+	native(w).loadHTML(`<!DOCTYPE html><html><body><script>
 window.addEventListener('load', async function(){
   var msg = 'temp=' + (typeof window.temp);
   try { await window.boom(); msg += ' boom=nope'; }
@@ -273,7 +273,7 @@ func winRichTypesScenario() string {
 	})
 	time.AfterFunc(40*time.Second, func() { w.Close() })
 
-	w.w.loadHTML(`<!DOCTYPE html><html><body><script>
+	native(w).loadHTML(`<!DOCTYPE html><html><body><script>
 window.addEventListener('load', async function(){
   try {
     var p = await window.echoPoint({X:1, Y:2});
