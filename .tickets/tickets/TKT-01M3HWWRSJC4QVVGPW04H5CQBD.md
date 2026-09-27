@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T19:01:57Z
+updated_at: 2026-09-27T19:29:11Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -69,12 +69,37 @@ From terva-sh/meta TKT-01M3HS2HHEKMNZCGCBMYMHA37P (Create the tuohi repository a
 
 ## Acceptance criteria
 
-- [ ] A design doc in docs/ records package boundaries, the platform interface, and the public API
-- [ ] Each input listed in this ticket has a recorded decision
-- [ ] A ticket is filed for each change the review calls for
+- [x] A design doc in docs/ records package boundaries, the platform interface, and the public API
+- [x] Each input listed in this ticket has a recorded decision
+- [x] A ticket is filed for each change the review calls for
+
+## Implementation plan
+
+### Method
+
+1. Four read-only investigators each mapped one slice of the source, with file:line evidence and inferences marked:
+   - the engine boundary, threading, and the FFI layer;
+   - the public API, packages, dependencies, side effects, hygiene, and the Go minimum;
+   - the bridge protocol, the trust points, navigation hooks, and permissions;
+   - the desktop services and the borrowed code.
+2. Load-bearing claims were checked by hand before they went into the doc: the loopback idle timeout, the missing Host check, the macOS message body, the single-instance unlink order, the `validateScheme` allow-list, and x/sys's declared Go version.
+3. git-ticket-canvas's `docs/desktop-shell.md` and TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J (Open the loopback canvas in a native window) define the consumer the design serves first.
+4. The owner decided the three choices that change the public API or other repositories: the package split, the Go minimum, and `file:` in `App.Open`. The rest are technical, and each is decided in `docs/architecture.md` with the alternative and why it lost.
 
 ## Notes
 
 **agent:claude-code/t3code-92c88910** at 2026-09-27T18:22:05Z
 
 An input from PR #3's review of TKT-01M3HWWRRXTAR4T01SK79Z4BSM: decide the lifecycle rule for UI calls made after the main loop has stopped for good. On Unix every marshalled call, now including Destroy, queues on the default GLib context and runs only if the UI thread iterates again. Windows behaves the same, and macOS's performOnMain waits instead. Pick one rule, and say what happens to a Close from a goroutine after App.Wait returns.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T19:29:11Z
+
+### Owner decisions, 2026-09-27
+
+- **Package layout:** move the desktop services out of the root package. Rejected: one package. Recorded in TKT-01M3J59M1H9PZ04J2C9JJZ7V13 (Move desktop services out of the root package).
+- **Go minimum:** 1.26. Rejected: 1.25 with a pinned old x/sys. Recorded on TKT-01M3HWWRXMN56AG2GNC3M92GWZ (Decide tuohi's support tiers and make CI match them).
+- **`App.Open`:** drop `file:`. Rejected: keep it and document the risk. Recorded in TKT-01M3J59M32VGK83J7JKYPKSHJE (Drop file: from the schemes App.Open accepts).
+
+### On criterion 2
+
+"Support tiers and testing" was answered by handing the tier choice to TKT-01M3HWWRXMN56AG2GNC3M92GWZ, which already owns it, with the facts it needs recorded in the doc. The review chose no tiers itself. Every other input has a decision in `docs/architecture.md`.
