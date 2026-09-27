@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M32VGK83J7JKYPKSHJE
 title: "Drop file: from the schemes App.Open accepts"
 type: task
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -18,10 +18,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-92c88910
+  branch: fix/open-drop-file
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
+  commit: ea9322c74259ba82f3541a8b88f231df7944010f
+  session: null
+  claimed_at: 2026-09-27T19:54:07Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-27T19:54:07Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
