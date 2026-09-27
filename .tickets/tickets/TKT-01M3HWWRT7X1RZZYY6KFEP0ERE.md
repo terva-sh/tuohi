@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T20:10:52Z
+updated_at: 2026-09-27T20:15:07Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -93,3 +93,28 @@ See `docs/architecture.md`, under "The bridge answers only the origins a view tr
 **agent:claude-code/t3code-92c88910** at 2026-09-27T19:36:38Z
 
 Supersedes the Allowlist bullet in the decisions note, which said an App.FS view defaults to 'the app origin'. The default is the origin of the URL the engine actually loads, after resolveURL: `app://` on Linux, `https://app.localhost` on Windows, and the temporary loopback server's `http://localhost:PORT` on macOS, or wherever `App.HTTP` applies. The loopback port changes with every server, so the gate must read it from the resolved URL, not from a constant. Deriving it from `app://` would reject the application's own page on macOS. Found by terva-review on tuohi PR #4.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T20:15:07Z
+
+### First part landed on branch feat/bridge-origin-gate
+
+- **The allowlist.** `viewCore.origins`, filled by `trustURL`. Every engine's `Navigate` calls it with the URL it is about to load, after any app:// rewrite, and `loadHTML` trusts `about:blank`. `View.Origins` adds more. So the default is the origin the page really has, which answers the terva-review finding about macOS's loopback port.
+- **Go's own navigations are trusted.** Rather than only the first URL as the decisions note said, every URL the application gives `Navigate` is trusted, because the application chose it. Page-initiated navigations, redirects, and frames are not.
+- **The gate.** It sits at the top of the shared `onMessage(body, senderURL, senderKnown)`, before parsing. Bindings, events, and internal messages all pass through it.
+- **Linux sender.** `webkit_web_view_get_uri` at receipt, which is the top-level page. A null URI is untrusted. Frames are not distinguished yet: an iframe on an untrusted origin inside a trusted page can still post. The isolated script world closes that, and is a later part.
+- **macOS and Windows** pass `senderKnown=false`, which is allowed, so their behaviour is unchanged until their sender checks land. Each is its own pull request, per the owner's decision recorded on TKT-01M3HWWRXMN56AG2GNC3M92GWZ.
+- **Also fixed:** toggle maximize is ignored on framed windows on all three engines, and bind-error log text is quoted with `%q`.
+
+### Verified
+
+- **Unit tests:** `TestOriginOf` and `TestViewCoreTrusts`.
+- **`TestOriginGate`** on both WebKitGTK stacks, 3 of 3 runs. With the gate disabled it fails with `untrusted=1`, so it tests the gate.
+- **`just ci`** passes, and golangci-lint reports 0 issues on darwin, linux, and windows.
+
+### Remaining parts
+
+1. The macOS sender check: `message.frameInfo`, main frame only, security origin. Fold in TKT-01M3J59M3SQBSXV2KVZEFBNBAV's body type check, since it is the same line.
+2. The Windows sender check: `GetSource`.
+3. The Linux isolated script world, for frames.
+4. The navigation policy on each engine.
+5. Injection limited to trusted origins.
