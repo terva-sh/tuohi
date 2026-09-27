@@ -380,7 +380,8 @@ func TestWaitReturnsAfterLastWindowCloses(t *testing.T) {
 // the "hit" binding and then fetches /done. The view first reaches the page
 // through a navigation the page itself starts, so its origin is untrusted and
 // the call must not arrive. Go then navigates to the same page, which trusts
-// its origin, and the call must arrive.
+// its origin, and the call must arrive, although Go names the origin in a
+// spelling WebKit canonicalizes.
 func originGateScenario() string {
 	done := make(chan struct{}, 4)
 	serve := func(r *request) *response {
@@ -429,7 +430,11 @@ window.addEventListener('load', function(){
 			return
 		}
 		untrusted := hits.Load()
-		w.w.Dispatch(func() { w.w.Navigate(base + "/page") })
+		// Navigate with a spelling the engine canonicalizes (mixed-case
+		// host, zero-padded port): the trusted origin must still match the
+		// URI WebKit reports for the page.
+		loose := strings.Replace(base, "http://localhost:", "http://LocalHost:0", 1)
+		w.w.Dispatch(func() { w.w.Navigate(loose + "/page") })
 		if !wait() {
 			result <- "trusted page never loaded"
 			w.Close()

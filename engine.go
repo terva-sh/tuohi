@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
 
 	"github.com/terva-sh/tuohi/dialog"
+	"golang.org/x/net/idna"
 )
 
 // engine is the platform boundary: everything the shared code needs from a
@@ -148,11 +150,14 @@ func (c *viewCore) trusts(senderURL string, known bool) bool {
 	return c.origins[o]
 }
 
-// originOf returns the origin of rawurl in the form the bridge compares:
-// scheme://host[:port] in lower case, with the scheme's default port
-// dropped. A URL with no host, such as about:blank or data:, is its own
-// origin: the whole URL without its fragment. An unparsable URL, or one with
-// no scheme, has no origin and is never trusted.
+// originOf returns the origin of rawurl in the form the bridge compares, and
+// in the form a browser reports it, so a URL given to Navigate matches the
+// URI the engine later names as the sender: scheme://host[:port] with the
+// scheme in lower case, the host canonicalized as the WHATWG URL standard
+// does (see canonicalHost), and the port as a number with the scheme's
+// default dropped. A URL with no host, such as about:blank or data:, is its
+// own origin: the whole URL without its fragment. An unparsable URL, or one
+// with no scheme, has no origin and is never trusted.
 func originOf(rawurl string) string {
 	u, err := url.Parse(rawurl)
 	if err != nil || u.Scheme == "" {
@@ -164,17 +169,116 @@ func originOf(rawurl string) string {
 		u.Scheme = scheme
 		return u.String()
 	}
-	host := strings.ToLower(u.Hostname())
-	port := u.Port()
-	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
-		port = ""
+	host, ok := canonicalHost(u.Hostname())
+	if !ok {
+		return ""
+	}
+	port := ""
+	if p := u.Port(); p != "" {
+		n, err := strconv.ParseUint(p, 10, 16)
+		if err != nil {
+			return ""
+		}
+		isDefault := (scheme == "http" && n == 80) || (scheme == "https" && n == 443)
+		if !isDefault {
+			port = strconv.FormatUint(n, 10)
+		}
 	}
 	if port != "" {
-		host = net.JoinHostPort(host, port)
-	} else if strings.Contains(host, ":") {
-		host = "[" + host + "]"
+		return scheme + "://" + net.JoinHostPort(host, port)
+	}
+	if strings.Contains(host, ":") {
+		return scheme + "://[" + host + "]"
 	}
 	return scheme + "://" + host
+}
+
+// canonicalHost returns host as a browser serializes it: an IPv6 address in
+// its compressed form, an IPv4 address in dotted decimal however it was
+// written (127.1, 0x7f.0.0.1, 2130706433), and a domain name lower case in
+// its IDNA ASCII form (bücher.example becomes xn--bcher-kva.example).
+func canonicalHost(host string) (string, bool) {
+	if strings.Contains(host, ":") {
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return "", false
+		}
+		return ip.String(), true
+	}
+	if endsInNumber(host) {
+		// A host whose last label is a number must be an IPv4 address; a
+		// browser rejects the URL otherwise (256.0.0.1, 1.2.3.4.5).
+		return parseWHATWGIPv4(host)
+	}
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err != nil || ascii == "" {
+		return "", false
+	}
+	return strings.ToLower(ascii), true
+}
+
+// endsInNumber reports whether host's last label, ignoring one trailing dot,
+// is all decimal digits or a 0x hex number: the WHATWG test for a host that
+// must parse as IPv4.
+func endsInNumber(host string) bool {
+	labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+	last := labels[len(labels)-1]
+	if last == "" {
+		return false
+	}
+	if strings.Trim(last, "0123456789") == "" {
+		return true
+	}
+	if len(last) >= 2 && (last[:2] == "0x" || last[:2] == "0X") {
+		return strings.Trim(last[2:], "0123456789abcdefABCDEF") == ""
+	}
+	return false
+}
+
+// parseWHATWGIPv4 parses host by the WHATWG URL standard's IPv4 rules: one to
+// four dot-separated parts, each decimal, octal with a leading 0, or hex with
+// 0x; the last part fills the remaining bytes. It reports false for a host
+// that is not a valid IPv4 address.
+func parseWHATWGIPv4(host string) (string, bool) {
+	parts := strings.Split(strings.TrimSuffix(host, "."), ".")
+	if len(parts) == 0 || len(parts) > 4 {
+		return "", false
+	}
+	nums := make([]uint64, len(parts))
+	for i, p := range parts {
+		base := 10
+		switch {
+		case len(p) > 1 && (strings.HasPrefix(p, "0x") || strings.HasPrefix(p, "0X")):
+			p, base = p[2:], 16
+		case len(p) > 1 && p[0] == '0':
+			p, base = p[1:], 8
+		}
+		if p == "" {
+			if base == 16 {
+				nums[i] = 0 // "0x" alone is zero
+				continue
+			}
+			return "", false
+		}
+		n, err := strconv.ParseUint(p, base, 64)
+		if err != nil {
+			return "", false
+		}
+		nums[i] = n
+	}
+	var v uint64
+	for i, n := range nums[:len(nums)-1] {
+		if n > 255 {
+			return "", false
+		}
+		v |= n << (8 * uint(3-i))
+	}
+	last := nums[len(nums)-1]
+	if last >= 1<<(8*uint(5-len(nums))) {
+		return "", false
+	}
+	v |= last
+	return fmt.Sprintf("%d.%d.%d.%d", v>>24, (v>>16)&0xff, (v>>8)&0xff, v&0xff), true
 }
 
 // bridgeMessage is the envelope window.__webview__ posts for every call.

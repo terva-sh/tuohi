@@ -19,6 +19,20 @@ func TestOriginOf(t *testing.T) {
 		"/relative/path":                   "",
 		"example.com":                      "",
 		"http://%zz":                       "",
+		// Canonicalized the way a browser reports the URL.
+		"http://127.0.0.1:080/":          "http://127.0.0.1",
+		"http://127.0.0.1:08080/":        "http://127.0.0.1:8080",
+		"http://127.1:8080/":             "http://127.0.0.1:8080",
+		"http://0x7f.0.0.1:8080/":        "http://127.0.0.1:8080",
+		"http://2130706433:8080/":        "http://127.0.0.1:8080",
+		"http://0177.0.0.1:8080/":        "http://127.0.0.1:8080",
+		"http://[0:0:0:0:0:0:0:1]:9000/": "http://[::1]:9000",
+		"http://B\u00fccher.example/":    "http://xn--bcher-kva.example",
+		"http://example.com:99999/":      "",
+		"http://256.0.0.1/":              "",
+		"http://1.2.3.4.5/":              "",
+		"http://example.123/":            "",
+		"http://1.example/":              "http://1.example",
 	}
 	for in, want := range cases {
 		if got := originOf(in); got != want {
