@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T17:24:52Z
+updated_at: 2026-09-27T17:27:43Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -106,3 +106,9 @@ The scenarios now run, but the first one, `bridgeScenario`, crashes the test bin
 ### A change not in the plan
 
 `just test-gui` used to stop at the first failing stack, because the recipe runs under `bash -e`. With the probe fixed, that meant the 4.1 stack never ran. The recipe now collects failures and exits at the end.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T17:27:43Z
+
+### Review disposition, PR #2, terva-review run e79f04b7 on da538f2
+
+- **medium: Keep GUI probing behind the -short check. Fixed in cb1ef0f.** The finding was correct: `TestMain` called `guiAvailable()` before checking `testing.Short()`, so `-short` with a display ran bwrap and `ensureInit()`. It now checks `-short` first. Verified with a fake `bwrap` on PATH that records its calls: it is not called under `-short`, and it is called without it. `just ci` passes.
