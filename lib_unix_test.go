@@ -89,9 +89,10 @@ var guiSkipReason string
 func TestMain(m *testing.M) {
 	flag.Parse()
 	runtime.LockOSThread()
-	ok, why := guiAvailable()
-	if testing.Short() {
-		ok, why = false, "GUI scenarios skipped under -short"
+	// -short never probes: the probe runs bwrap and loads the GTK stack.
+	ok, why := false, "GUI scenarios skipped under -short"
+	if !testing.Short() {
+		ok, why = guiAvailable()
 	}
 	guiSkipReason = why
 	if ok {
