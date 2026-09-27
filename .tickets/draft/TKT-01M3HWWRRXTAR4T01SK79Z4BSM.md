@@ -21,13 +21,13 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T16:59:08Z
+updated_at: 2026-09-27T17:24:52Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/d3685535
-  name: Claude Code local agent
+  id: agent:claude-code/t3code-92c88910
+  name: ""
 extensions: {}
 ---
 
@@ -54,3 +54,16 @@ The probe fix, which is what lets these scenarios run at all.
 - [ ] The cause of the WebKitGTK 4.1 SIGSEGV in Destroy is found and fixed
 - [ ] The GTK4 abort is either fixed or shown to be the test display's missing GL, with the harness adjusted
 - [ ] just test-gui passes on both stacks with CGO_ENABLED=0
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T17:24:52Z
+
+### Observations from TKT-01M3HWWRR6V1YA9Q01NKW6E6ZG's verification (2026-09-27, b8b54ad, CGO_ENABLED=0)
+
+With the probe fixed, `just test-gui` reaches the scenarios on both stacks. The first scenario, `bridgeScenario`, crashes on its deferred `View.Close` (lib_unix_test.go:151). The signatures differ from this ticket's description and vary between runs:
+
+- **webkitgtk-6.0 (GTK4):** run 1 gave a SIGSEGV and run 2 a SIGABRT, both after `Gdk-WARNING gdk_gl_context_make_current() failed`, both at `lib_unix.go:1025`, which is `gtkWindowClose(w.window)` in `Destroy`.
+- **webkit2gtk-4.1 (GTK3):** `GLib-GObject-CRITICAL g_object_unref: assertion 'G_IS_OBJECT (object)' failed`, then SIGABRT at `lib_unix.go:1050`. That is the same site as the cgo-on trace recorded above, so it is not cgo-specific.
+
+The runs used no `LIBGL_ALWAYS_SOFTWARE` and no `WEBKIT_DISABLE_COMPOSITING_MODE`, both of which GitHub's unix job sets.

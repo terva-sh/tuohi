@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T17:23:10Z
+updated_at: 2026-09-27T17:24:52Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -57,8 +57,8 @@ Probe with a real root, for example `--ro-bind / /`. Also make a skip visible: w
 
 ## Acceptance criteria
 
-- [ ] The availability probe succeeds where bubblewrap can create a user namespace
-- [ ] just test-gui fails when a display is present and a GUI scenario skips
+- [x] The availability probe succeeds where bubblewrap can create a user namespace
+- [x] just test-gui fails when a display is present and a GUI scenario skips
 - [ ] The five Linux GUI scenarios run under just test-gui on Debian 13
 
 ## Implementation plan
@@ -86,3 +86,23 @@ With the probe fixed, the scenarios run and crash in `Destroy`. That is TKT-01M3
 ### Out of scope, noted
 
 GitHub's unix jobs run the GUI tests without `-v` and with cgo on, because `CGO_ENABLED` is unset, so their logs cannot show whether the scenarios ran. Whether GitHub should set `TUOHI_REQUIRE_GUI` belongs to TKT-01M3HWWRX (Decide tuohi's support tiers and make CI match them).
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-27T17:24:52Z
+
+### Verified at b8b54ad (2026-09-27, Debian 13, CGO_ENABLED=0)
+
+- **Probe:** `bwrap --unshare-user --ro-bind / / -- $(command -v true)` exits 0, so the probe now reports WebKit runnable.
+- **Headless:** with no display, the scenarios still skip, and the message now gives the reason ("no display: ...").
+- **Strict mode:** with a display, a forced read-only `XDG_RUNTIME_DIR`, and `TUOHI_REQUIRE_GUI=1`, `TestBridge` FAILs with the reason. Without the variable it SKIPs.
+- **`just test-gui`:** it now runs both stacks and exits 1, naming both.
+- **`just ci`:** passes.
+
+### Acceptance criterion 3 is left unticked
+
+The scenarios now run, but the first one, `bridgeScenario`, crashes the test binary in `View.Close` → `(*webview).Destroy`, so the other four never start. "The five scenarios run" becomes true only when TKT-01M3HWWRRXTAR4T01SK79Z4BSM (Linux GUI scenarios crash in view teardown on both WebKitGTK stacks) lands, and its "just test-gui passes on both stacks" criterion covers it.
+
+### A change not in the plan
+
+`just test-gui` used to stop at the first failing stack, because the recipe runs under `bash -e`. With the probe fixed, that meant the 4.1 stack never ran. The recipe now collects failures and exits at the end.
