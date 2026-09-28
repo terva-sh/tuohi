@@ -2,7 +2,6 @@ package tuohi
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,8 +20,6 @@ var resNavPolicy atomic.Value // string
 // After each step Go asks the page to report its URL through a binding. A
 // view still on the trusted page answers; a view that left it does not,
 // because no other page gets the bridge.
-//
-//nolint:unused // the macOS TestMain runs it once the macOS navigation hook lands (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
 func navPolicyScenario() string {
 	var frameRan atomic.Bool
 	untrusted, closeUntrusted, err := servePlain(func(target string) (string, string) {
@@ -143,9 +140,6 @@ func navPolicyScenario() string {
 // is dropped, that a new window to a trusted origin loads in the view, and
 // that a cross-origin frame is left alone.
 func TestNavigationPolicy(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("this engine has no navigation hook yet (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE)")
-	}
 	got, _ := resNavPolicy.Load().(string)
 	requireGUI(t, got)
 	want := "link=stay redirect=stay popup=stay data=stay mailto=stay trustedpopup=at T/page?popup blank=left frameRan=true " +
