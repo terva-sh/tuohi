@@ -17,10 +17,10 @@
 package tuohi
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1257,16 +1257,22 @@ func (w *webview) Navigate(url string) {
 	asWebView2(w.webview2).Navigate(utf16(url))
 }
 
-// loadHTML loads html as a base64 data: URL, used by tests only.
+// loadHTML loads html from a temporary loopback server, used by tests only.
 // NavigateToString would put the page at about:blank, which cannot be
-// trusted (see originOf). A data: URL is keyed by the whole URL, which is its
-// own content, so trusting it trusts exactly this page.
+// trusted (see originOf). A data: URL did not work either: its bridge calls
+// never reached the gate as a trusted sender on WebView2. A loopback page has
+// an ordinary http origin, and Navigate trusts it. The server stops itself
+// after loopbackIdleTimeout without a request.
 func (w *webview) loadHTML(html string) {
-	url := "data:text/html;charset=utf-8;base64," + base64.StdEncoding.EncodeToString([]byte(html))
-	w.trustURL(url)
-	if w.webview2 != 0 {
-		asWebView2(w.webview2).Navigate(utf16(url))
+	body := []byte(html)
+	_, base, err := listenLoopbackHTTP(func(*request) *response {
+		return &response{Body: body, MIME: "text/html; charset=utf-8"}
+	})
+	if err != nil {
+		log.Printf("appkit: loadHTML: %v", err)
+		return
 	}
+	w.Navigate(base + "/")
 }
 
 func (w *webview) Eval(js string) {
