@@ -246,10 +246,12 @@ call a view's Go bindings) carries out:
     `message.frameInfo`, so macOS can accept main-frame messages from allowed
     origins exactly.
   - WebView2 gives the top-level source through the message's `GetSource`.
-    For a data: document it reports `about:blank`, so then the sender is
-    read from the view's own `GetSource`. The message event carries only the
-    top-level document's messages, so that is the page that sent it, and the
-    token covers a navigation in between, as on WebKitGTK.
+    For a data: document it reports `about:blank`, and so does the view's
+    own `get_Source`. The sender is then the URI `NavigationStarting` named
+    for the navigation whose document last committed, at `ContentLoading`,
+    which comes before any of the page's scripts run. The message event carries only
+    the top-level document's messages, so that is the page that sent it, and
+    the token covers a navigation in between, as on WebKitGTK.
   - WebKitGTK gives no frame with `script-message-received`, and the URI it
     reports is read when the message arrives. The token covers both: a frame
     from another origin cannot read it, and a document that was never trusted
