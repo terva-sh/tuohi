@@ -21,12 +21,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-28T22:16:17Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
@@ -50,3 +50,9 @@ On macOS, AppKit must run on the main thread. tuohi locks the thread that first 
 - [ ] The darwin engine keeps the main goroutine on the main thread
 - [ ] Show and Wait called off the main thread with no loop owner return an error instead of misbehaving
 - [ ] The package docs show a loopback consumer with its server in a goroutine and the window on main
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:16:17Z
+
+TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to call from any goroutine) adds a shared UI dispatcher. On macOS its onUIThread hook treats every goroutine as the UI thread once the first webview is created off the main thread with no loop running (uiIsMain false), because nothing drains a queue on that thread. terva-review raised this on PR #24, and it was deferred here: refusing that shape, as this ticket plans, is the fix. Once it is refused, the '!uiIsMain' case in onUIThread and performOnMain can go.

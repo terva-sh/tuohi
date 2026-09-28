@@ -23,7 +23,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-09-28T22:03:31Z
+updated_at: 2026-09-28T22:16:17Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -57,3 +57,9 @@ The inventory for TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to
 
 - [ ] App.Show from a goroutine off the UI thread either creates the window on the UI thread or returns an error, on every engine
 - [ ] A GUI scenario covers it on every engine
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:16:17Z
+
+From review of PR #24: two concurrent first App.Show calls on the same View both see it unshown (View.live() is nil until setup finishes) and both create a window. Settle this together with Show from a goroutine.

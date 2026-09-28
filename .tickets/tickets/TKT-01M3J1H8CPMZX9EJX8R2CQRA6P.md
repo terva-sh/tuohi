@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T22:12:12Z
+updated_at: 2026-09-28T22:16:17Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -178,3 +178,25 @@ GitHub run 36490213869, on 865f6be (the code, plus the Linux-evidence note), pas
 2. **Medium: keep Close from unregistering a concurrently re-shown View.** Fixed. `appScope.views` maps each View to its engine, and `unregisterView(v, w)` deletes the entry only when it still names `w`. Serializing Show with the whole teardown was rejected because it can deadlock on macOS: `Destroy` waits for the main thread through `performOnMain`, and the main thread could be inside `App.Show`, waiting for the same lock. Test: `TestViewCloseKeepsReshownRegistration`. With an unconditional delete it fails.
 
 After the fixes, `just ci`, `just test-gui` on both stacks, and golangci-lint on linux, darwin and windows all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:16:17Z
+
+### Review disposition for PR #24, round 2 (terva-review run 14521, on 2aba774)
+
+Both round-1 findings were reported resolved.
+
+1. **High: prevent queued View calls from running after Close.** Fixed.
+   - View methods queue through `View.onUI`. When the closure runs, it checks that the View still holds the engine it was queued for, and drops itself otherwise.
+   - `App.Show`'s reveal path does the same through `onUIWith`.
+   - Unix `Navigate` also returns once its web view is gone, as `Eval` and `Focus` already did.
+   - Test: `TestViewQueuedCallDroppedAfterClose`. With the check removed it fails.
+   - An alternative was to give `ui.run` operations a state and cancel a view's pending ones on Close. It was rejected because the dispatcher would need to know which view each operation belongs to, and the check at run time covers the same case with one comparison.
+2. **High: do not expose an engine to Close before Show finishes initializing it.** Fixed. `showFirst` keeps the engine private until it is set up and registered, then publishes `view.w` and `view.app` together. A Close before that finds the View unshown and is a no-op, the same as closing a View that was never shown. No headless test: `showFirst` needs a real engine. The existing GUI scenarios all go through it and pass.
+3. **High: macOS treats every thread as the UI thread after creation off main.** Deferred to TKT-01M3J59M5V12QW1WRBEJPJ5H38 (Make the macOS main-thread rule explicit and enforced).
+   - This is not a regression. The old `performOnMain` also ran everything inline when `uiIsMain` was false.
+   - In that shape nothing drains a queue on the thread that created the view, so there is nowhere to marshal to. AppKit is already off the main thread, whatever tuohi does.
+   - TKT-01M3J59M5V refuses the shape outright. The limit is now documented on `onUIThread`.
+
+Still open, and not part of this ticket: two concurrent first `App.Show` calls on one View both see it unshown and both create a window. That belongs with TKT-01M3N0PTQ7ZY1X78PX70SZ56AN (Let App.Show create a window from any goroutine).
+
+After the fixes, `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
