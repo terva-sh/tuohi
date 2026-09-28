@@ -424,7 +424,10 @@ func encodeOpaque(s string, decode bool, also string) string {
 // parses as written. Given one it cannot, NSURL encodes the whole string
 // again, '%' included, and WKWebView loads a document whose %20 is the text
 // "%20": GitHub run 36382395146. The body is decoded before it is keyed, so
-// the extra escapes leave the key as it was.
+// the extra escapes leave its key as it was. The metadata is keyed as
+// written, so there they change the key, which is still the key of the URL
+// Navigate loads and trusts; a quoted MIME parameter reaches the page
+// escaped, as NSURL would have left it anyway.
 func canonicalNavigateURL(rawurl string) string {
 	trimmed := strings.TrimFunc(rawurl, func(r rune) bool { return r <= ' ' })
 	scheme, rest, ok := splitOpaque(trimmed)
@@ -434,7 +437,7 @@ func canonicalNavigateURL(rawurl string) string {
 	rest, fragment, hasFragment := strings.Cut(rest, "#")
 	out := scheme + ":" + canonicalOpaque(scheme, rest)
 	if head, body, hasBody := strings.Cut(rest, ","); scheme == "data" && hasBody {
-		out = scheme + ":" + encodeOpaque(head, false, "") + "," + encodeOpaque(body, true, "%#"+rfc3986Disallowed)
+		out = scheme + ":" + encodeOpaque(head, false, rfc3986Disallowed) + "," + encodeOpaque(body, true, "%#"+rfc3986Disallowed)
 	}
 	if hasFragment {
 		out += "#" + encodeOpaque(fragment, false, "#"+rfc3986Disallowed)

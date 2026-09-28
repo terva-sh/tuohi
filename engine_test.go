@@ -219,6 +219,7 @@ func TestNavigateURLParsesAsWritten(t *testing.T) {
 		"data:text/html,<!DOCTYPE html><p class=\"a\">{x|y}^`[z]\\</p>\n<i>100%</i>#<frag> \"q\"",
 		"data:text/html,%3Cp%3Ea%20b%3C/p%3E",
 		"data:text/plain%2C<p>a,b",
+		"data:text/plain;charset=\"utf-8\",hello", // terva-review finding on PR #18
 	} {
 		got := canonicalNavigateURL(in)
 		for i := 0; i < len(got); i++ {
@@ -228,15 +229,14 @@ func TestNavigateURLParsesAsWritten(t *testing.T) {
 				continue
 			}
 			if c <= ' ' || c >= 0x7F || strings.IndexByte("%"+rfc3986Disallowed, c) >= 0 {
-				if !strings.HasPrefix(in, "data:text/plain%2C") || i >= strings.IndexByte(got, ',') {
-					t.Errorf("canonicalNavigateURL(%q) = %q: byte %q at %d", in, got, c, i)
-					break
-				}
+				t.Errorf("canonicalNavigateURL(%q) = %q: byte %q at %d", in, got, c, i)
+				break
 			}
 		}
 		// Navigate encodes a raw newline rather than strip it; see
-		// TestOpaqueKeyKeepsEscapedNewlines.
-		if want := originOf(strings.ReplaceAll(in, "\n", "%0A")); originOf(got) != want {
+		// TestOpaqueKeyKeepsEscapedNewlines. The metadata's new escapes
+		// change its key, so only a body's key is compared.
+		if want := originOf(strings.ReplaceAll(in, "\n", "%0A")); !strings.ContainsAny(in[:strings.IndexByte(in, ',')], rfc3986Disallowed) && originOf(got) != want {
 			t.Errorf("originOf(canonicalNavigateURL(%q)) = %q, want %q", in, originOf(got), want)
 		}
 		if again := canonicalNavigateURL(got); again != got {

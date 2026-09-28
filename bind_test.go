@@ -497,6 +497,7 @@ func TestBridgeGate(t *testing.T) {
 		"data:text/html,a%23b%2Cc#frag",
 		"data:text/html,100%",
 		"mailto:<a>@b.invalid?subject=<x> \"q\"&t='s'",
+		"data:text/plain;charset=\"utf-8\",<p>hello",
 	}
 	// Navigate loads and trusts each URL in its canonical form.
 	for i, u := range trusted {
