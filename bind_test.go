@@ -491,6 +491,16 @@ func TestBridgeGate(t *testing.T) {
 		"http://bücher.example/",
 		"data:text/html,<p>hi</p>#frag",
 		"data:text/html,<p>a b</p>\n<i>\"q\" é</i>?x y<z>&k=%41#frag",
+		"data:text/html,<p>a b</p>\n<i>'r'</i>?x y&k='z'", // loaded below as WebView2 and NSURL spell it
+		"data:text/html,%3Cp%3E%F0%9F%99%82%20ok%3C/p%3E",
+		"data:text/plain,<p>a,b",
+		"data:text/html,a%23b%2Cc#frag",
+		"data:text/html,100%",
+		"mailto:<a>@b.invalid?subject=<x> \"q\"&t='s'",
+	}
+	// Navigate loads and trusts each URL in its canonical form.
+	for i, u := range trusted {
+		trusted[i] = canonicalNavigateURL(u)
 	}
 	var c viewCore
 	c.trustURLs(trusted)
@@ -511,6 +521,12 @@ func TestBridgeGate(t *testing.T) {
 		loads = append(loads, load{URL: u, Top: true, Want: true, GoKey: originOf(u)})
 	}
 	loads = append(loads,
+		// Go trusted the spelling above; the engine may report another.
+		load{URL: "data:text/html,<p>a b</p>%0A<i>'r'</i>?x%20y&k=%27z%27", Top: true, Want: true},
+		load{URL: "data:text/html,%3Cp%3Ea%20b%3C/p%3E%0A%3Ci%3E%27r%27%3C/i%3E?x%20y&k=%27z%27", Top: true, Want: true},
+		load{URL: "mailto:<a>@b.invalid?subject=%3Cx%3E%20%22q%22&t='s'", Top: true, Want: true},
+		// An escaped comma in the metadata is not the comma that ends it.
+		load{URL: "data:text/plain%2C<p>a,b", Top: true},
 		load{URL: "http://localhost:8081/page", Top: true},
 		load{URL: "http://localhost:8080/page", Top: false},
 		load{URL: "about:blank", Top: true},

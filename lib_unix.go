@@ -1281,6 +1281,7 @@ func (w *webview) Navigate(url string) {
 	// the HTTP origin), or - with no server up - the engine serves the app://
 	// scheme natively.
 	url = w.resolveURL(url)
+	url = canonicalNavigateURL(url)
 	w.trust(url)
 	webkitWebViewLoadURI(w.webview, url)
 }

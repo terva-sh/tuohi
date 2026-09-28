@@ -241,9 +241,9 @@ func (c *viewCore) trusts(senderURL string, known bool) bool {
 //     document inherits the origin of whoever created it, so any page can
 //     make one. They are never trusted.
 //   - Any other URL with an opaque path, such as data:, is keyed by the whole
-//     URL without its fragment, serialized as a browser does (see opaqueKey).
-//     A data: URL is its own content, so only the exact page Go loaded
-//     matches, however Go spelled it.
+//     URL without its fragment, in a canonical form every engine's spelling
+//     reduces to (see opaqueKey). A data: URL is its own content, so only
+//     the page Go loaded matches, however Go or the engine spelled it.
 //
 // Like a browser, it first strips leading and trailing C0 controls and
 // spaces, and removes every tab and newline: a data: URL built from
@@ -339,34 +339,112 @@ func splitOpaque(rawurl string) (scheme, rest string, ok bool) {
 	return scheme, rest, true
 }
 
-// opaqueKey serializes an opaque-path URL without its fragment as the WHATWG
-// URL standard does, which is how WebKit reports it: the path keeps
-// everything but C0 controls and non-ASCII bytes, which are percent-encoded;
-// the query, for a non-special scheme, also encodes space, '"', '#', '<', and
-// '>'. Existing percent-escapes are kept as they are.
+// opaqueKey returns the key of an opaque-path URL: the scheme, a colon, and
+// what follows, without its fragment, in one canonical form (see
+// canonicalOpaque). The engines do not spell such a URL alike: WebKitGTK
+// percent-encodes the query and keeps the path raw, WebView2 also encodes
+// quotes, and NSURL may encode more still. The canonical form makes those
+// spellings of one document agree, without making two documents agree. The
+// bridge script computes the same key in the page (see initBridgeGate), and
+// TestBridgeGate holds the two together.
 func opaqueKey(scheme, rest string) string {
 	rest, _, _ = strings.Cut(rest, "#")
-	path, query, hasQuery := strings.Cut(rest, "?")
-	key := scheme + ":" + percentEncode(path, "")
-	if hasQuery {
-		key += "?" + percentEncode(query, ` "#<>`)
-	}
-	return key
+	return scheme + ":" + canonicalOpaque(scheme, rest)
 }
 
-// percentEncode percent-encodes, in upper-case hex, every byte of s that is a
-// C0 control, is above '~', or is in extra.
-func percentEncode(s, extra string) string {
+// canonicalOpaque is the canonical form of rest, what follows the colon of an
+// opaque-path URL with the given scheme, without its fragment.
+//
+// Only a data: URL's body is percent-decoded by the fetch standard's data:
+// URL processor, so only there are an escape and the byte it names the same
+// document. The body, after the first raw comma, is decoded and encoded again
+// one way: every byte that is a space, a control, '%', '#', or not ASCII.
+// '#' stays escaped, so decoding never starts a fragment. An escaped tab or
+// newline is content and stays; only a raw one, which a browser strips before
+// parsing, is gone by now (see originOf), and Navigate never passes one on
+// (see canonicalNavigateURL).
+//
+// Everything else is kept as written, escapes included: a data: URL's
+// metadata, where %2C is not the comma that ends it, and every other scheme.
+// Only its raw spaces, controls and non-ASCII bytes are encoded, which is how
+// an engine that encodes them spells it, and in another scheme's query, after
+// the first '?', also '"', '<' and '>', which the URL standard's query
+// percent-encode set adds for a URL that is not special.
+func canonicalOpaque(scheme, rest string) string {
+	if scheme == "data" {
+		head, body, hasBody := strings.Cut(rest, ",")
+		out := encodeOpaque(head, false, "")
+		if hasBody {
+			out += "," + encodeOpaque(body, true, "%#")
+		}
+		return out
+	}
+	if path, query, hasQuery := strings.Cut(rest, "?"); hasQuery {
+		return encodeOpaque(path, false, "") + "?" + encodeOpaque(query, false, `"<>`)
+	}
+	return encodeOpaque(rest, false, "")
+}
+
+// encodeOpaque percent-encodes, in upper-case hex, every byte of s that is a
+// space, a control, not ASCII, or in also. With decode, it first decodes
+// every valid escape; a '%' that starts no valid escape is then a literal
+// percent sign, written %25 when also holds '%'. Without decode, a '%' is
+// kept as written.
+func encodeOpaque(s string, decode bool, also string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c < 0x20 || c > 0x7E || strings.IndexByte(extra, c) >= 0 {
+		if decode && c == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]) {
+			c = unhex(s[i+1])<<4 | unhex(s[i+2])
+			i += 2
+		} else if c == '%' && !decode {
+			b.WriteByte(c) // kept as written
+			continue
+		}
+		if c <= ' ' || c >= 0x7F || strings.IndexByte(also, c) >= 0 {
 			fmt.Fprintf(&b, "%%%02X", c)
 			continue
 		}
 		b.WriteByte(c)
 	}
 	return b.String()
+}
+
+// canonicalNavigateURL is the URL every engine's Navigate loads and trusts in
+// place of rawurl. For an opaque-path URL, such as a data: URL built from
+// multi-line HTML, it percent-encodes the raw tabs and newlines instead of
+// leaving them to the engine: WebKitGTK strips them, as the WHATWG URL
+// standard says, while WebView2 keeps them as %0A, so the same string would
+// load two different documents, and a newline can end a // comment in an
+// inline script. The rest is put in canonicalOpaque's form, with the
+// fragment kept. Any other URL is returned unchanged.
+func canonicalNavigateURL(rawurl string) string {
+	trimmed := strings.TrimFunc(rawurl, func(r rune) bool { return r <= ' ' })
+	scheme, rest, ok := splitOpaque(trimmed)
+	if !ok || scheme == "about" {
+		return rawurl
+	}
+	rest, fragment, hasFragment := strings.Cut(rest, "#")
+	out := scheme + ":" + canonicalOpaque(scheme, rest)
+	if hasFragment {
+		out += "#" + fragment
+	}
+	return out
+}
+
+func isHex(c byte) bool {
+	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }
 
 // unescapeHost percent-decodes the host of a scheme://host[:port]/... URL and

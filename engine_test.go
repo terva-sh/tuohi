@@ -1,6 +1,9 @@
 package tuohi
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestOriginOf(t *testing.T) {
 	cases := map[string]string{
@@ -45,13 +48,13 @@ func TestOriginOf(t *testing.T) {
 		"http://[1::]/":                  "http://[1::]",
 		"http://１２７.１:8080/":             "http://127.0.0.1:8080",
 		"http://1.example/":              "http://1.example",
-		// Opaque-path URLs, keyed as WebKit reports them: tabs and newlines
-		// dropped, the query percent-encoded, the fragment removed. The
-		// first is the spelling WebKitGTK 2.52 reported for it.
-		"data:text/html,<p>a b</p>\t<i>\"q\" 'r'</i>?x y<z>é&k=%41#frag": `data:text/html,<p>a b</p><i>"q" 'r'</i>?x%20y%3Cz%3E%C3%A9&k=%41`,
+		// Opaque-path URLs, in the canonical form: escapes decoded, tabs and
+		// newlines dropped, spaces, controls, '%' and non-ASCII encoded.
+		"data:text/html,<p>a b</p>\t<i>\"q\" 'r'</i>?x y<z>é&k=%41#frag": `data:text/html,<p>a%20b</p><i>"q"%20'r'</i>?x%20y<z>%C3%A9&k=A`,
 		"  data:text/html,a\nb\r\n  ":                                    "data:text/html,ab",
 		"DATA:text/html,x":                                               "data:text/html,x",
-		"data:text/html,100%":                                            "data:text/html,100%",
+		"data:text/html,100%":                                            "data:text/html,100%25",
+		"data:text/html,%zz":                                             "data:text/html,%25zz",
 		"data:text/html,é":                                               "data:text/html,%C3%A9",
 		"About:blank":                                                    "",
 		"mailto:a@b.invalid":                                             "mailto:a@b.invalid",
@@ -122,5 +125,87 @@ func TestNavigationPolicy_Decisions(t *testing.T) {
 		if got := c.navigationPolicy(u); got != want {
 			t.Errorf("navigationPolicy(%q) = %d, want %d", u, got, want)
 		}
+	}
+}
+
+// TestOpaqueKeyAgreesAcrossEngines checks that every engine's spelling of the
+// URL Navigate loads gets one key. The spellings follow what each engine
+// reported: WebKitGTK 2.52 in a probe, WebView2 in GitHub run 36380534759,
+// and the fully percent-encoded form NSURL may produce.
+func TestOpaqueKeyAgreesAcrossEngines(t *testing.T) {
+	loaded := canonicalNavigateURL("data:text/html,<p>a b</p>\n<i>'r'</i>?x y&k='z'")
+	if strings.ContainsAny(loaded, "\t\n\r") {
+		t.Fatalf("canonicalNavigateURL left raw whitespace: %q", loaded)
+	}
+	want := originOf(loaded)
+	for _, s := range []string{
+		"data:text/html,<p>a b</p>%0A<i>'r'</i>?x%20y&k=%27z%27",                       // WebKitGTK and WebView2
+		"data:text/html,%3Cp%3Ea%20b%3C/p%3E%0A%3Ci%3E%27r%27%3C/i%3E?x%20y&k=%27z%27", // fully encoded
+	} {
+		if got := originOf(s); got != want {
+			t.Errorf("originOf(%q) = %q, want %q", s, got, want)
+		}
+	}
+}
+
+// TestOpaqueKeyEncodesQueryPunctuation checks that another scheme's query is
+// keyed as a browser serializes it: the URL standard's query percent-encode
+// set encodes '"', '<' and '>' there, but not in the path. terva-review
+// finding on PR #17.
+func TestOpaqueKeyEncodesQueryPunctuation(t *testing.T) {
+	want := "mailto:<a>@b.invalid?subject=%3Cx%3E%20%22q%22&t='s'"
+	for _, s := range []string{
+		"mailto:<a>@b.invalid?subject=<x> \"q\"&t='s'",
+		"mailto:<a>@b.invalid?subject=%3Cx%3E%20%22q%22&t='s'",
+	} {
+		if got := originOf(s); got != want {
+			t.Errorf("originOf(%q) = %q, want %q", s, got, want)
+		}
+	}
+}
+
+// TestOpaqueKeyKeepsDataMetadata checks that a data: URL's metadata, before
+// its first raw comma, is never decoded: %2C there is not the comma that ends
+// it, so decoding it moves where the body starts. Nor does decoding a body
+// ever start a fragment. terva-review finding on PR #17.
+func TestOpaqueKeyKeepsDataMetadata(t *testing.T) {
+	if originOf("data:text/plain%2Cfoo,bar") == originOf("data:text/plain,foo,bar") {
+		t.Error("an escaped comma in the metadata shares a key with a raw one")
+	}
+	for in, want := range map[string]string{
+		"data:text/plain%2Cfoo,bar":      "data:text/plain%2Cfoo,bar",
+		"data:text/html,a%23b#frag":      "data:text/html,a%23b#frag",
+		"data:text/html;charset=a b,x y": "data:text/html;charset=a%20b,x%20y",
+		"mailto:a%2Cb@x.invalid":         "mailto:a%2Cb@x.invalid",
+	} {
+		if got := canonicalNavigateURL(in); got != want {
+			t.Errorf("canonicalNavigateURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestOpaqueKeyKeepsEscapedNewlines checks that an escaped newline is content:
+// two data: URLs that differ only by one are different documents, and must
+// not share a key. terva-review finding on PR #17.
+func TestOpaqueKeyKeepsEscapedNewlines(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"data:text/html,ab%0Acd", "data:text/html,abcd"},
+		{"data:text/html,a%09b", "data:text/html,ab"},
+		{"data:text/html,a%0D%0Ab", "data:text/html,ab"},
+	} {
+		if originOf(pair[0]) == originOf(pair[1]) {
+			t.Errorf("originOf(%q) == originOf(%q) = %q", pair[0], pair[1], originOf(pair[0]))
+		}
+	}
+	// A raw newline is stripped before parsing, as a browser does, so it is
+	// not content; Navigate encodes it instead of passing it on.
+	if originOf("data:text/html,ab\ncd") != originOf("data:text/html,abcd") {
+		t.Error("a raw newline changed the key")
+	}
+	if got, want := canonicalNavigateURL(" data:text/html,a\nb#f "), "data:text/html,a%0Ab#f"; got != want {
+		t.Errorf("canonicalNavigateURL = %q, want %q", got, want)
+	}
+	if got := canonicalNavigateURL("http://x/a b"); got != "http://x/a b" {
+		t.Errorf("canonicalNavigateURL changed a URL with a host: %q", got)
 	}
 }

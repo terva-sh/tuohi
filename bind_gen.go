@@ -59,18 +59,65 @@ func marshalJSON(msg string) string {
 // hook between initBridgeHead and initBridgeTail.
 //
 // The gate runs before anything else in the document, so the page cannot have
-// changed location or Object.prototype yet. It computes the document's origin
-// key the way originOf does in Go: scheme://host[:port] for a URL with a host,
-// which the engine has already canonicalized; the URL without its fragment
-// for any other URL, such as data:; and nothing for about:. A document that
-// is not the top frame, or whose key is not trusted, gets no bridge at all,
-// and never holds the token.
+// changed location, String.prototype or Object.prototype yet. It computes the
+// document's origin key the way originOf does in Go: scheme://host[:port] for
+// a URL with a host, which the engine has already canonicalized; for any other
+// URL, such as data:, the URL without its fragment in canonicalOpaque's form
+// (a data: body's escapes decoded and encoded again one way, another scheme's
+// query given the URL standard's escapes, everything else kept as written);
+// and nothing for about:. A document
+// that is not the top frame, or whose key is not trusted, gets no bridge at
+// all, and never holds the token.
 const initBridgeGate = `
+  function encodeOpaque(s, decode, also) {
+    var bytes = [], i, j, c, u, out = '';
+    for (i = 0; i < s.length; i++) {
+      c = s.charCodeAt(i);
+      if (c === 37) {
+        if (decode && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) {
+          bytes.push(parseInt(s.substr(i + 1, 2), 16));
+          i += 2;
+        } else {
+          bytes.push(decode ? 37 : -1);
+        }
+      } else if (c < 128) {
+        bytes.push(c);
+      } else {
+        u = s.charAt(i);
+        if (c >= 0xD800 && c < 0xDC00) { u += s.charAt(++i); }
+        try { u = unescape(encodeURIComponent(u)); } catch (e) { u = ''; }
+        for (j = 0; j < u.length; j++) { bytes.push(u.charCodeAt(j)); }
+      }
+    }
+    for (i = 0; i < bytes.length; i++) {
+      c = bytes[i];
+      if (c === -1) {
+        out += '%';
+      } else if (c <= 32 || c >= 127 || also.indexOf(String.fromCharCode(c)) >= 0) {
+        out += '%' + (c < 16 ? '0' : '') + c.toString(16).toUpperCase();
+      } else {
+        out += String.fromCharCode(c);
+      }
+    }
+    return out;
+  }
+  function canonicalOpaque(href) {
+    var colon = href.indexOf(':'), scheme = href.slice(0, colon), rest = href.slice(colon + 1);
+    var cut;
+    if (scheme === 'data') {
+      cut = rest.indexOf(',');
+      if (cut < 0) { return scheme + ':' + encodeOpaque(rest, false, ''); }
+      return scheme + ':' + encodeOpaque(rest.slice(0, cut), false, '') + ',' + encodeOpaque(rest.slice(cut + 1), true, '%#');
+    }
+    cut = rest.indexOf('?');
+    if (cut < 0) { return scheme + ':' + encodeOpaque(rest, false, ''); }
+    return scheme + ':' + encodeOpaque(rest.slice(0, cut), false, '') + '?' + encodeOpaque(rest.slice(cut + 1), false, '"<>');
+  }
   if (window.top !== window) { return; }
   var loc = window.location;
   var key = '';
   if (loc.protocol !== 'about:') {
-    key = loc.host ? loc.protocol + '//' + loc.host : loc.href.split('#')[0];
+    key = loc.host ? loc.protocol + '//' + loc.host : canonicalOpaque(loc.href.split('#')[0]);
   }
   if (!key || !Object.prototype.hasOwnProperty.call(trusted, key)) { return; }
 `

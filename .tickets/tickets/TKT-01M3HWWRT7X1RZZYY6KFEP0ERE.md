@@ -31,12 +31,12 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:02:50Z
+updated_at: 2026-09-28T05:29:42Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-83e85fc3
+  id: agent:claude-code/bridge-trust-3
   name: ""
 extensions: {}
 ---
@@ -537,3 +537,79 @@ Nothing may be handed to the system. `pageshow` also fires when back and forward
 - **What the scenario collects.** On a failure, `TestDataURLCanUseBindings` has the page report what it sees through an image request to a loopback server: `window.chrome`, `chrome.webview`, the bridge, the binding, and its own `href`. "The page never reported" means it did not load.
 - **On Windows only,** a failure skips with that report instead of failing CI.
 - **Then decide:** fix it, or document that `data:` pages cannot use bindings on Windows.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T05:14:44Z
+
+### PR #16 merged, and GitHub went red on macOS: fixed forward on branch fix/data-url-key
+
+#### GitHub run 36380534759 on b1e1f5b
+
+- **Linux and lint** passed.
+- **Windows:**
+  - `TestLoopbackAppDefaultPolicy` passed.
+  - `TestDataURLCanUseBindings` skipped with "the page never reported".
+  - The log shows that the policy refused Go's own `data:` navigation. WebView2 spells it with newlines as `%0A` and with `%27` and `%20` in the query.
+- **macOS** failed `TestDataURLCanUseBindings`: "no call, and the page never reported". Its log does not say whether NSURL refused the string or the key did not match.
+
+#### Cause
+
+The engines disagree on how to spell an opaque-path URL:
+
+- WebKitGTK follows WHATWG;
+- WebView2 keeps newlines encoded and encodes more of the query;
+- NSURL may encode more still.
+
+PR #16 matched only WebKitGTK.
+
+#### Fix
+
+- **One key for every spelling.** `opaqueKey` now decodes every valid escape, drops tabs and newlines, and encodes again one way: spaces, controls, `%`, and non-ASCII. That is sound because a `data:` URL's content is percent-decoded before use, so every spelling names the same document.
+- **The page side** computes the same key in `canonicalOpaque`.
+- **Tests:**
+  - `TestOpaqueKeyAgreesAcrossEngines` covers the Go, WebKitGTK, WebView2, and fully-encoded spellings.
+  - `TestBridgeGate` trusts Go's spelling and loads the others. With the page side reverted, it fails.
+- **macOS diagnostics.** `Navigate` now logs when NSURL refuses a URL, instead of loading nothing silently.
+
+#### Rejected: comparing data: URLs by their decoded content only
+
+It is what this is, except that re-encoding keeps the key printable. Without that, the key embedded in the script would carry raw control bytes.
+
+#### Still to learn from the next run
+
+- **macOS:** whether the page now loads. If NSURL refuses the string, the log will say so, and the fix is to percent-encode before `URLWithString:`.
+- **Windows:** whether a `data:` page can reach the bridge at all, from the page's own report.
+- **Criterion 4:** it is met on Linux and Windows, and gets ticked when macOS passes.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T05:19:45Z
+
+### Review disposition, PR #17, terva-review run 559c4774 on 1d37797
+
+- **high: do not discard percent-encoded newlines from data URL keys. Fixed in d27ee1a.**
+  - **The finding is right.** `data:text/html,ab%0Acd` and `data:text/html,abcd` shared a key, although a newline is content: it can end a `//` comment in an inline script.
+  - **Why the dropping was there.** It covered a real ambiguity. Given a raw newline, WebKitGTK strips it (WHATWG), while WebView2 keeps it as `%0A`, so one Go string loaded two different documents.
+  - **The fix removes that ambiguity at its source.** Every engine's `Navigate` passes the URL through `canonicalNavigateURL`, which percent-encodes the raw tabs and newlines of an opaque-path URL before trusting and loading it.
+  - **The key.** `canonicalOpaque` and the page-side copy now keep a decoded tab or newline as content. `originOf` still strips a raw one, as a browser does, but `Navigate` never passes one on.
+  - **Test.** `TestOpaqueKeyKeepsEscapedNewlines` covers the finding's example, a tab, and CRLF. With the dropping restored, it and `TestBridgeGate` fail.
+  - **A side effect worth knowing.** A multi-line `data:` View.URL now keeps its newlines on WebKitGTK too, where they used to be stripped. That matches WebView2, and what the author wrote.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T05:24:52Z
+
+### Review disposition, PR #17, terva-review run 330c1943 on 5fa1ef0
+
+- **The earlier finding, escaped newlines,** is confirmed resolved by this review.
+- **high: do not decode data URL metadata when rewriting or keying the URL. Fixed in 779d57a.**
+  - **The finding is right.** `data:text/plain%2Cfoo,bar` was rewritten to `data:text/plain,foo,bar`, which moves where the body starts, and the two shared a key. Decoding `%23` in the URL `Navigate` loads could also start a fragment.
+  - **The rule applied.** The fetch standard's `data:` URL processor percent-decodes only the body, after the first raw comma.
+  - **What `canonicalOpaque` does now:**
+    - It decodes and re-encodes only that body, and always writes `%` and `#` escaped.
+    - It keeps the metadata, and every other opaque scheme, as written, encoding only raw spaces, controls, and non-ASCII bytes.
+  - **The page side** does the same.
+  - **Tests.** `TestOpaqueKeyKeepsDataMetadata` and a `TestBridgeGate` load of `data:text/plain%2C<p>a,b` cover it. Decoding the metadata again fails the first in Go and the second in the page.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:29:42Z
+
+### Review 3 disposition (ready-review-3)
+
+**medium, query punctuation for non-data opaque URLs: fixed in ff779d9.** The finding is right: the URL standard's query percent-encode set for a URL that is not special adds `"`, `<` and `>`, while its opaque-path set does not. `canonicalOpaque` now splits a non-data URL at the first `?` and encodes those three in the query only, in Go and in the bridge gate's JavaScript, through a shared `also` set on `encodeOpaque`. data: is unaffected, since its body is decoded and re-encoded one way.
+
+Tests: `TestOpaqueKeyEncodesQueryPunctuation` (Go), and a mailto: case in `TestBridgeGate` whose browser key comes from node's WHATWG `URL`. Both fail with the query split reverted and pass with it. Lint on linux/darwin/windows/freebsd, `just ci`, and `just test-gui` pass locally.
