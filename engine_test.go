@@ -86,3 +86,31 @@ func TestViewCoreTrusts(t *testing.T) {
 		t.Error("trusts with an unknown sender = false, want true")
 	}
 }
+
+func TestNavigationPolicy_Decisions(t *testing.T) {
+	var c viewCore
+	c.trustURL("http://127.0.0.1:8080/start")
+	c.trustURL("data:text/html,<p>app</p>")
+	cases := map[string]navAction{
+		"http://127.0.0.1:8080/other":    navProceed,
+		"HTTP://127.0.0.1:8080/x?y#z":    navProceed,
+		"data:text/html,<p>app</p>#frag": navProceed, // Go's own data: page
+		"about:blank":                    navProceed,
+		"ABOUT:BLANK#top":                navProceed,
+		"http://127.0.0.1:8081/":         navExternal,
+		"https://example.com/login":      navExternal,
+		"mailto:someone@example.invalid": navExternal,
+		"about:srcdoc":                   navCancel,
+		"data:text/html,<p>other</p>":    navCancel,
+		"blob:http://127.0.0.1:8080/abc": navCancel,
+		"file:///etc/passwd":             navCancel,
+		"vscode://file/x":                navCancel,
+		"javascript:alert(1)":            navCancel,
+		"not a url":                      navCancel,
+	}
+	for u, want := range cases {
+		if got := c.navigationPolicy(u); got != want {
+			t.Errorf("navigationPolicy(%q) = %d, want %d", u, got, want)
+		}
+	}
+}

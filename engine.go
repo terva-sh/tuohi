@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
 	"net/url"
@@ -452,6 +453,71 @@ func parseWHATWGIPv4(host string) (string, bool) {
 	}
 	v |= last
 	return fmt.Sprintf("%d.%d.%d.%d", v>>24, (v>>16)&0xff, (v>>8)&0xff, v&0xff), true
+}
+
+// navAction is what the navigation policy does with a top-level navigation
+// the page started.
+type navAction int
+
+const (
+	// navProceed lets the navigation go ahead in the view.
+	navProceed navAction = iota
+	// navExternal cancels it in the view and hands the URL to the system,
+	// as App.Open does.
+	navExternal
+	// navCancel cancels it and nothing opens.
+	navCancel
+)
+
+// navigationPolicy decides a top-level navigation to rawurl, the rule every
+// engine's navigation hook applies:
+//   - a trusted origin proceeds, which covers every URL Go navigated to;
+//   - about:blank proceeds, because it is empty and gets no bridge, and
+//     Navigate("") loads it;
+//   - a URL App.Open accepts (http, https, mailto) opens in the system;
+//   - anything else, such as data:, blob:, file:, or a custom scheme, is
+//     cancelled.
+//
+// A redirect is decided the same way, by the URL it leads to. Frames are
+// never passed here: the bridge token keeps them from Go, and cancelling
+// them would break embedded content.
+func (c *viewCore) navigationPolicy(rawurl string) navAction {
+	if c.trusts(rawurl, true) {
+		return navProceed
+	}
+	if u, err := url.Parse(rawurl); err == nil &&
+		strings.EqualFold(u.Scheme, "about") && strings.EqualFold(u.Opaque, "blank") {
+		return navProceed
+	}
+	if validateScheme(rawurl) == nil {
+		return navExternal
+	}
+	return navCancel
+}
+
+// refuseNavigation carries out a navigation the policy did not let proceed,
+// after the engine has cancelled it in the view: it opens the URL in the
+// system when action is navExternal, and logs it otherwise, so a developer
+// can see why a click did nothing.
+//
+//nolint:unused // only the Unix engine calls it until the Windows and macOS navigation hooks land (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
+func refuseNavigation(rawurl string, action navAction) {
+	if action == navExternal {
+		openExternal(rawurl)
+		return
+	}
+	log.Printf("tuohi: navigation to %q refused: not a trusted origin, and not a URL the system may open", rawurl)
+}
+
+// openExternal hands a refused navigation's URL to the system browser or mail
+// client, without blocking the UI thread it is called on. Tests replace it,
+// on the UI thread before a view exists, so that no browser starts.
+var openExternal = func(rawurl string) {
+	go func() {
+		if err := openURL(rawurl); err != nil {
+			log.Printf("tuohi: open %q: %v", rawurl, err)
+		}
+	}()
 }
 
 // bridgeMessage is the envelope window.__webview__ posts for every call.

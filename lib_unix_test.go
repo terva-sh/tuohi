@@ -103,6 +103,7 @@ func TestMain(m *testing.M) {
 		resWaitClose.Store(waitCloseScenario())
 		resOriginGate.Store(originGateScenario())
 		resFrameGate.Store(frameGateScenario())
+		resNavPolicy.Store(navPolicyScenario())
 	}
 	os.Exit(m.Run())
 }
