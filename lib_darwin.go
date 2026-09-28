@@ -651,8 +651,7 @@ type webview struct {
 	maximized  bool
 	minimized  bool
 
-	isSizeSet         bool
-	isInitScriptAdded bool
+	isSizeSet bool
 
 	// closed is closed when this window goes away (user close or Destroy);
 	// Run() waits on it instead of re-running NSApp when the run loop already
@@ -783,8 +782,9 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 		w.scriptHandler = handler // kept so Destroy can drop its registry entry
 		w.manager.Send(sel("addScriptMessageHandler:name:"), handler, nsstr("__webview__"))
 
-		w.pushUserScript(createInitScript(bridgePostFn))
-		w.isInitScriptAdded = true
+		w.mu.Lock()
+		w.rebuildScriptsLocked() // installs the bridge
+		w.mu.Unlock()
 
 		widget := class("NSView").Send(sel("alloc")).Send(sel("initWithFrame:"), rect)
 		w.widget = widget.Send(sel("retain"))
@@ -1362,7 +1362,7 @@ func (w *webview) Navigate(url string) {
 			url = rewriteAppURL(w.contentBase, url)
 		}
 	}
-	w.trustURL(url)
+	w.trust(url)
 	performOnMain(func() {
 		autorelease(func() {
 			nsurl := class("NSURL").Send(sel("URLWithString:"), nsstr(url))
@@ -1372,8 +1372,21 @@ func (w *webview) Navigate(url string) {
 	})
 }
 
+// trust rebuilds the scripts on the main thread, where WKUserContentController
+// must be used, and returns once they are in place.
+func (w *webview) trust(urls ...string) {
+	if !w.trustURLs(urls) {
+		return
+	}
+	performOnMain(func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		w.rebuildScriptsLocked()
+	})
+}
+
 func (w *webview) loadHTML(html string) {
-	w.trustURL(loadHTMLBase)
+	w.trust(loadHTMLBase)
 	performOnMain(func() {
 		autorelease(func() {
 			base := class("NSURL").Send(sel("URLWithString:"), nsstr(loadHTMLBase))
@@ -1533,6 +1546,7 @@ func (w *webview) rebuildScriptsLocked() {
 	}
 	autorelease(func() {
 		w.manager.Send(sel("removeAllUserScripts"))
+		addWKUserScript(w.manager, w.bridgeScriptLocked(bridgePostFn))
 		for _, src := range w.userScriptSrcs {
 			addWKUserScript(w.manager, src)
 		}

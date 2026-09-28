@@ -233,8 +233,13 @@ call a view's Go bindings) carries out:
   on Windows, and the temporary server's `http://localhost:PORT` on macOS or
   under `App.HTTP`. That port changes with every server, so the gate reads it
   from the resolved URL. `View` gets a field to add more origins.
-- **The bridge is injected only into allowed origins,** and the reply side
-  refuses the rest where an engine cannot filter at injection.
+- **The bridge is installed only in allowed origins.** None of the three
+  engines filters document-start scripts by origin (WebKitGTK's allow list
+  ignores the port), so the script filters itself. It carries the view's
+  trusted origins and returns before defining anything unless it runs in the
+  top-level document of one of them. It also carries a random per-view token,
+  which `post` puts in front of every message and the gate requires. A
+  document on any other origin, or a frame, never holds the token.
 - **Every engine checks the sender at its one entry point,** with what that
   engine can see:
   - WKWebView gives the frame and its security origin in
@@ -242,9 +247,12 @@ call a view's Go bindings) carries out:
     origins exactly.
   - WebView2 gives the top-level source through `GetSource`, which is
     declared in the vtable but never called (`lib_windows.go:289`).
-  - WebKitGTK gives no frame with `script-message-received`, so on Linux the
-    handler moves into an isolated script world, out of reach of page and
-    iframe scripts, and the bridge relays into it.
+  - WebKitGTK gives no frame with `script-message-received`, and the URI it
+    reports is read when the message arrives. The token covers both: a frame
+    from another origin cannot read it, and a document that was never trusted
+    never received it. An isolated script world was the first plan. The token
+    replaced it because it does the same job on all three engines with one
+    mechanism.
 - **One gate for everything a page can send.** The events binding
   (`__appkit_event__`) and the internal window messages go through the same
   gate as ordinary bindings: drag, resize, toggle maximize, app regions, and

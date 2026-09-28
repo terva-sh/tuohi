@@ -22,21 +22,21 @@ blocks_on: none
 references: []
 moved_to: null
 claim:
-  actor: agent:claude-code/t3code-92c88910
-  branch: feat/bridge-origin-gate
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
-  commit: 9f7a0af129d0cb3b3d51f03c20ff3315750ea679
+  actor: agent:claude-code/t3code-83e85fc3
+  branch: t3code/resume-bridge-trust-work
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-83e85fc3
+  commit: 9515041d591f7e17a3111cb219e6dff20a7413b4
   session: null
-  claimed_at: 2026-09-27T20:10:52Z
+  claimed_at: 2026-09-28T02:41:41Z
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:28:03Z
+updated_at: 2026-09-28T02:54:06Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-83e85fc3
   name: ""
 extensions: {}
 ---
@@ -68,9 +68,46 @@ A loopback consumer's origin is `http://127.0.0.1:PORT`, so the default must cov
 ## Acceptance criteria
 
 - [ ] A page from an origin the application did not allow cannot call any binding, on all three engines
-- [ ] Every engine's message handler checks the sender's origin
+- [x] Every engine's message handler checks the sender's origin
 - [ ] Top-level navigation away from allowed origins is refused or opened in the system browser
 - [ ] A loopback-served interface works with the default policy
+
+## Implementation plan
+
+### Part 4: the bridge token, and the bridge only in trusted documents
+
+Picked up from the handoff of agent:claude-code/t3code-92c88910 on branch feat/bridge-document-token.
+
+#### Design
+
+- **One secret per view,** not per document. `viewCore` holds 32 random bytes from `crypto/rand`, hex-encoded, made when the view is created.
+- **The bridge script is generated, not stored.** `createInitScript` takes the post function, the token, and the trusted origin keys. Each engine's script rebuild puts it first, ahead of the `Init` scripts and the bind script. `trustURL` reports whether it added an origin, and `Navigate` and `View.Origins` rebuild the scripts when it did, before the load starts.
+- **The script decides at document start.** It computes the key `originOf` gives in Go: `protocol//host` for a URL with a host, the URL without its fragment otherwise, and nothing for `about:`. It also requires `window.top === window`. On a document that fails either test it returns before defining anything, so the page gets no `window.__webview__` and never sees the token. Page script cannot have changed `location` yet, because document-start scripts run first.
+- **post prefixes the token.** `post(message)` sends the 64 hex characters followed by the message. The prefix has a fixed length, so Go strips it without parsing or re-encoding the envelope, and every existing caller of `post` gets the token without change.
+- **The gate.** `onMessage` first requires the prefix, compared in constant time, then the sender check as today.
+
+#### What it closes
+
+- **Linux frames.** A frame's messages reach the same handler, but a cross-origin frame cannot read the top document's token.
+- **A message queued across a navigation.** A document on an untrusted origin never received the token, so its message is dropped whatever URI is current when it arrives.
+- **Inject only into trusted origins,** on all three engines, including WebView2, whose document-created scripts also run in frames.
+
+#### Alternatives rejected
+
+- **A fresh token per document.** The document-start scripts are static: each engine injects the same source into every document, so Go cannot hand each document its own secret. Rebuilding the scripts at each navigation commit races with the load. Evaluating a token into the page after commit races with page script, which could hook the bridge first. A per-view token that only trusted documents receive gives the same guarantee.
+- **WebKitGTK's user-script allow list** (`webkit_user_script_new`). It filters by URL pattern on Linux only. Neither WKWebView nor WebView2 has an equivalent, and WebKit's patterns do not match on port, which is the only thing distinguishing loopback origins.
+- **An envelope field for the token.** The internal messages in `view.go` and `bind_gen.go` build their own JSON and call `post`, so each would need changing, and a missing field would fail silently.
+
+#### Tests
+
+- `TestOriginGate`: the untrusted page also reports whether it has `window.__webview__`, and must not.
+- A new scenario for WebKit engines: a cross-origin frame inside a trusted page posts straight to the message handler, and must not reach a binding. A negative control: fails on Linux without the token check.
+- `TestGeneratedScriptsParse` and `TestBridgeScriptsBehavior`: the new template, with and without a trusted origin.
+- Unit tests: the token prefix check, and the JavaScript key agrees with `originOf` for the URL forms each engine loads.
+
+#### Not in this part
+
+The reply side: `resolve` and `Emit` evaluate into whatever document is current. After a navigation that is an untrusted page, which can define its own `window.__webview__` to receive the replies. I will file a separate ticket for it.
 
 ## Notes
 
@@ -197,3 +234,51 @@ Both findings fixed in 508953d.
 - **Cause, not established.** Either WebView2 reports a `data:` document's source differently from the navigated URL, or it does not give `data:` documents the bridge. Neither can be told apart without a Windows machine.
 - **Fix, on branch fix/windows-loadhtml-loopback.** `loadHTML` serves the page from a temporary loopback server and navigates to it.
 - **Consequence for applications:** a `View.URL` that is a `data:` URL probably cannot use bindings on Windows. The View.URL doc lists `data:`. Settle that with the navigation-policy work, by testing it on GitHub and either fixing it or documenting it.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:32:30Z
+
+Criterion 2 ticked: every engine's message handler checks the sender. Linux uses the top-level URI, macOS the main frame's request URL, and Windows GetSource. GitHub run 36370005911 on 5ba6945 passed TestOriginGate on all three engines, plus TestBadMessagesAreDropped on macOS. Criteria 1, 3, and 4 remain. Next is part 4, a per-document token that closes the Linux frame and queued-message gaps and limits bridge injection to trusted origins. Then comes the navigation policy on each engine.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T02:41:41Z
+
+claim taken from agent:claude-code/t3code-92c88910 by agent:claude-code/t3code-83e85fc3
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T02:50:55Z
+
+### Part 4 landed on branch feat/bridge-document-token: the bridge token
+
+The design is in the plan.
+
+- **Commit.** 832ed0c.
+- **Closes the two Linux gaps:** frames, and a message queued across a navigation. The bridge is also installed only in trusted top-level documents on all three engines.
+
+#### Verified
+
+- **New GUI scenario `TestFrameGate`,** run on every engine. A cross-origin frame inside a trusted page posts a well-formed message straight to the message channel.
+  - **Negative control:** with the token check removed from `onMessage`, it fails with `frameHits=1` on both WebKitGTK stacks. So the Linux frame gap was real, and the token closes it.
+  - **Why the frame is served without COEP or CORP.** The first version served the frame from `listenLoopbackHTTP`, and passed without the fix. The loopback server sends `COEP: require-corp` and `CORP: same-origin`, so the browser never loaded the frame. The scenario now uses a bare test server. `net/http` is forbidden by `check-imports`, test files included.
+- **`TestOriginGate`** also checks that the untrusted page has no `window.__webview__`. With the script's origin check removed, it fails with `bridge=yes`.
+- **`TestBridgeGate`** (node) loads the bridge at the locations node's WHATWG URL parser gives for each form Go trusts: mixed case with a padded port, `https://app.localhost`, `app://app`, IPv4-mapped IPv6, full-width digits, IDN, and `data:` with a fragment. The key the script computes must match `originOf` for each one. It also checks that frames, about:, and untrusted origins get no bridge. With the check removed, it fails.
+- **`TestCheckToken`:** the token prefix check.
+- **Local runs:** `just ci` and `just test-gui` pass on both stacks, and golangci-lint v2.13.1 reports 0 issues on linux, darwin, and windows.
+
+#### Not run locally
+
+macOS and Windows run on GitHub after the merge. On Windows, `rebuildScripts` now also runs from `Navigate` when the origin is new, and pumps the message loop there, as `Bind` already does.
+
+#### Criteria
+
+- **Criterion 1** stays unticked until GitHub passes on macOS and Windows.
+- **Reply side:** filed as TKT-01M3JYQWZB01CPZ938Y8C24PXX (Deliver binding replies and events only to trusted documents). Replies and events are still evaluated into whatever document is current.
+- **Remaining here:** the navigation policy on each engine, and settling `data:` `View.URL` on Windows.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T02:54:06Z
+
+### Review disposition, PR #11, terva-review run 07c6b492 on 4960c24
+
+- **low: require proof that the hostile frame ran before passing TestFrameGate. Fixed in 34b579c.**
+  - After posting, the frame fetches `/ran` from its own server. The scenario reports `frameRan=true frameHits=0` and requires both parts.
+  - This was the real failure mode found while writing the test: under `listenLoopbackHTTP`'s COEP and CORP headers the frame never loaded, and the test still passed.
+  - **Controls,** on WebKitGTK 6.0:
+    - frame script made to throw before the fetch: fails with `frameRan=false`;
+    - token check removed: fails with `frameHits=1`.
