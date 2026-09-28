@@ -3,6 +3,7 @@ package tuohi
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -33,6 +34,7 @@ var (
 	resRaise        atomic.Value // string
 	resExternalLoop atomic.Value // string
 	resWindowState  atomic.Value // string
+	resBadMessages  atomic.Value // string
 )
 
 func TestMain(m *testing.M) {
@@ -54,6 +56,8 @@ func TestMain(m *testing.M) {
 		resHitTest.Store(hitTestFirstMouseScenario())
 		resRaise.Store(raiseScenario())
 		resWindowState.Store(windowStateScenario())
+		resOriginGate.Store(originGateScenario())
+		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
 	}
@@ -679,5 +683,60 @@ func TestNewUnderAnExternalRunLoop(t *testing.T) {
 	requireGUI(t, got)
 	if got != want {
 		t.Fatalf("external run loop: got %q, want %q", got, want)
+	}
+}
+
+// badMessagesScenario posts what a hostile or careless page can post: bodies
+// that are not strings, and a well-formed bridge message from a frame. The
+// process must survive the first, the gate must drop the second, and the
+// page's own call must still arrive.
+func badMessagesScenario() string {
+	w := &View{}
+	if err := testApp().Show(w); err != nil {
+		return "new error: " + err.Error()
+	}
+	defer w.Close()
+
+	var hits atomic.Int32
+	done := make(chan string, 1)
+	_ = w.w.Bind("hit", func() { hits.Add(1) })
+	_ = w.w.Bind("done", func() {
+		select {
+		case done <- "":
+		default:
+		}
+		w.Close()
+	})
+	time.AfterFunc(15*time.Second, func() { w.Close() })
+
+	native(w).loadHTML(`<!DOCTYPE html><html><body>
+<iframe srcdoc="<script>window.webkit.messageHandlers.__webview__.postMessage(JSON.stringify({id:'f1',method:'hit',params:[]}));</script>"></iframe>
+<script>
+window.addEventListener('load', function(){
+  var h = window.webkit.messageHandlers.__webview__;
+  h.postMessage({});
+  h.postMessage(42);
+  h.postMessage(null);
+  h.postMessage([1, 2]);
+  setTimeout(function(){ window.done(); }, 500);
+});
+</script></body></html>`)
+	w.w.Run()
+
+	select {
+	case <-done:
+		return fmt.Sprintf("alive frameHits=%d", hits.Load())
+	default:
+		return "no report"
+	}
+}
+
+// TestBadMessagesAreDropped checks that non-string bodies cannot crash the
+// process and that a frame cannot call a binding.
+func TestBadMessagesAreDropped(t *testing.T) {
+	got, _ := resBadMessages.Load().(string)
+	requireGUI(t, got)
+	if got != "alive frameHits=0" {
+		t.Fatalf("bad messages = %q, want %q", got, "alive frameHits=0")
 	}
 }

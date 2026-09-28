@@ -1260,11 +1260,6 @@ func (w *webview) Navigate(url string) {
 	webkitWebViewLoadURI(w.webview, url)
 }
 
-// loadHTMLBase is the base URI loadHTML gives its page. about:blank cannot be
-// trusted (see originOf), so the page gets an origin of its own on a host
-// that never resolves, which no other page can navigate to.
-const loadHTMLBase = "http://loadhtml.tuohi.invalid/"
-
 func (w *webview) loadHTML(html string) {
 	w.trustURL(loadHTMLBase)
 	webkitWebViewLoadHTML(w.webview, html, loadHTMLBase)
