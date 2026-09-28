@@ -7,3 +7,4 @@ tickets, and the next fix pass overwrites it.
 | Epic | Title | Status |
 |---|---|---|
 | [TKT-01M3HWWRQGGD6BBZ02GFXQEG4D](draft/TKT-01M3HWWRQGGD6BBZ02GFXQEG4D.md) | Make tuohi ours: review, harden, and release v0.1.0 | draft |
+| [TKT-01M3MV9EBAGG435E6V7JFQHYA2](draft/TKT-01M3MV9EBAGG435E6V7JFQHYA2.md) | Capture problems tuohi's consumers find | draft |

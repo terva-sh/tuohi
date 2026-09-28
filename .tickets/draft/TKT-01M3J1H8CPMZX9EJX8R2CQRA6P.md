@@ -22,12 +22,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-27T19:35:06Z
+updated_at: 2026-09-28T20:29:09Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/c04aed4f
   name: ""
 extensions: {}
 ---
@@ -83,3 +83,7 @@ The rule instead:
 - **A caller waiting for a result gives up only when the loop is marked stopped,** never on a timer.
 - **A caller that gives up cancels its operation atomically.** If the operation has already started, the caller waits for it to finish. An operation that reported failure therefore never runs.
 - **A call made after the loop is marked stopped** returns an error at once, without queuing.
+
+**agent:claude-code/c04aed4f** at 2026-09-28T20:29:09Z
+
+Consumer report from git-ticket-canvas, working TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J (Open the loopback canvas in a native window) against v0.1.0-alpha.1. The canvas hit this outside a binding. Its GUI test drives the page with View.Eval from a test goroutine, and that is off the GTK thread for the same reason a binding is. The test calls Eval from View.Ready instead, which runs on the UI thread. So any goroutine is affected, not only bindings: a consumer's own background work is the more common caller. Filed under TKT-01M3MV9EBAGG435E6V7JFQHYA2 (Capture problems tuohi's consumers find).
