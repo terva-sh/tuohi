@@ -243,4 +243,9 @@ func TestNavigateURLParsesAsWritten(t *testing.T) {
 			t.Errorf("canonicalNavigateURL is not idempotent: %q then %q", got, again)
 		}
 	}
+	// Another scheme's fragment is kept as written: its handler gets the URL
+	// it was given. terva-review finding on PR #18.
+	if got, want := canonicalNavigateURL("custom:payload#<section>"), "custom:payload#<section>"; got != want {
+		t.Errorf("canonicalNavigateURL = %q, want %q", got, want)
+	}
 }
