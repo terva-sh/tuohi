@@ -337,7 +337,12 @@ jobs:
             echo "Release $tag already exists – refreshing its assets."
             gh release upload "$tag" --repo "$repo" dist/* --clobber
           else
-            gh release create "$tag" --repo "$repo" \
+            # A tag with a semver pre-release part, a hyphen before any
+            # +build metadata as in v0.1.0-alpha.1, is published as a
+            # pre-release, so GitHub never shows it as the latest release.
+            prerelease=()
+            if [[ "${tag%%+*}" == *-* ]]; then prerelease=(--prerelease); fi
+            gh release create "$tag" --repo "$repo" "${prerelease[@]}" \
               --title "$tag" --generate-notes --verify-tag dist/*
           fi
 

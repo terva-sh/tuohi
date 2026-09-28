@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRT7X1RZZYY6KFEP0ERE
 title: Let only trusted origins call a view's Go bindings
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -21,17 +21,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-83e85fc3
-  branch: t3code/resume-bridge-trust-work
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-83e85fc3
-  commit: 9515041d591f7e17a3111cb219e6dff20a7413b4
-  session: null
-  claimed_at: 2026-09-28T02:41:41Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T18:53:59Z
+updated_at: 2026-09-28T19:08:54Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -712,3 +705,24 @@ No unit test covers this: the handler runs only under WebView2. The branch is re
 A navigation that fails after starting, without a redirect, keeps its entry until the next `ContentLoading`. That handler drops every entry at or below its own ID, so the map stays small. Pruning at `NavigationCompleted` as well would need its navigation ID read there. That was left out as not worth another vtable method.
 
 Lint on four targets and `just ci` pass. GitHub run 36468042176 on 4b51a0c, just before this commit, was green on every job, with `TestDataURLCanUseBindings` passing on Windows.
+
+## Summary
+
+A page can call a view's Go bindings only when the view trusts it, on WebKitGTK, WKWebView, and WebView2. All four acceptance criteria are met, and GitHub run 36468906139 on main at 8542142 is green on every job.
+
+### Where it landed
+- **The bridge token.** Each view has a 64-hex secret. The bridge script is installed only in a top-level document whose origin key is trusted. Every message must start with the token, compared in constant time.
+- **The sender check.** Each engine also checks the sender's origin in `onMessage`, and logs a sender it drops. On Windows, a data: page's sender is read from the navigation that loaded it, because WebView2 names it `about:blank`.
+- **The navigation policy.** It runs at each engine's decision point:
+  - a trusted origin or about:blank proceeds;
+  - http, https and mailto open in the system browser;
+  - anything else is cancelled.
+  - New windows load in the same view when trusted, and are refused otherwise.
+- **Opaque URLs such as data: get one canonical key** that every engine's spelling reduces to. `canonicalNavigateURL` makes the loaded URL one NSURL parses as written.
+
+### PRs
+#11 through #14, then #16 through #18 and #20, with #19 superseded by #20. The design and the alternatives rejected are in `docs/architecture.md` and the notes on this ticket.
+
+### Left for other tickets
+- TKT-01M3JYQWZB01CPZ938Y8C24PXX (Deliver binding replies and events only to trusted documents)
+- TKT-01M3K439622PRJ1KHC91X4GCMQ (Fail GitHub CI when the Linux GUI scenarios do not run)
