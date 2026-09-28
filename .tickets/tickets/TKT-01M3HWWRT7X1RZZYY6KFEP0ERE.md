@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:02:50Z
+updated_at: 2026-09-28T05:14:44Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -537,3 +537,45 @@ Nothing may be handed to the system. `pageshow` also fires when back and forward
 - **What the scenario collects.** On a failure, `TestDataURLCanUseBindings` has the page report what it sees through an image request to a loopback server: `window.chrome`, `chrome.webview`, the bridge, the binding, and its own `href`. "The page never reported" means it did not load.
 - **On Windows only,** a failure skips with that report instead of failing CI.
 - **Then decide:** fix it, or document that `data:` pages cannot use bindings on Windows.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T05:14:44Z
+
+### PR #16 merged, and GitHub went red on macOS: fixed forward on branch fix/data-url-key
+
+#### GitHub run 36380534759 on b1e1f5b
+
+- **Linux and lint** passed.
+- **Windows:**
+  - `TestLoopbackAppDefaultPolicy` passed.
+  - `TestDataURLCanUseBindings` skipped with "the page never reported".
+  - The log shows that the policy refused Go's own `data:` navigation. WebView2 spells it with newlines as `%0A` and with `%27` and `%20` in the query.
+- **macOS** failed `TestDataURLCanUseBindings`: "no call, and the page never reported". Its log does not say whether NSURL refused the string or the key did not match.
+
+#### Cause
+
+The engines disagree on how to spell an opaque-path URL:
+
+- WebKitGTK follows WHATWG;
+- WebView2 keeps newlines encoded and encodes more of the query;
+- NSURL may encode more still.
+
+PR #16 matched only WebKitGTK.
+
+#### Fix
+
+- **One key for every spelling.** `opaqueKey` now decodes every valid escape, drops tabs and newlines, and encodes again one way: spaces, controls, `%`, and non-ASCII. That is sound because a `data:` URL's content is percent-decoded before use, so every spelling names the same document.
+- **The page side** computes the same key in `canonicalOpaque`.
+- **Tests:**
+  - `TestOpaqueKeyAgreesAcrossEngines` covers the Go, WebKitGTK, WebView2, and fully-encoded spellings.
+  - `TestBridgeGate` trusts Go's spelling and loads the others. With the page side reverted, it fails.
+- **macOS diagnostics.** `Navigate` now logs when NSURL refuses a URL, instead of loading nothing silently.
+
+#### Rejected: comparing data: URLs by their decoded content only
+
+It is what this is, except that re-encoding keeps the key printable. Without that, the key embedded in the script would carry raw control bytes.
+
+#### Still to learn from the next run
+
+- **macOS:** whether the page now loads. If NSURL refuses the string, the log will say so, and the fix is to percent-encode before `URLWithString:`.
+- **Windows:** whether a `data:` page can reach the bridge at all, from the page's own report.
+- **Criterion 4:** it is met on Linux and Windows, and gets ticked when macOS passes.
