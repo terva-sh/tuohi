@@ -16,10 +16,17 @@ var resOriginGate atomic.Value // string
 // application navigated to. A loopback server serves one page, which calls
 // the "hit" binding and then fetches /done. The view first reaches the page
 // through a navigation the page itself starts, so its origin is untrusted and
-// the call must not arrive, and the page must have no bridge at all. Go then
+// the call must not arrive, and the page must have no bridge at all. An
+// engine with the navigation policy refuses that navigation instead and hands
+// the URL to the system, which is reported as "untrusted=refused". Go then
 // navigates to the same page, which trusts its origin, and the call must
 // arrive, although Go names the origin in a spelling WebKit canonicalizes.
 func originGateScenario() string {
+	refused := make(chan string, 4)
+	prevOpen := openExternal
+	openExternal = func(rawurl string) { refused <- rawurl }
+	defer func() { openExternal = prevOpen }()
+
 	done := make(chan string, 4)
 	serve := func(r *request) *response {
 		if i := strings.Index(r.URL, "/done?bridge="); i >= 0 {
@@ -63,12 +70,25 @@ window.addEventListener('load', function(){
 				return false
 			}
 		}
-		if !wait() {
-			result <- "untrusted page never loaded"
+		first := ""
+		select {
+		case bridge = <-done:
+			// The binding call was posted before the fetch. Give it time to
+			// arrive, if the gate lets it through.
+			time.Sleep(500 * time.Millisecond)
+			first = fmt.Sprintf("untrusted=%d bridge=%s", hits.Load(), bridge)
+		case u := <-refused:
+			if u != base+"/page" {
+				first = "refused " + u
+			} else {
+				first = "untrusted=refused"
+			}
+		case <-time.After(10 * time.Second):
+			result <- "untrusted page never loaded or refused"
 			w.Close()
 			return
 		}
-		untrusted, untrustedBridge := hits.Load(), bridge
+		untrusted := hits.Load()
 		// Navigate with a spelling the engine canonicalizes (mixed-case
 		// host, zero-padded port): the trusted origin must still match the
 		// URI WebKit reports for the page.
@@ -79,8 +99,7 @@ window.addEventListener('load', function(){
 			w.Close()
 			return
 		}
-		result <- fmt.Sprintf("untrusted=%d bridge=%s trusted=%d bridge=%s",
-			untrusted, untrustedBridge, hits.Load()-untrusted, bridge)
+		result <- fmt.Sprintf("%s trusted=%d bridge=%s", first, hits.Load()-untrusted, bridge)
 		w.Close()
 	}()
 
@@ -97,9 +116,13 @@ window.addEventListener('load', function(){
 func TestOriginGate(t *testing.T) {
 	got, _ := resOriginGate.Load().(string)
 	requireGUI(t, got)
-	want := "untrusted=0 bridge=no trusted=1 bridge=yes"
-	if got != want {
-		t.Fatalf("origin gate = %q, want %q", got, want)
+	// An engine without the navigation policy shows the untrusted page, which
+	// must have no bridge; one with it refuses the navigation. Both are safe.
+	t.Logf("origin gate: %s", got)
+	shown := "untrusted=0 bridge=no trusted=1 bridge=yes"
+	refused := "untrusted=refused trusted=1 bridge=yes"
+	if got != shown && got != refused {
+		t.Fatalf("origin gate = %q, want %q or %q", got, shown, refused)
 	}
 }
 
@@ -188,6 +211,17 @@ func TestFrameGate(t *testing.T) {
 // base URL, ending in a slash, and a function that stops it. seen, when not
 // nil, is called with each request's target.
 func servePlainHTML(html string, seen func(target string)) (string, func(), error) {
+	return servePlain(func(target string) (string, string) {
+		if seen != nil {
+			seen(target)
+		}
+		return "", html
+	})
+}
+
+// servePlain is servePlainHTML with a handler per request: it returns a
+// Location to redirect to with 302 Found, or "" to answer 200 OK with body.
+func servePlain(handle func(target string) (location, body string)) (string, func(), error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, err
@@ -205,8 +239,9 @@ func servePlainHTML(html string, seen func(target string)) (string, func(), erro
 				if err != nil {
 					return
 				}
-				if f := strings.Fields(line); seen != nil && len(f) == 3 {
-					seen(f[1])
+				target := ""
+				if f := strings.Fields(line); len(f) == 3 {
+					target = f[1]
 				}
 				for {
 					line, err := br.ReadString('\n')
@@ -217,7 +252,12 @@ func servePlainHTML(html string, seen func(target string)) (string, func(), erro
 						break
 					}
 				}
-				_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(html), html)
+				location, body := handle(target)
+				if location != "" {
+					_, _ = fmt.Fprintf(conn, "HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", location)
+					return
+				}
+				_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
 			}()
 		}
 	}()

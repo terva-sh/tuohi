@@ -261,11 +261,23 @@ call a view's Go bindings) carries out:
   whole client area into a title bar.
 - **A navigation policy.** It lands only after `App.Open` stops accepting
   `file:`, because it hands `App.Open` URLs that a page chose. A top-level
-  navigation to an allowed origin goes ahead. Anything else is cancelled in the view and handed to `App.Open`,
-  which sends it to the system browser. This is exactly what git-ticket-canvas
-  asked for. `window.open` and `target=_blank` follow the same rule. On
-  Windows that matters twice, because WebView2 opens its own popup window
-  today, and that window has none of the bridge.
+  navigation to an allowed origin goes ahead, and so does `about:blank`.
+  Anything else is cancelled in the view. An `http`, `https`, or `mailto`
+  URL is handed to the system, as `App.Open` does; any other is dropped with
+  a log line. This is exactly what git-ticket-canvas asked for. A redirect
+  is judged by where it leads. `window.open` and `target=_blank` follow the
+  same rule. On Windows that matters twice, because WebView2 opens its own
+  popup window today, and that window has none of the bridge. Frames are
+  left alone. The token keeps them from Go, and cancelling them would break
+  embedded content. `viewCore.navigationPolicy` in `engine.go` holds the
+  rule. The decisions behind it, and the alternatives rejected, are in the
+  ticket.
+  - **WebKitGTK** cannot tell a frame's navigation from the top-level one
+    when it starts. It judges the top-level document at its response,
+    marked as the main frame's main resource. So on Linux the untrusted
+    server has received the request before the view cancels it, although
+    nothing is shown. It judges new windows, and schemes with no response
+    such as `mailto:`, when they start.
 
 A per-binding allowlist was the alternative. It lost because the consumer case
 is one trusted origin per view, and per-binding policy multiplies

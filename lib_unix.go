@@ -193,6 +193,14 @@ var (
 	webkitUserScriptUnref                         func(script uintptr)
 	webkitJavascriptResultGetJSValue              func(result uintptr) uintptr
 
+	// The navigation policy (see decidePolicy).
+	webkitNavigationPolicyDecisionGetNavigationAction func(decision uintptr) uintptr
+	webkitNavigationActionGetRequest                  func(action uintptr) uintptr
+	webkitResponsePolicyDecisionGetRequest            func(decision uintptr) uintptr
+	webkitResponsePolicyDecisionIsMainFrameMainRes    func(decision uintptr) bool
+	webkitURIRequestGetURI                            func(request uintptr) uintptr
+	webkitPolicyDecisionIgnore                        func(decision uintptr)
+
 	webkitWebViewEvaluateJavascript func(webview uintptr, script string, length int, world, source, cancellable, callback, userData uintptr)
 	webkitWebViewRunJavascript      func(webview uintptr, script string, cancellable, callback, userData uintptr)
 	haveEvaluateJavascript          bool
@@ -214,6 +222,7 @@ var (
 	messageHandlerFn uintptr
 	windowDestroyFn  uintptr
 	loadChangedFn    uintptr
+	decidePolicyFn   uintptr
 
 	// Library handles kept after ensureInit so other files (e.g. the file
 	// dialogs in dialog_unix.go) can lazily resolve extra symbols without
@@ -526,6 +535,12 @@ func ensureInit() error {
 		pure.RegisterLibFunc(&webkitUserContentManagerRemoveAllScripts, webkit, "webkit_user_content_manager_remove_all_scripts")
 		pure.RegisterLibFunc(&webkitUserScriptNew, webkit, "webkit_user_script_new")
 		pure.RegisterLibFunc(&webkitUserScriptUnref, webkit, "webkit_user_script_unref")
+		pure.RegisterLibFunc(&webkitNavigationPolicyDecisionGetNavigationAction, webkit, "webkit_navigation_policy_decision_get_navigation_action")
+		pure.RegisterLibFunc(&webkitNavigationActionGetRequest, webkit, "webkit_navigation_action_get_request")
+		pure.RegisterLibFunc(&webkitResponsePolicyDecisionGetRequest, webkit, "webkit_response_policy_decision_get_request")
+		pure.RegisterLibFunc(&webkitResponsePolicyDecisionIsMainFrameMainRes, webkit, "webkit_response_policy_decision_is_main_frame_main_resource")
+		pure.RegisterLibFunc(&webkitURIRequestGetURI, webkit, "webkit_uri_request_get_uri")
+		pure.RegisterLibFunc(&webkitPolicyDecisionIgnore, webkit, "webkit_policy_decision_ignore")
 		if gtk4 {
 			// GTK4: the script-message callback delivers a JSCValue* directly, and
 			// the handler registration takes a world-name argument.
@@ -588,6 +603,13 @@ func ensureInit() error {
 				}
 			}
 			return 0
+		})
+		decidePolicyFn = pure.NewCallback(func(_, decision, decisionType, userData uintptr) uintptr {
+			w := lookupEngine(userData)
+			if w == nil || !w.decidePolicy(decision, int(decisionType)) {
+				return 0 // WebKit's default decision
+			}
+			return 1
 		})
 	})
 	return initErr
@@ -883,6 +905,7 @@ func (w *webview) windowInit(window uintptr) error {
 	// load-changed fires on every navigation commit; WEBKIT_LOAD_FINISHED (3)
 	// marks the "page fully loaded" moment View.Ready waits for.
 	gSignalConnectData(w.webview, "load-changed", loadChangedFn, w.id, 0, 0)
+	gSignalConnectData(w.webview, "decide-policy", decidePolicyFn, w.id, 0, 0)
 
 	gSignalConnectData(w.manager, "script-message-received::__webview__",
 		messageHandlerFn, w.id, 0, 0)
@@ -1269,6 +1292,68 @@ func (w *webview) trust(urls ...string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.rebuildScriptsLocked()
+}
+
+// WebKitPolicyDecisionType values.
+const (
+	policyNavigationAction = 0
+	policyNewWindowAction  = 1
+	policyResponse         = 2
+)
+
+// responseSchemes are the schemes whose top-level loads reach a response,
+// where decidePolicy judges them, plus javascript:, which runs in the page.
+// A navigation to any other scheme, such as mailto: or a custom one, never
+// gets a response, so decidePolicy judges it when it starts.
+var responseSchemes = map[string]bool{
+	"http": true, "https": true, "data": true, "blob": true, "file": true,
+	"about": true, "javascript": true, appSchemeName: true,
+}
+
+// decidePolicy applies the navigation policy (see viewCore.navigationPolicy)
+// to one decide-policy signal, and reports whether it decided; when it did
+// not, WebKit's default decision stands.
+//
+// WebKitGTK's navigation actions do not say whether they are for the main
+// frame or a frame, so a top-level page is judged at its response instead,
+// which WebKit marks as the main frame's main resource. By then the request
+// has been sent and any redirects followed, but nothing is shown. New windows
+// are always top-level, so they are judged when they start, as are schemes
+// that have no response to judge.
+func (w *webview) decidePolicy(decision uintptr, decisionType int) bool {
+	var request uintptr
+	switch decisionType {
+	case policyNavigationAction, policyNewWindowAction:
+		action := webkitNavigationPolicyDecisionGetNavigationAction(decision)
+		if action == 0 {
+			return false
+		}
+		request = webkitNavigationActionGetRequest(action)
+	case policyResponse:
+		if !webkitResponsePolicyDecisionIsMainFrameMainRes(decision) {
+			return false
+		}
+		request = webkitResponsePolicyDecisionGetRequest(decision)
+	default:
+		return false
+	}
+	if request == 0 {
+		return false
+	}
+	uri := cstr(webkitURIRequestGetURI(request))
+	if decisionType == policyNavigationAction {
+		scheme, _, _ := strings.Cut(uri, ":")
+		if responseSchemes[strings.ToLower(scheme)] {
+			return false // judged at its response, if it is top-level
+		}
+	}
+	action := w.navigationPolicy(uri)
+	if action == navProceed {
+		return false
+	}
+	webkitPolicyDecisionIgnore(decision)
+	refuseNavigation(uri, action)
+	return true
 }
 
 func (w *webview) loadHTML(html string) {

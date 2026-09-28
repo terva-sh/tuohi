@@ -745,6 +745,16 @@ type View struct {
 	// URL, is trusted already. A page on any other origin, reached through a
 	// link, a redirect, or a frame, cannot reach Go. An about:blank page is
 	// never trusted, because any page can create one.
+	//
+	// These are also the only pages the view shows. When a page leads the
+	// whole view elsewhere, by a link, a redirect, a script, or a new window,
+	// the view stays where it was and an http, https, or mailto URL opens in
+	// the system browser or mail client instead; data:, blob:, file:, and
+	// other schemes are dropped. about:blank is shown, and frames are left
+	// alone. So a URL that redirects to a sign-in page on another origin
+	// needs that origin listed here, or the view stays blank while the
+	// browser opens it. A redirect to another scheme or host, such as http
+	// to https, or 127.0.0.1 to localhost, counts as another origin.
 	Origins []string
 
 	// Ready, when non-nil, is called exactly once, on the UI thread, the
