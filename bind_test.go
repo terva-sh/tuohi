@@ -494,6 +494,10 @@ func TestBridgeGate(t *testing.T) {
 		"data:text/html,<p>a b</p>\n<i>'r'</i>?x y&k='z'", // loaded below as WebView2 and NSURL spell it
 		"data:text/html,%3Cp%3E%F0%9F%99%82%20ok%3C/p%3E",
 	}
+	// Navigate loads and trusts each URL in its canonical form.
+	for i, u := range trusted {
+		trusted[i] = canonicalNavigateURL(u)
+	}
 	var c viewCore
 	c.trustURLs(trusted)
 	c.trustURL("about:blank") // never trusted, so never in the script

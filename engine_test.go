@@ -1,6 +1,9 @@
 package tuohi
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestOriginOf(t *testing.T) {
 	cases := map[string]string{
@@ -125,21 +128,48 @@ func TestNavigationPolicy_Decisions(t *testing.T) {
 	}
 }
 
-// TestOpaqueKeyAgreesAcrossEngines checks that every engine's spelling of one
-// data: URL gets one key. The spellings follow what each engine reported:
-// WebKitGTK 2.52 in a probe, WebView2 in GitHub run 36380534759, and the fully
-// percent-encoded form NSURL may produce.
+// TestOpaqueKeyAgreesAcrossEngines checks that every engine's spelling of the
+// URL Navigate loads gets one key. The spellings follow what each engine
+// reported: WebKitGTK 2.52 in a probe, WebView2 in GitHub run 36380534759,
+// and the fully percent-encoded form NSURL may produce.
 func TestOpaqueKeyAgreesAcrossEngines(t *testing.T) {
-	spellings := []string{
-		"data:text/html,<p>a b</p>\n<i>'r'</i>?x y&k='z'",                              // as Go wrote it
-		"data:text/html,<p>a b</p><i>'r'</i>?x%20y&k=%27z%27",                          // WebKitGTK
-		"data:text/html,<p>a b</p>%0A<i>'r'</i>?x%20y&k=%27z%27",                       // WebView2
-		"data:text/html,%3Cp%3Ea%20b%3C/p%3E%0A%3Ci%3E%27r%27%3C/i%3E?x%20y&k=%27z%27", // fully encoded
+	loaded := canonicalNavigateURL("data:text/html,<p>a b</p>\n<i>'r'</i>?x y&k='z'")
+	if strings.ContainsAny(loaded, "\t\n\r") {
+		t.Fatalf("canonicalNavigateURL left raw whitespace: %q", loaded)
 	}
-	want := originOf(spellings[0])
-	for _, s := range spellings[1:] {
+	want := originOf(loaded)
+	for _, s := range []string{
+		"data:text/html,<p>a b</p>%0A<i>'r'</i>?x%20y&k=%27z%27",                       // WebKitGTK and WebView2
+		"data:text/html,%3Cp%3Ea%20b%3C/p%3E%0A%3Ci%3E%27r%27%3C/i%3E?x%20y&k=%27z%27", // fully encoded
+	} {
 		if got := originOf(s); got != want {
 			t.Errorf("originOf(%q) = %q, want %q", s, got, want)
 		}
+	}
+}
+
+// TestOpaqueKeyKeepsEscapedNewlines checks that an escaped newline is content:
+// two data: URLs that differ only by one are different documents, and must
+// not share a key. terva-review finding on PR #17.
+func TestOpaqueKeyKeepsEscapedNewlines(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"data:text/html,ab%0Acd", "data:text/html,abcd"},
+		{"data:text/html,a%09b", "data:text/html,ab"},
+		{"data:text/html,a%0D%0Ab", "data:text/html,ab"},
+	} {
+		if originOf(pair[0]) == originOf(pair[1]) {
+			t.Errorf("originOf(%q) == originOf(%q) = %q", pair[0], pair[1], originOf(pair[0]))
+		}
+	}
+	// A raw newline is stripped before parsing, as a browser does, so it is
+	// not content; Navigate encodes it instead of passing it on.
+	if originOf("data:text/html,ab\ncd") != originOf("data:text/html,abcd") {
+		t.Error("a raw newline changed the key")
+	}
+	if got, want := canonicalNavigateURL(" data:text/html,a\nb#f "), "data:text/html,a%0Ab#f"; got != want {
+		t.Errorf("canonicalNavigateURL = %q, want %q", got, want)
+	}
+	if got := canonicalNavigateURL("http://x/a b"); got != "http://x/a b" {
+		t.Errorf("canonicalNavigateURL changed a URL with a host: %q", got)
 	}
 }

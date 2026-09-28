@@ -1488,6 +1488,7 @@ func (w *webview) Navigate(url string) {
 			url = rewriteAppURL(w.contentBase, url)
 		}
 	}
+	url = canonicalNavigateURL(url)
 	w.trust(url)
 	performOnMain(func() {
 		autorelease(func() {

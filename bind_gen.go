@@ -63,8 +63,8 @@ func marshalJSON(msg string) string {
 // document's origin key the way originOf does in Go: scheme://host[:port] for
 // a URL with a host, which the engine has already canonicalized; for any other
 // URL, such as data:, the URL without its fragment in opaqueKey's canonical
-// form (percent-escapes decoded, tabs and newlines dropped, spaces, controls,
-// '%' and non-ASCII bytes encoded again); and nothing for about:. A document
+// form (percent-escapes decoded, then spaces, controls, '%' and non-ASCII
+// bytes encoded again); and nothing for about:. A document
 // that is not the top frame, or whose key is not trusted, gets no bridge at
 // all, and never holds the token.
 const initBridgeGate = `
@@ -87,7 +87,6 @@ const initBridgeGate = `
     var out = '';
     for (i = 0; i < bytes.length; i++) {
       c = bytes[i];
-      if (c === 9 || c === 10 || c === 13) { continue; }
       if (c <= 32 || c >= 127 || c === 37) {
         out += '%' + (c < 16 ? '0' : '') + c.toString(16).toUpperCase();
       } else {

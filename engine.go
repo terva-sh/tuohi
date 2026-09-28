@@ -341,15 +341,16 @@ func splitOpaque(rawurl string) (scheme, rest string, ok bool) {
 
 // opaqueKey returns the key of an opaque-path URL: the scheme, a colon, and
 // what follows, without its fragment, in one canonical form. The engines do
-// not agree on how to spell such a URL. WebKitGTK follows the WHATWG URL
-// standard: it drops tabs and newlines, keeps the path raw, and
-// percent-encodes the query. WebView2 keeps newlines as %0A and encodes
-// quotes and spaces in the query. NSURL may encode more still. All of them
-// name the same document, because a data: URL's content is percent-decoded
-// before use. So the key decodes every valid percent-escape, drops tabs and
-// newlines, and encodes again one way: every byte that is a space, a
-// control, '%', or not ASCII. The bridge script computes the same key in
-// the page (see initBridgeGate), and TestBridgeGate holds the two together.
+// not spell such a URL alike: WebKitGTK percent-encodes the query and keeps
+// the path raw, WebView2 also encodes quotes, and NSURL may encode more
+// still. Every spelling decodes to the same content, and a data: URL's
+// content is what the page is. So the key decodes every valid
+// percent-escape and encodes again one way: every byte that is a space, a
+// control, '%', or not ASCII. An escaped newline is content and stays in the
+// key; only a raw one, which a browser strips before parsing, is gone by
+// now (see originOf). Navigate never passes a raw one on: see
+// canonicalNavigateURL. The bridge script computes the same key in the page
+// (see initBridgeGate), and TestBridgeGate holds the two together.
 func opaqueKey(scheme, rest string) string {
 	rest, _, _ = strings.Cut(rest, "#")
 	return scheme + ":" + canonicalOpaque(rest)
@@ -357,20 +358,13 @@ func opaqueKey(scheme, rest string) string {
 
 // canonicalOpaque is opaqueKey's canonical form of s.
 func canonicalOpaque(s string) string {
-	decoded := make([]byte, 0, len(s))
+	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]) {
 			c = unhex(s[i+1])<<4 | unhex(s[i+2])
 			i += 2
 		}
-		if c == '\t' || c == '\n' || c == '\r' {
-			continue
-		}
-		decoded = append(decoded, c)
-	}
-	var b strings.Builder
-	for _, c := range decoded {
 		if c <= ' ' || c >= 0x7F || c == '%' {
 			fmt.Fprintf(&b, "%%%02X", c)
 			continue
@@ -378,6 +372,28 @@ func canonicalOpaque(s string) string {
 		b.WriteByte(c)
 	}
 	return b.String()
+}
+
+// canonicalNavigateURL is the URL every engine's Navigate loads and trusts in
+// place of rawurl. For an opaque-path URL, such as a data: URL built from
+// multi-line HTML, it percent-encodes the raw tabs and newlines instead of
+// leaving them to the engine: WebKitGTK strips them, as the WHATWG URL
+// standard says, while WebView2 keeps them as %0A, so the same string would
+// load two different documents, and a newline can end a // comment in an
+// inline script. The rest is put in opaqueKey's canonical form, with the
+// fragment kept. Any other URL is returned unchanged.
+func canonicalNavigateURL(rawurl string) string {
+	trimmed := strings.TrimFunc(rawurl, func(r rune) bool { return r <= ' ' })
+	scheme, rest, ok := splitOpaque(trimmed)
+	if !ok || scheme == "about" {
+		return rawurl
+	}
+	rest, fragment, hasFragment := strings.Cut(rest, "#")
+	out := scheme + ":" + canonicalOpaque(rest)
+	if hasFragment {
+		out += "#" + fragment
+	}
+	return out
 }
 
 func isHex(c byte) bool {

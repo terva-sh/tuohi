@@ -1374,6 +1374,7 @@ func (w *webview) Navigate(url string) {
 	if url == "" {
 		url = "about:blank"
 	}
+	url = canonicalNavigateURL(url)
 	w.trust(url)
 	asWebView2(w.webview2).Navigate(utf16(url))
 }
