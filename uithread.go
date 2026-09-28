@@ -165,15 +165,15 @@ func (d *uiDispatcher) enterLoop() {
 	d.mu.Unlock()
 }
 
-// exitLoop records that a loop has returned. When no loop is left, every
-// operation still pending is cancelled, since nothing would run it: queued
-// work is only drained again when a loop next starts, and the caller of an
-// operation must not wait for a loop that may never come.
+// exitLoop records that a loop has returned. When no loop is left, owned or
+// external, every operation still pending is cancelled, since nothing would
+// run it: queued work is only drained again when a loop next starts, and the
+// caller of an operation must not wait for a loop that may never come.
 func (d *uiDispatcher) exitLoop() {
 	d.mu.Lock()
 	d.loops--
 	var stranded []*uiOp
-	if d.loops == 0 {
+	if d.loops == 0 && !d.external() {
 		for op := range d.pending {
 			stranded = append(stranded, op)
 		}

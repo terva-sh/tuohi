@@ -337,3 +337,19 @@ func TestViewQueuedCallDroppedAfterClose(t *testing.T) {
 		t.Fatal("a Navigate queued before Close reached the closed engine")
 	}
 }
+
+func TestUIExitLoopKeepsCallsUnderExternalLoop(t *testing.T) {
+	// The last owned loop exits while an external loop (macOS tray or host)
+	// still drains the queue: a pending call must stay pending and run.
+	f := newFakeUI()
+	f.enterLoop()
+	f.extFlag.Store(true)
+	errc := make(chan error, 1)
+	go func() { errc <- f.call(func() {}) }()
+	f.waitQueued(t, 1)
+	f.exitLoop()
+	f.drain()
+	if err := <-errc; err != nil {
+		t.Fatalf("call cancelled while an external loop still runs: %v", err)
+	}
+}
