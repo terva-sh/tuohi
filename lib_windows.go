@@ -2504,6 +2504,14 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		}
 		w.window = 0
 		setWindowLongPtrW(hwnd, gwlpUserData, 0)
+		// Release the web view here, on the UI thread, while the window and
+		// the loop that delivered this message are still alive. A user close
+		// can end the last loop, and a later Close from another goroutine
+		// would then post a teardown that nothing drains. When Destroy got
+		// here through destroyOnUI, the controller is already closed and only
+		// the environment is released early.
+		w.closeController()
+		w.releaseEnvironment()
 		return 0, true
 	}
 	return 0, false
@@ -2725,12 +2733,16 @@ func (w *webview) Destroy() {
 	// close) still owns a temporary loopback server: stop it here - the
 	// load-finished path (fireReady) never ran.
 	w.releaseLoopback()
-	// The dispatch window outlives this view's window, so the teardown is
-	// marshalled even when the window is already gone (a second Close, or a
-	// Close after a user-initiated WM_CLOSE): the controller and environment
-	// still belong to the UI thread. Only when no dispatch window exists, so
-	// no view was ever created on a UI thread, does it run in place.
-	if w.uiThread != 0 && getCurrentThreadID() != w.uiThread && postUI(w.destroyOnUI) {
+	// Off the UI thread the teardown is always marshalled, never run in
+	// place: the controller and environment belong to the UI thread. Dispatch
+	// posts to this view's window, or to the UI thread's dispatch window once
+	// the view's window is gone. When neither can take it, the teardown is
+	// dropped rather than run on the wrong thread. A window the user closed
+	// has little left to tear down by then: WM_DESTROY already released the
+	// web view on the UI thread (see engineMsg), which matters when that
+	// close also ended the last loop and nothing would drain the post.
+	if w.uiThread != 0 && getCurrentThreadID() != w.uiThread {
+		w.Dispatch(w.destroyOnUI)
 		return
 	}
 	w.destroyOnUI()
@@ -2738,6 +2750,23 @@ func (w *webview) Destroy() {
 
 // destroyOnUI performs the UI-thread-only part of Destroy. See Destroy.
 func (w *webview) destroyOnUI() {
+	w.closeController()
+	if w.window != 0 && w.ownsWindow {
+		destroyWindow(w.window)
+		w.window = 0
+	}
+	w.releaseEnvironment()
+	// Drop any Dispatch closures that were queued but never delivered (their
+	// WM_APP messages die with the window), instead of leaking them.
+	w.dispatchMu.Lock()
+	w.dispatchMap = map[uintptr]func(){}
+	w.dispatchMu.Unlock()
+	unregisterEngine(w.id)
+}
+
+// closeController closes the WebView2 controller and releases the web view
+// and controller references, on the UI thread. It is a no-op once done.
+func (w *webview) closeController() {
 	if w.controller != 0 {
 		// Close the controller, then release the references we took in
 		// handlerInvoke (ICoreWebView2 was AddRef'd, the controller too),
@@ -2755,10 +2784,11 @@ func (w *webview) destroyOnUI() {
 		asController(w.controller).Release()
 		w.controller = 0
 	}
-	if w.window != 0 && w.ownsWindow {
-		destroyWindow(w.window)
-		w.window = 0
-	}
+}
+
+// releaseEnvironment drops the WebView2 environment reference, on the UI
+// thread, after closeController. It is a no-op once done.
+func (w *webview) releaseEnvironment() {
 	// The environment reference taken in handlerInvoke (kindEnv) is never
 	// released anywhere else. The environment is what pins the WebView2
 	// browser process alive; dropping the reference is what lets it shut down
@@ -2769,12 +2799,6 @@ func (w *webview) destroyOnUI() {
 		asEnvironment(w.environment).Release()
 		w.environment = 0
 	}
-	// Drop any Dispatch closures that were queued but never delivered (their
-	// WM_APP messages die with the window), instead of leaking them.
-	w.dispatchMu.Lock()
-	w.dispatchMap = map[uintptr]func(){}
-	w.dispatchMu.Unlock()
-	unregisterEngine(w.id)
 }
 
 // --- drag regions ----------------------------------------------------------
