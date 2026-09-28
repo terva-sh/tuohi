@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:41:41Z
+updated_at: 2026-09-28T02:50:55Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -242,3 +242,32 @@ Criterion 2 ticked: every engine's message handler checks the sender. Linux uses
 **agent:claude-code/t3code-83e85fc3** at 2026-09-28T02:41:41Z
 
 claim taken from agent:claude-code/t3code-92c88910 by agent:claude-code/t3code-83e85fc3
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T02:50:55Z
+
+### Part 4 landed on branch feat/bridge-document-token: the bridge token
+
+The design is in the plan.
+
+- **Commit.** 832ed0c.
+- **Closes the two Linux gaps:** frames, and a message queued across a navigation. The bridge is also installed only in trusted top-level documents on all three engines.
+
+#### Verified
+
+- **New GUI scenario `TestFrameGate`,** run on every engine. A cross-origin frame inside a trusted page posts a well-formed message straight to the message channel.
+  - **Negative control:** with the token check removed from `onMessage`, it fails with `frameHits=1` on both WebKitGTK stacks. So the Linux frame gap was real, and the token closes it.
+  - **Why the frame is served without COEP or CORP.** The first version served the frame from `listenLoopbackHTTP`, and passed without the fix. The loopback server sends `COEP: require-corp` and `CORP: same-origin`, so the browser never loaded the frame. The scenario now uses a bare test server. `net/http` is forbidden by `check-imports`, test files included.
+- **`TestOriginGate`** also checks that the untrusted page has no `window.__webview__`. With the script's origin check removed, it fails with `bridge=yes`.
+- **`TestBridgeGate`** (node) loads the bridge at the locations node's WHATWG URL parser gives for each form Go trusts: mixed case with a padded port, `https://app.localhost`, `app://app`, IPv4-mapped IPv6, full-width digits, IDN, and `data:` with a fragment. The key the script computes must match `originOf` for each one. It also checks that frames, about:, and untrusted origins get no bridge. With the check removed, it fails.
+- **`TestCheckToken`:** the token prefix check.
+- **Local runs:** `just ci` and `just test-gui` pass on both stacks, and golangci-lint v2.13.1 reports 0 issues on linux, darwin, and windows.
+
+#### Not run locally
+
+macOS and Windows run on GitHub after the merge. On Windows, `rebuildScripts` now also runs from `Navigate` when the origin is new, and pumps the message loop there, as `Bind` already does.
+
+#### Criteria
+
+- **Criterion 1** stays unticked until GitHub passes on macOS and Windows.
+- **Reply side:** filed as TKT-01M3JYQWZB01CPZ938Y8C24PXX (Deliver binding replies and events only to trusted documents). Replies and events are still evaluated into whatever document is current.
+- **Remaining here:** the navigation policy on each engine, and settling `data:` `View.URL` on Windows.
