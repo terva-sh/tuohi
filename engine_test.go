@@ -45,6 +45,16 @@ func TestOriginOf(t *testing.T) {
 		"http://[1::]/":                  "http://[1::]",
 		"http://１２７.１:8080/":             "http://127.0.0.1:8080",
 		"http://1.example/":              "http://1.example",
+		// Opaque-path URLs, keyed as WebKit reports them: tabs and newlines
+		// dropped, the query percent-encoded, the fragment removed. The
+		// first is the spelling WebKitGTK 2.52 reported for it.
+		"data:text/html,<p>a b</p>\t<i>\"q\" 'r'</i>?x y<z>é&k=%41#frag": `data:text/html,<p>a b</p><i>"q" 'r'</i>?x%20y%3Cz%3E%C3%A9&k=%41`,
+		"  data:text/html,a\nb\r\n  ":                                    "data:text/html,ab",
+		"DATA:text/html,x":                                               "data:text/html,x",
+		"data:text/html,100%":                                            "data:text/html,100%",
+		"data:text/html,é":                                               "data:text/html,%C3%A9",
+		"About:blank":                                                    "",
+		"mailto:a@b.invalid":                                             "mailto:a@b.invalid",
 	}
 	for in, want := range cases {
 		if got := originOf(in); got != want {

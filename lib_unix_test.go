@@ -104,6 +104,8 @@ func TestMain(m *testing.M) {
 		resOriginGate.Store(originGateScenario())
 		resFrameGate.Store(frameGateScenario())
 		resNavPolicy.Store(navPolicyScenario())
+		resLoopbackApp.Store(loopbackAppScenario())
+		resDataURL.Store(dataURLScenario())
 	}
 	os.Exit(m.Run())
 }

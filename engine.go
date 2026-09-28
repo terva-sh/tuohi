@@ -240,10 +240,23 @@ func (c *viewCore) trusts(senderURL string, known bool) bool {
 //   - about: URLs, about:blank above all, have no origin of their own. The
 //     document inherits the origin of whoever created it, so any page can
 //     make one. They are never trusted.
-//   - Any other hostless URL, such as data:, is keyed by the whole URL without
-//     its fragment. A data: URL is its own content, so only the exact page Go
-//     loaded matches.
+//   - Any other URL with an opaque path, such as data:, is keyed by the whole
+//     URL without its fragment, serialized as a browser does (see opaqueKey).
+//     A data: URL is its own content, so only the exact page Go loaded
+//     matches, however Go spelled it.
+//
+// Like a browser, it first strips leading and trailing C0 controls and
+// spaces, and removes every tab and newline: a data: URL built from
+// multi-line HTML loads without its newlines.
 func originOf(rawurl string) string {
+	rawurl = strings.TrimFunc(rawurl, func(r rune) bool { return r <= ' ' })
+	rawurl = urlWhitespace.Replace(rawurl)
+	if scheme, rest, ok := splitOpaque(rawurl); ok {
+		if scheme == "about" {
+			return ""
+		}
+		return opaqueKey(scheme, rest)
+	}
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		// Go's parser refuses a percent-escaped host, which a browser
@@ -290,6 +303,70 @@ func originOf(rawurl string) string {
 		return scheme + "://[" + host + "]"
 	}
 	return scheme + "://" + host
+}
+
+// urlWhitespace removes the ASCII tabs and newlines a browser drops from
+// anywhere in a URL.
+var urlWhitespace = strings.NewReplacer("\t", "", "\n", "", "\r", "")
+
+// specialSchemes are the WHATWG URL standard's special schemes, whose URLs
+// always have a host and a hierarchical path.
+var specialSchemes = map[string]bool{
+	"http": true, "https": true, "ws": true, "wss": true, "ftp": true, "file": true,
+}
+
+// splitOpaque reports whether rawurl has an opaque path in the WHATWG URL
+// standard's sense: a valid scheme that is not special, followed by
+// something other than "/". It returns the scheme in lower case and what
+// follows its colon.
+func splitOpaque(rawurl string) (scheme, rest string, ok bool) {
+	i := strings.IndexByte(rawurl, ':')
+	if i < 1 {
+		return "", "", false
+	}
+	for j := 0; j < i; j++ {
+		c := rawurl[j]
+		alpha := ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+		other := ('0' <= c && c <= '9') || c == '+' || c == '-' || c == '.'
+		if !alpha && (j == 0 || !other) {
+			return "", "", false
+		}
+	}
+	scheme, rest = strings.ToLower(rawurl[:i]), rawurl[i+1:]
+	if specialSchemes[scheme] || strings.HasPrefix(rest, "/") {
+		return "", "", false
+	}
+	return scheme, rest, true
+}
+
+// opaqueKey serializes an opaque-path URL without its fragment as the WHATWG
+// URL standard does, which is how WebKit reports it: the path keeps
+// everything but C0 controls and non-ASCII bytes, which are percent-encoded;
+// the query, for a non-special scheme, also encodes space, '"', '#', '<', and
+// '>'. Existing percent-escapes are kept as they are.
+func opaqueKey(scheme, rest string) string {
+	rest, _, _ = strings.Cut(rest, "#")
+	path, query, hasQuery := strings.Cut(rest, "?")
+	key := scheme + ":" + percentEncode(path, "")
+	if hasQuery {
+		key += "?" + percentEncode(query, ` "#<>`)
+	}
+	return key
+}
+
+// percentEncode percent-encodes, in upper-case hex, every byte of s that is a
+// C0 control, is above '~', or is in extra.
+func percentEncode(s, extra string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c > 0x7E || strings.IndexByte(extra, c) >= 0 {
+			fmt.Fprintf(&b, "%%%02X", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // unescapeHost percent-decodes the host of a scheme://host[:port]/... URL and
