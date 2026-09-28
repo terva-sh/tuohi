@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:14:44Z
+updated_at: 2026-09-28T05:19:45Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -579,3 +579,15 @@ It is what this is, except that re-encoding keeps the key printable. Without tha
 - **macOS:** whether the page now loads. If NSURL refuses the string, the log will say so, and the fix is to percent-encode before `URLWithString:`.
 - **Windows:** whether a `data:` page can reach the bridge at all, from the page's own report.
 - **Criterion 4:** it is met on Linux and Windows, and gets ticked when macOS passes.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T05:19:45Z
+
+### Review disposition, PR #17, terva-review run 559c4774 on 1d37797
+
+- **high: do not discard percent-encoded newlines from data URL keys. Fixed in d27ee1a.**
+  - **The finding is right.** `data:text/html,ab%0Acd` and `data:text/html,abcd` shared a key, although a newline is content: it can end a `//` comment in an inline script.
+  - **Why the dropping was there.** It covered a real ambiguity. Given a raw newline, WebKitGTK strips it (WHATWG), while WebView2 keeps it as `%0A`, so one Go string loaded two different documents.
+  - **The fix removes that ambiguity at its source.** Every engine's `Navigate` passes the URL through `canonicalNavigateURL`, which percent-encodes the raw tabs and newlines of an opaque-path URL before trusting and loading it.
+  - **The key.** `canonicalOpaque` and the page-side copy now keep a decoded tab or newline as content. `originOf` still strips a raw one, as a browser does, but `Navigate` never passes one on.
+  - **Test.** `TestOpaqueKeyKeepsEscapedNewlines` covers the finding's example, a tab, and CRLF. With the dropping restored, it and `TestBridgeGate` fail.
+  - **A side effect worth knowing.** A multi-line `data:` View.URL now keeps its newlines on WebKitGTK too, where they used to be stripped. That matches WebView2, and what the author wrote.
