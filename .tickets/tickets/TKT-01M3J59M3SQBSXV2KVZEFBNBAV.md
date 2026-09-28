@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M3SQBSXV2KVZEFBNBAV
 title: Stop a non-string bridge message crashing macOS views
 type: bug
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -19,10 +19,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-92c88910
+  branch: feat/bridge-sender-darwin
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-92c88910
+  commit: e70e6616bb0fb16ee47a4d294e18acaab4503d0e
+  session: null
+  claimed_at: 2026-09-28T02:13:29Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-28T02:13:29Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -47,4 +54,10 @@ Check `isKindOfClass:[NSString class]` before reading the body, and drop anythin
 ## Acceptance criteria
 
 - [ ] A page posting a non-string message body cannot crash the process, shown by a GUI scenario on macOS
-- [ ] setInspectable: is sent only where the selector exists
+- [x] setInspectable: is sent only where the selector exists
+
+## Notes
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:13:29Z
+
+Fixed on branch feat/bridge-sender-darwin, together with the macOS sender check for TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins call a view's Go bindings), because both change the same handler line. The body is read only when isKindOfClass:NSString, and setInspectable: is guarded by respondsToSelector:. badMessagesScenario in lib_darwin_test.go posts {}, 42, null, and [1,2], plus a well-formed message from an iframe, and expects the process alive with no frame call. That scenario runs only on GitHub's macOS runner, so criterion 1 is ticked only after the post-merge run passes. Criterion 2 is done in code, with no older macOS runner to exercise it.

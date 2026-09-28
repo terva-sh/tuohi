@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-27T20:25:48Z
+updated_at: 2026-09-28T02:13:29Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -152,3 +152,13 @@ Both findings fixed in 508953d.
   - The Linux `loadHTML` is used only by tests. It now loads its page with the base URI `http://loadhtml.tuohi.invalid/` and trusts that. Every GUI bridge scenario passes through the gate with it, which shows WebKit reports the base URI as the page's URI.
   - `loadHTML` on macOS and Windows no longer trusts `about:blank`. Their senders are still unknown, and their own PRs must key test pages the same way.
 - **medium: normalize percent-encoded hostnames. Fixed.** When `url.Parse` refuses a URL, `unescapeHost` percent-decodes only the host and `originOf` parses again. A decoded host containing a delimiter is refused. Tests cover `%65xample.com`, userinfo with a port, and an escaped slash.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:13:29Z
+
+### Second part: macOS sender check, branch feat/bridge-sender-darwin
+
+- **The handler reads the body only when it is an NSString.** That also fixes TKT-01M3J59M3SQBSXV2KVZEFBNBAV.
+- **It refuses anything not from the main frame,** using `frameInfo.isMainFrame` through `objc.Send[bool]`. It then names the sender as `webView.URL`, the same rule as Linux. The frame's `securityOrigin` was considered and rejected: it makes `data:` and `loadHTML` pages opaque, so they could not be trusted, and the main-frame check already covers frames.
+- **`loadHTML` on macOS** loads with base URL `http://loadhtml.tuohi.invalid/` and trusts it. `loadHTMLBase` moved to `loadhtml_webkit.go` (`!windows`), because WebView2's `NavigateToString` takes no base URL and Windows needs another way.
+- **Tests.** `originGateScenario` moved to `origin_gate_test.go`, built for Linux, the BSDs, and macOS. `badMessagesScenario` covers macOS non-string bodies and an iframe message.
+- **Not run locally.** Verified here by vet and golangci-lint for darwin, with Linux `just ci` and `test-gui` unchanged and passing. The macOS scenarios run on GitHub after the merge.
