@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T03:27:21Z
+updated_at: 2026-09-28T03:37:42Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -337,3 +337,26 @@ macOS and Windows run on GitHub after the merge. On Windows, `rebuildScripts` no
 - **macOS last.** It has the most unknowns: calling the Objective-C decision block, and the redirect question.
 - **Rejected: Windows first,** to close the WebView2 popup window soonest. That popup has none of tuohi's scripts, so no bridge, and its exposure is the same kind as ordinary link navigation. Designing the shared code with no local test loop costs more.
 - **Rejected: Linux, then macOS, then Windows.** It puts macOS's unknowns ahead of the simpler Windows hooks.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T03:37:42Z
+
+### Navigation policy on Linux: decide at response time, settled with human:sothr on 2026-09-28
+
+#### The finding
+
+WebKitGTK's `decide-policy` of type `NAVIGATION_ACTION` fires for navigations in both the main frame and subframes. `WebKitWebView.h` says so, and WebKitGTK 2.52.6, both 6.0 and 4.1, exports no way to tell them apart. `webkit_frame_is_main_frame` exists, but it belongs to the web-process extension API, which would need a C library loaded into the web process, and so cgo. A policy at navigation time would therefore also cancel every cross-origin iframe and open each one as a browser tab, which contradicts decision 1.
+
+#### Decision
+
+- **The top-level document** is decided at `RESPONSE` time, and only when `webkit_response_policy_decision_is_main_frame_main_resource` is true. The URL is the final one, after redirects.
+- **New windows** (`NEW_WINDOW_ACTION`, always top-level) are decided at navigation time.
+- **Schemes that never produce a response,** such as `mailto:` and custom schemes, are decided at navigation time, in any frame. A `mailto:` click in a frame then opens the mail client, which is acceptable because it is a user action either way.
+
+#### Cost, which only Linux pays
+
+Before the cancel, the untrusted server has already received the request, with any cookies the web view holds for it, and any redirects have been followed. Its content is never shown. WebView2's `NavigationStarting` is top-level only, and WKWebView gives `targetFrame.isMainFrame`, so both decide before a request goes out. The shared GUI scenario checks what is displayed and what is handed to the browser, not whether a server was contacted.
+
+#### Rejected
+
+- **Navigation time for everything.** It breaks cross-origin frames.
+- **Treating link clicks as top-level.** A link clicked inside a frame looks the same.
