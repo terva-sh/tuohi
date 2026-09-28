@@ -209,3 +209,38 @@ func TestOpaqueKeyKeepsEscapedNewlines(t *testing.T) {
 		t.Errorf("canonicalNavigateURL changed a URL with a host: %q", got)
 	}
 }
+
+// TestNavigateURLParsesAsWritten checks that a data: URL Navigate loads has
+// only bytes RFC 3986 allows, so NSURL takes it as written instead of
+// encoding it again, and that the escapes this adds leave the key as it was.
+// GitHub run 36382395146.
+func TestNavigateURLParsesAsWritten(t *testing.T) {
+	for _, in := range []string{
+		"data:text/html,<!DOCTYPE html><p class=\"a\">{x|y}^`[z]\\</p>\n<i>100%</i>#<frag> \"q\"",
+		"data:text/html,%3Cp%3Ea%20b%3C/p%3E",
+		"data:text/plain%2C<p>a,b",
+	} {
+		got := canonicalNavigateURL(in)
+		for i := 0; i < len(got); i++ {
+			c := got[i]
+			if c == '%' && i+2 < len(got) && isHex(got[i+1]) && isHex(got[i+2]) {
+				i += 2
+				continue
+			}
+			if c <= ' ' || c >= 0x7F || strings.IndexByte("%"+rfc3986Disallowed, c) >= 0 {
+				if !strings.HasPrefix(in, "data:text/plain%2C") || i >= strings.IndexByte(got, ',') {
+					t.Errorf("canonicalNavigateURL(%q) = %q: byte %q at %d", in, got, c, i)
+					break
+				}
+			}
+		}
+		// Navigate encodes a raw newline rather than strip it; see
+		// TestOpaqueKeyKeepsEscapedNewlines.
+		if want := originOf(strings.ReplaceAll(in, "\n", "%0A")); originOf(got) != want {
+			t.Errorf("originOf(canonicalNavigateURL(%q)) = %q, want %q", in, originOf(got), want)
+		}
+		if again := canonicalNavigateURL(got); again != got {
+			t.Errorf("canonicalNavigateURL is not idempotent: %q then %q", got, again)
+		}
+	}
+}
