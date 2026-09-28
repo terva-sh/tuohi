@@ -687,27 +687,49 @@ func onMainThread() bool {
 // because an external owner's run loop (e.g. the tray package's) is already
 // there. False only when the whole UI lifecycle is pinned to a secondary
 // thread whose main dispatch queue is never drained - marshaling to the main
-// thread would hang, so performOnMain runs inline instead.
+// thread would hang, so every call runs inline instead (see onUIThread).
 var (
 	uiIsMainOnce sync.Once
-	uiIsMain     bool
+	uiIsMain     atomic.Bool
 )
 
+// onUIThread is the dispatcher's onUI hook (see uiDispatcher). The UI thread
+// is the main thread, except when uiIsMain is false: then there is no other
+// thread to defer to, which includes the time before the first webview.
+//
+// A first webview created off the main thread with no loop running leaves
+// uiIsMain false for good, and every goroutine then counts as the UI thread:
+// nothing drains a queue on the thread that created the view, so there is
+// nowhere to marshal to. That shape runs AppKit off the main thread whatever
+// tuohi does, and TKT-01M3J59M5V12QW1WRBEJPJ5H38 (Make the macOS main-thread
+// rule explicit and enforced) refuses it.
+func onUIThread() bool {
+	return onMainThread() || !uiIsMain.Load()
+}
+
+// postUI is the dispatcher's post hook. The main dispatch queue always takes
+// work, so it never refuses.
+func postUI(f func()) bool {
+	dispatchMain(f)
+	return true
+}
+
+// uiLoopExternal is the dispatcher's external hook: NSApp runs, but not
+// through tuohi (appkitRunsLoop), so the tray package or an embedding host
+// owns the loop that drains the main queue.
+func uiLoopExternal() bool {
+	app := class("NSApplication").Send(sel("sharedApplication"))
+	return app.Send(sel("isRunning")) != 0 && !appkitRunsLoop.Load()
+}
+
 // performOnMain runs f on the UI thread and waits for it, running inline when
-// the caller is already there (or when the UI thread is not the main thread -
-// see uiIsMain). Off the UI thread it queues onto the main dispatch queue and
-// blocks until a running run loop drains it.
+// the caller is already there. Off the UI thread it queues onto the main
+// dispatch queue and waits until a run loop drains it. When no loop is
+// running, or the loop stops before f starts, f is dropped and performOnMain
+// returns rather than wait for a loop that may never come (see
+// uiDispatcher.call).
 func performOnMain(f func()) {
-	if onMainThread() || !uiIsMain {
-		f()
-		return
-	}
-	done := make(chan struct{})
-	dispatchMain(func() {
-		defer close(done)
-		f()
-	})
-	<-done
+	_ = ui.call(f)
 }
 
 // --- process-wide lifecycle bookkeeping ------------------------------------
@@ -1107,6 +1129,8 @@ func (w *webview) Run() {
 		<-w.closed
 		return
 	}
+	ui.enterLoop()
+	defer ui.exitLoop()
 	appkitRunsLoop.Store(true)
 	w.app.Send(sel("run"))
 	appkitRunsLoop.Store(false)
@@ -1806,7 +1830,7 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	loopRunning := app.Send(sel("isRunning")) != 0
-	uiIsMainOnce.Do(func() { uiIsMain = onMainThread() || loopRunning })
+	uiIsMainOnce.Do(func() { uiIsMain.Store(onMainThread() || loopRunning) })
 
 	if !onMainThread() && loopRunning {
 		// Someone else's run loop is draining the main queue: build the whole

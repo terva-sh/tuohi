@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
@@ -602,12 +603,14 @@ func (a *App) Show(view *View) error {
 	if view == nil {
 		return errors.New("appkit: Show requires a non-nil View")
 	}
-	if view.w != nil {
+	if w := view.live(); w != nil {
 		// Already shown: reveal the live window (un-minimize, show, focus).
-		view.w.Unminimize()
-		view.w.Show()
-		view.w.Raise()
-		view.w.Focus()
+		view.onUIWith(w, func(w engine) {
+			w.Unminimize()
+			w.Show()
+			w.Raise()
+			w.Focus()
+		})
 		return nil
 	}
 	return a.showFirst(view)
@@ -630,21 +633,18 @@ func (a *App) showFirst(view *View) error {
 	if err := a.start(s); err != nil {
 		return err
 	}
-	view.app = a
-	// The engines return the live *webview; keep it on the View so its
-	// methods delegate to the window (and can be called right after Show).
+	// The engine stays private to showFirst until it is fully set up: only
+	// then is it published on the View, so a Close from another goroutine
+	// cannot tear it down while it is still being configured. A Close that
+	// arrives before that finds the View unshown and does nothing.
 	nw, err := newView(view, serveAppFS(cfg.FS))
 	if err != nil {
-		view.app = nil
 		return err
 	}
 	var w engine = nw
-	view.w = w
 	w.trust(view.Origins...)
 	fail := func(err error) error {
 		w.Close()
-		view.w = nil
-		view.app = nil
 		return err
 	}
 	// Name the global the events API is installed at: window.<name> with
@@ -677,7 +677,12 @@ func (a *App) showFirst(view *View) error {
 	// the UI thread, when the first page load after Show finishes (see the
 	// View.Ready doc).
 	w.core().onReady = view.Ready
-	a.registerView(view)
+	a.registerView(view, w)
+	// Publish the engine, so the View's methods delegate to the window (and
+	// can be called right after Show).
+	view.mu.Lock()
+	view.w, view.app = w, a
+	view.mu.Unlock()
 	// Load the window's first page: the declarative URL. With an empty URL
 	// no navigation happens (a blank window) and Ready stays pending until
 	// a later Navigate completes.
@@ -853,6 +858,10 @@ type View struct {
 	// see the note on the View type about window control.
 	State State
 
+	// mu guards w and app, which App.Show sets and Close clears while other
+	// goroutines call the View's methods.
+	mu sync.Mutex
+
 	// w is the live engine handle. App.Show stores it here (nil before the
 	// first show and after Close, so the View can be shown again); methods
 	// fail with "View is not shown" while it is nil.
@@ -861,6 +870,30 @@ type View struct {
 	// app is the App currently managing this View (set by App.Show, cleared
 	// by Close). It is used to unregister the View on Close.
 	app *App
+}
+
+// live returns the View's engine handle, nil when the View is not shown.
+func (v *View) live() engine {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.w
+}
+
+// onUI runs f on the UI thread with the View's engine (see uiDispatcher.run).
+// A call queued from another goroutine runs later, so when it runs it first
+// checks that the View still holds the engine it was queued for: a Close in
+// between has destroyed that engine, and f is dropped.
+func (v *View) onUI(f func(w engine)) {
+	v.onUIWith(v.mustEngine(), f)
+}
+
+// onUIWith is onUI for an engine the caller already holds.
+func (v *View) onUIWith(w engine, f func(w engine)) {
+	ui.run(func() {
+		if v.live() == w {
+			f(w)
+		}
+	})
 }
 
 // State values configure window sizing and resizing at creation time.
@@ -882,10 +915,12 @@ const (
 )
 
 // The methods below drive the shown window and its embedded web view; each
-// delegates to the live engine handle App.Show stored on the View. Unless a
-// method's own documentation says otherwise, call them from the UI thread (the
-// goroutine that created the first window), and use Dispatch to re-enter that
-// thread from background goroutines. Calling any of them before Show is a
+// delegates to the live engine handle App.Show stored on the View. Each is
+// safe to call from any goroutine, including a binding's: on the UI thread
+// (the goroutine that created the first window) it runs in place, and
+// elsewhere it is queued to the UI thread and returns without waiting, unless
+// its own documentation says it waits. Calls from one goroutine run in the
+// order they were made. Calling any of them before Show is a
 // caller error: methods that can report failure return an error ("View is not
 // shown"), value-returning methods return their zero value, and void methods
 // panic with the same message instead of dereferencing a nil engine.
@@ -908,10 +943,11 @@ const (
 // mustEngine returns the live engine handle of a shown View, panicking with
 // a clear message when the View was never passed to App.Show.
 func (v *View) mustEngine() engine {
-	if v.w == nil {
+	w := v.live()
+	if w == nil {
 		panic("appkit: View is not shown: pass it to App.Show first")
 	}
-	return v.w
+	return w
 }
 
 // notShown is the error value-returning View methods report before App.Show.
@@ -929,7 +965,9 @@ func notShown() error {
 //	v.Navigate("https://github.com/terva-sh/tuohi")
 //	v.Navigate("app://app/index.html")
 //	v.Navigate("data:text/html,%3Ch1%3EHello%3C%2Fh1%3E")
-func (v *View) Navigate(url string) { v.mustEngine().Navigate(url) }
+func (v *View) Navigate(url string) {
+	v.onUI(func(w engine) { w.Navigate(url) })
+}
 
 // Window marshals f to the UI thread and calls it with the view's native
 // window handle (a GtkWindow* / NSWindow* / HWND). Use it instead of touching
@@ -946,19 +984,21 @@ func (v *View) Window(f func(wnd unsafe.Pointer)) {
 // one is running) and destroys the native window and web view, then
 // UNREGISTERS the View from the App that showed it and resets its internal
 // state (engine handle, App reference) so the same View can be App.Show'n
-// again later. It is idempotent and safe to call from any goroutine, and it
-// is a no-op before the View was ever shown - closing an unshown View is not
-// an error.
+// again later. It is idempotent and safe to call from any goroutine,
+// concurrently too: exactly one call tears the window down. It is a no-op
+// before the View was ever shown - closing an unshown View is not an error.
+// Off the UI thread the teardown is queued and Close does not wait for it.
 func (v *View) Close() {
-	if v.w == nil {
+	v.mu.Lock()
+	w, app := v.w, v.app
+	v.w, v.app = nil, nil
+	v.mu.Unlock()
+	if w == nil {
 		return
 	}
-	app := v.app
-	v.w.Close()
-	v.w = nil
-	v.app = nil
+	w.Close()
 	if app != nil {
-		app.unregisterView(v)
+		app.unregisterView(v, w)
 	}
 }
 
@@ -968,7 +1008,9 @@ func (v *View) Close() {
 // the page's own scripts are in place. Injecting script before the document
 // exists is not reliable across the three engines, so appkit exposes no
 // declarative JS/CSS injection API.
-func (v *View) Eval(js string) { v.mustEngine().Eval(js) }
+func (v *View) Eval(js string) {
+	v.onUI(func(w engine) { w.Eval(js) })
+}
 
 // Focus moves keyboard focus into the web content - so typing, and a screen
 // reader's cursor, land inside the page - and, when raise is true, FIRST
@@ -976,48 +1018,60 @@ func (v *View) Eval(js string) { v.mustEngine().Eval(js) }
 // program that took focus away from itself needs: it launched a window that
 // activates, finished a job that raised something else). Use Focus(true)
 // sparingly - stealing focus from someone typing in another application is
-// worse than the extra click it saves. Call it from the UI thread; the
-// backends marshal to the UI thread when called from a background goroutine.
+// worse than the extra click it saves.
 func (v *View) Focus(raise bool) {
-	w := v.mustEngine()
-	if raise {
-		w.Raise()
-	}
-	w.Focus()
+	v.onUI(func(w engine) {
+		if raise {
+			w.Raise()
+		}
+		w.Focus()
+	})
 }
 
 // Show makes the window visible again and brings it to the front, putting
 // it back into the taskbar / window list after Hide, or restoring it after
 // Minimize. Safe to call from any goroutine (the backends marshal to the
 // UI thread).
-func (v *View) Show() { v.mustEngine().Show() }
+func (v *View) Show() {
+	v.onUI(engine.Show)
+}
 
 // Hide removes the window from the screen AND from the taskbar / window
 // list - the classic "hide to tray" behavior: the process keeps running
 // and the window stays alive until Show brings it back. Safe to call from
 // any goroutine.
-func (v *View) Hide() { v.mustEngine().Hide() }
+func (v *View) Hide() {
+	v.onUI(engine.Hide)
+}
 
 // Maximize enlarges the window to fill the available screen area. On macOS
 // it performs the native zoom, which is a TOGGLE: calling Maximize on an
 // already-zoomed window restores its previous size. Safe to call from any
 // goroutine.
-func (v *View) Maximize() { v.mustEngine().Maximize() }
+func (v *View) Maximize() {
+	v.onUI(engine.Maximize)
+}
 
 // Minimize shrinks the window to the taskbar / Dock (on macOS it is
 // miniaturized into the Dock). Show restores it. Safe to call from any
 // goroutine.
-func (v *View) Minimize() { v.mustEngine().Minimize() }
+func (v *View) Minimize() {
+	v.onUI(engine.Minimize)
+}
 
 // Unminimize restores a minimized window to its normal on-screen state
 // (the inverse of Minimize). It is a no-op when the window is not
 // minimized. Safe to call from any goroutine.
-func (v *View) Unminimize() { v.mustEngine().Unminimize() }
+func (v *View) Unminimize() {
+	v.onUI(engine.Unminimize)
+}
 
 // Unmaximize restores a maximized window to its previous normal size (the
 // inverse of Maximize). It is a no-op when the window is not maximized.
 // Safe to call from any goroutine.
-func (v *View) Unmaximize() { v.mustEngine().Unmaximize() }
+func (v *View) Unmaximize() {
+	v.onUI(engine.Unmaximize)
+}
 
 // Unbind is not part of the public View API - bindings are fixed at Show time
 // by the App.Bind / View.Bind maps. Engines keep an internal Unbind used by
@@ -1029,19 +1083,21 @@ func (v *View) Unmaximize() { v.mustEngine().Unmaximize() }
 // opts.Type (open, multi-open, save or directory) and built on the
 // github.com/terva-sh/tuohi/dialog package. Unlike the other View
 // methods it BLOCKS the calling goroutine until the user dismisses the
-// dialog and therefore must NOT be called from the UI thread (doing so
-// deadlocks). Call it from a Bind callback - which runs on a background
-// goroutine - or any other goroutine. It requires the main loop to be
-// running (Run has been called).
+// dialog. Call it from a Bind callback - which runs on a background
+// goroutine - or any other goroutine; on the UI thread it runs the panel in
+// place. Off the UI thread it needs a running loop (App.Wait): when none is
+// running, or the loop stops before the panel opens, it returns an error and
+// no panel is shown.
 //
 // A cancelled dialog - and a dialog that could not be presented (no
 // backend, no display) - returns an empty result and a nil error, per the
 // dialog package contract.
 func (v *View) Dialog(opts dialog.Options) ([]string, error) {
-	if v.w == nil {
+	w := v.live()
+	if w == nil {
 		return nil, notShown()
 	}
-	return v.w.Dialog(opts)
+	return w.Dialog(opts)
 }
 
 // The View dialog method presents the platform's native open, save and
@@ -1052,24 +1108,17 @@ func (v *View) Dialog(opts dialog.Options) ([]string, error) {
 //
 // A canceled panel - and a panel that could not be presented at all (no
 // backend, no display) - returns an empty result and a nil error, following
-// the dialog package contract. Call it from a Bind callback (a background
-// goroutine), never from the UI thread (that deadlocks).
+// the dialog package contract.
 
 // Dialog presents the native panel selected by opts.Type and returns the
 // chosen path(s), or nil if the user cancelled.
 func (w *webview) Dialog(opts dialog.Options) ([]string, error) {
-	ch := make(chan dialogResult, 1)
-	w.Dispatch(func() {
-		paths, err := dialog.Open(opts)
-		ch <- dialogResult{paths: paths, err: err}
-	})
-	res := <-ch
-	return res.paths, res.err
-}
-
-type dialogResult struct {
-	paths []string
-	err   error
+	var paths []string
+	var err error
+	if callErr := ui.call(func() { paths, err = dialog.Open(opts) }); callErr != nil {
+		return nil, fmt.Errorf("appkit: dialog: %w", callErr)
+	}
+	return paths, err
 }
 
 // schemeMIME returns a response's MIME type or the octet-stream default.

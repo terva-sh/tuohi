@@ -56,6 +56,7 @@ func TestMain(m *testing.M) {
 		resNavPolicy.Store(navPolicyScenario())
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
+		resGoroutineCalls.Store(goroutineCallsScenario())
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
 	os.Exit(m.Run())
@@ -82,6 +83,11 @@ func winCloseViaUIScenario() string {
 
 	if watchdogFired.Load() {
 		return "hung (WM_CLOSE did not end Run)"
+	}
+	// WM_DESTROY releases the web view on the UI thread, so nothing is left
+	// for a Close that arrives after the loop has ended.
+	if nw := native(w); nw.controller != 0 || nw.environment != 0 {
+		return "web view not released by WM_DESTROY"
 	}
 	return "closed"
 }

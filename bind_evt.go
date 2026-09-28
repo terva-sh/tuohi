@@ -30,19 +30,21 @@ import (
 // goroutine that called Emit. Re-enter the UI thread with Dispatch if a
 // handler touches the window. Before Show the returned cancel is a no-op.
 func (v *View) On(name string, handler func(args ...json.RawMessage)) (cancel func()) {
-	if v.w == nil {
+	w := v.live()
+	if w == nil {
 		return func() {}
 	}
-	return v.w.On(name, handler)
+	return w.On(name, handler)
 }
 
 // Off removes every Go handler subscribed to the named event. It does not
 // affect the page's own JS listeners.
 func (v *View) Off(name string) {
-	if v.w == nil {
+	w := v.live()
+	if w == nil {
 		return
 	}
-	v.w.Off(name)
+	w.Off(name)
 }
 
 // Emit publishes an event to every listener on both sides. Each value in
@@ -52,10 +54,11 @@ func (v *View) Off(name string) {
 // thread. Emit returns an error only if a value in data cannot be
 // JSON-encoded, in which case nothing is published.
 func (v *View) Emit(name string, data ...any) error {
-	if v.w == nil {
+	w := v.live()
+	if w == nil {
 		return notShown()
 	}
-	return v.w.Emit(name, data...)
+	return w.Emit(name, data...)
 }
 
 // events is the per-view publish/subscribe state of the events bridge. Every

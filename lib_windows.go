@@ -2044,8 +2044,9 @@ var (
 	winInitOnce sync.Once
 	winInitErr  error
 
-	wndProcCB  uintptr // window class proc for owned windows
-	hostProcCB uintptr // subclass proc for embedded (caller-owned) host HWNDs
+	wndProcCB      uintptr // window class proc for owned windows
+	hostProcCB     uintptr // subclass proc for embedded (caller-owned) host HWNDs
+	dispatchProcCB uintptr // window proc for the UI thread's dispatch window
 )
 
 func ensureWinInit() error {
@@ -2111,6 +2112,7 @@ func ensureWinInit() error {
 		}
 		wndProcCB = pure.NewCallback(wndProc)
 		hostProcCB = pure.NewCallback(hostProc)
+		dispatchProcCB = pure.NewCallback(dispatchProc)
 	})
 	return winInitErr
 }
@@ -2153,6 +2155,9 @@ var (
 	engineSeq uintptr
 
 	uiThreadOnce sync.Once
+	// uiThreadApp is the thread the first newView pinned, which owns every
+	// window and the dispatch window. Zero until the first view is created.
+	uiThreadApp atomic.Uint32
 
 	// windowCount tracks live owned windows so a user-initiated close of the
 	// last one ends Run() with WM_QUIT.
@@ -2279,7 +2284,11 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	if err != nil {
 		return nil, err
 	}
-	uiThreadOnce.Do(runtime.LockOSThread)
+	uiThreadOnce.Do(func() {
+		runtime.LockOSThread()
+		uiThreadApp.Store(getCurrentThreadID())
+		createDispatchWindow()
+	})
 
 	w := &webview{
 		ownsWindow:  v.window == nil,
@@ -2495,6 +2504,14 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		}
 		w.window = 0
 		setWindowLongPtrW(hwnd, gwlpUserData, 0)
+		// Release the web view here, on the UI thread, while the window and
+		// the loop that delivered this message are still alive. A user close
+		// can end the last loop, and a later Close from another goroutine
+		// would then post a teardown that nothing drains. When Destroy got
+		// here through destroyOnUI, the controller is already closed and only
+		// the environment is released early.
+		w.closeController()
+		w.releaseEnvironment()
 		return 0, true
 	}
 	return 0, false
@@ -2511,6 +2528,95 @@ func (w *webview) clientPoint(hwnd uintptr, lp uintptr) (point, bool) {
 	return pt, true
 }
 
+// The UI thread's dispatch window is a message-only window (HWND_MESSAGE)
+// created with the first view, on the thread that owns every view. It carries
+// the dispatcher's posts (postUI) and outlives every view's own window. A
+// window, unlike a thread message (PostThreadMessageW), still receives its
+// messages while a modal loop such as a window drag or a dialog pumps
+// instead of Run.
+var (
+	dispatchHWND  atomic.Uintptr
+	uiDispatchMu  sync.Mutex
+	uiDispatchMap = map[uintptr]func(){}
+	uiDispatchSeq uintptr
+
+	dispatchClassName = utf16("tuohi_dispatch")
+)
+
+// hwndMessage is HWND_MESSAGE, ((HWND)-3): the parent that makes a window
+// message-only.
+const hwndMessage = ^uintptr(2)
+
+// createDispatchWindow creates the dispatch window on the calling thread,
+// which must be the UI thread. On failure postUI refuses, and callers fall
+// back as they did before the dispatch window existed.
+func createDispatchWindow() {
+	hinst := getModuleHandleW(0)
+	wc := wndClassExW{
+		lpfnWndProc:   dispatchProcCB,
+		hInstance:     hinst,
+		lpszClassName: dispatchClassName,
+	}
+	wc.cbSize = uint32(unsafe.Sizeof(wc))
+	registerClassExW(&wc)
+	hwnd := createWindowExW(0, dispatchClassName, utf16(""), 0, 0, 0, 0, 0,
+		hwndMessage, 0, hinst, 0)
+	if hwnd == 0 {
+		log.Printf("tuohi: dispatch window: CreateWindowExW failed")
+		return
+	}
+	dispatchHWND.Store(hwnd)
+}
+
+// dispatchProc is the dispatch window's proc: WM_APP carries the id of a
+// closure postUI queued.
+func dispatchProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
+	if msg != wmApp {
+		return defWindowProcW(hwnd, msg, wp, lp)
+	}
+	uiDispatchMu.Lock()
+	f := uiDispatchMap[lp]
+	delete(uiDispatchMap, lp)
+	uiDispatchMu.Unlock()
+	if f != nil {
+		f()
+	}
+	return 0
+}
+
+// postUI is the dispatcher's post hook (see uiDispatcher). It refuses before
+// the first view has created the dispatch window, or when the post fails.
+func postUI(f func()) bool {
+	hwnd := dispatchHWND.Load()
+	if hwnd == 0 {
+		return false
+	}
+	uiDispatchMu.Lock()
+	uiDispatchSeq++
+	id := uiDispatchSeq
+	uiDispatchMap[id] = f
+	uiDispatchMu.Unlock()
+	if postMessageW(hwnd, wmApp, 0, id) == 0 {
+		uiDispatchMu.Lock()
+		delete(uiDispatchMap, id)
+		uiDispatchMu.Unlock()
+		return false
+	}
+	return true
+}
+
+// onUIThread is the dispatcher's onUI hook. It is true before any view
+// exists, when there is no other thread to defer to.
+func onUIThread() bool {
+	t := uiThreadApp.Load()
+	return t == 0 || getCurrentThreadID() == t
+}
+
+// uiLoopExternal is the dispatcher's external hook. The UI thread's messages
+// are pumped by App.Wait and Run; a caller-owned host window's loop is not
+// counted, since tuohi cannot tell whether it runs.
+func uiLoopExternal() bool { return false }
+
 func (w *webview) runDispatch(lp uintptr) {
 	w.dispatchMu.Lock()
 	f := w.dispatchMap[lp]
@@ -2524,6 +2630,8 @@ func (w *webview) runDispatch(lp uintptr) {
 // --- View lifecycle --------------------------------------------------------
 
 func (w *webview) Run() {
+	ui.enterLoop()
+	defer ui.exitLoop()
 	var m msgStruct
 	for getMessageW(&m, 0, 0, 0) > 0 {
 		translateMessage(&m)
@@ -2538,6 +2646,13 @@ func (w *webview) Terminate() {
 	w.Dispatch(func() { postQuitMessage(0) })
 }
 func (w *webview) Dispatch(f func()) {
+	if w.window == 0 {
+		// The window is gone, and PostMessageW with a NULL HWND would post to
+		// the caller's own thread, where nothing runs the closure. The UI
+		// thread's dispatch window still takes it.
+		postUI(f)
+		return
+	}
 	w.dispatchMu.Lock()
 	w.dispatchSeq++
 	id := w.dispatchSeq
@@ -2618,12 +2733,16 @@ func (w *webview) Destroy() {
 	// close) still owns a temporary loopback server: stop it here - the
 	// load-finished path (fireReady) never ran.
 	w.releaseLoopback()
-	// The dispatch below rides the window's WM_APP queue, so it can only be
-	// used while the window is alive; a window already gone (a second Close,
-	// or a Close after a user-initiated WM_CLOSE) has no UI-thread work left
-	// and is torn down in place.
-	if w.uiThread != 0 && getCurrentThreadID() != w.uiThread && w.window != 0 {
-		w.Dispatch(func() { w.destroyOnUI() })
+	// Off the UI thread the teardown is always marshalled, never run in
+	// place: the controller and environment belong to the UI thread. Dispatch
+	// posts to this view's window, or to the UI thread's dispatch window once
+	// the view's window is gone. When neither can take it, the teardown is
+	// dropped rather than run on the wrong thread. A window the user closed
+	// has little left to tear down by then: WM_DESTROY already released the
+	// web view on the UI thread (see engineMsg), which matters when that
+	// close also ended the last loop and nothing would drain the post.
+	if w.uiThread != 0 && getCurrentThreadID() != w.uiThread {
+		w.Dispatch(w.destroyOnUI)
 		return
 	}
 	w.destroyOnUI()
@@ -2631,6 +2750,23 @@ func (w *webview) Destroy() {
 
 // destroyOnUI performs the UI-thread-only part of Destroy. See Destroy.
 func (w *webview) destroyOnUI() {
+	w.closeController()
+	if w.window != 0 && w.ownsWindow {
+		destroyWindow(w.window)
+		w.window = 0
+	}
+	w.releaseEnvironment()
+	// Drop any Dispatch closures that were queued but never delivered (their
+	// WM_APP messages die with the window), instead of leaking them.
+	w.dispatchMu.Lock()
+	w.dispatchMap = map[uintptr]func(){}
+	w.dispatchMu.Unlock()
+	unregisterEngine(w.id)
+}
+
+// closeController closes the WebView2 controller and releases the web view
+// and controller references, on the UI thread. It is a no-op once done.
+func (w *webview) closeController() {
 	if w.controller != 0 {
 		// Close the controller, then release the references we took in
 		// handlerInvoke (ICoreWebView2 was AddRef'd, the controller too),
@@ -2648,10 +2784,11 @@ func (w *webview) destroyOnUI() {
 		asController(w.controller).Release()
 		w.controller = 0
 	}
-	if w.window != 0 && w.ownsWindow {
-		destroyWindow(w.window)
-		w.window = 0
-	}
+}
+
+// releaseEnvironment drops the WebView2 environment reference, on the UI
+// thread, after closeController. It is a no-op once done.
+func (w *webview) releaseEnvironment() {
 	// The environment reference taken in handlerInvoke (kindEnv) is never
 	// released anywhere else. The environment is what pins the WebView2
 	// browser process alive; dropping the reference is what lets it shut down
@@ -2662,12 +2799,6 @@ func (w *webview) destroyOnUI() {
 		asEnvironment(w.environment).Release()
 		w.environment = 0
 	}
-	// Drop any Dispatch closures that were queued but never delivered (their
-	// WM_APP messages die with the window), instead of leaking them.
-	w.dispatchMu.Lock()
-	w.dispatchMap = map[uintptr]func(){}
-	w.dispatchMu.Unlock()
-	unregisterEngine(w.id)
 }
 
 // --- drag regions ----------------------------------------------------------

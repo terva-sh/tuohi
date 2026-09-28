@@ -93,7 +93,7 @@ window.addEventListener('load', function(){
 		// host, zero-padded port): the trusted origin must still match the
 		// URI WebKit reports for the page.
 		loose := strings.Replace(base, "http://localhost:", "http://LocalHost:0", 1)
-		w.w.Dispatch(func() { w.w.Navigate(loose + "/page") })
+		w.Navigate(loose + "/page")
 		if !wait() {
 			result <- "trusted page never loaded"
 			w.Close()

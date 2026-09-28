@@ -61,6 +61,7 @@ func TestMain(m *testing.M) {
 		resNavPolicy.Store(navPolicyScenario())
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
+		resGoroutineCalls.Store(goroutineCallsScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
