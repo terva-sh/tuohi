@@ -54,6 +54,8 @@ func TestMain(m *testing.M) {
 		resOriginGate.Store(originGateScenario())
 		resFrameGate.Store(frameGateScenario())
 		resNavPolicy.Store(navPolicyScenario())
+		resLoopbackApp.Store(loopbackAppScenario())
+		resDataURL.Store(dataURLScenario())
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
 	os.Exit(m.Run())

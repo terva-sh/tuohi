@@ -490,6 +490,7 @@ func TestBridgeGate(t *testing.T) {
 		"http://１２７.１:8080/",
 		"http://bücher.example/",
 		"data:text/html,<p>hi</p>#frag",
+		"data:text/html,<p>a b</p>\n<i>\"q\" é</i>?x y<z>&k=%41#frag",
 	}
 	var c viewCore
 	c.trustURLs(trusted)
