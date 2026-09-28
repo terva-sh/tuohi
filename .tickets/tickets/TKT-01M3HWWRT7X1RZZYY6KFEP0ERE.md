@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:21:18Z
+updated_at: 2026-09-28T02:28:03Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -187,3 +187,13 @@ Both findings fixed in 508953d.
   - the sender is read when the message arrives, so a message queued across a navigation can take the new page's URI.
 
   The per-document token planned with injection-only-into-trusted-origins closes both. Until then, criterion 1 stays unticked.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:28:03Z
+
+### Windows fix-forward after PR #9
+
+- **What failed.** GitHub run 36369625587 on ba5639e failed three Windows bridge scenarios with "no report". Those scenarios load their pages with `loadHTML`, which navigated to a base64 `data:` URL.
+- **What worked.** `TestOriginGate` passed in the same run. It uses http loopback pages, so `GetSource` and the gate work for ordinary origins.
+- **Cause, not established.** Either WebView2 reports a `data:` document's source differently from the navigated URL, or it does not give `data:` documents the bridge. Neither can be told apart without a Windows machine.
+- **Fix, on branch fix/windows-loadhtml-loopback.** `loadHTML` serves the page from a temporary loopback server and navigates to it.
+- **Consequence for applications:** a `View.URL` that is a `data:` URL probably cannot use bindings on Windows. The View.URL doc lists `data:`. Settle that with the navigation-policy work, by testing it on GitHub and either fixing it or documenting it.
