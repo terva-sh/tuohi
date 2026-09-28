@@ -1,6 +1,7 @@
 package tuohi
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -415,7 +416,7 @@ func TestGeneratedScriptsParse(t *testing.T) {
 	// installer kind present (constant, accessor, setter, getter, plain fn).
 	scripts := map[string]string{
 		"appRegions": createAppRegionScript(true, true, "linux"),
-		"bridge":     createInitScript("function(m){}"),
+		"bridge":     createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), []string{"http://127.0.0.1:8080", "data:text/html,x"}),
 		"events":     eventsInitScript("events"),
 		"bind": createBindScript([]binding{
 			{name: "demo.a", kind: bindingConst, value: `{"k":1}`},
@@ -464,6 +465,119 @@ func TestSerialQueueRunsInOrder(t *testing.T) {
 	for pos, task := range got {
 		if task != pos {
 			t.Fatalf("task %d ran at position %d - serialQueue is out of order", task, pos)
+		}
+	}
+}
+
+// TestBridgeGate runs the document-start bridge under node against the
+// locations a browser gives a document, parsed by node's WHATWG URL parser.
+// The bridge must appear only in a top-level document whose origin key, as
+// the script computes it, is one Go trusted, and that key must be the one
+// originOf gives for the same URL, or a trusted page would lose its bridge.
+func TestBridgeGate(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	token := strings.Repeat("cd", bridgeTokenLen/2)
+	// Each URL is trusted in Go by its own spelling, then loaded as a browser
+	// would canonicalize it.
+	trusted := []string{
+		"http://LocalHost:08080/page",
+		"https://app.localhost/index.html",
+		"app://app/index.html",
+		"http://[::ffff:127.0.0.1]:80/",
+		"http://１２７.１:8080/",
+		"http://bücher.example/",
+		"data:text/html,<p>hi</p>#frag",
+	}
+	var c viewCore
+	c.trustURLs(trusted)
+	c.trustURL("about:blank") // never trusted, so never in the script
+	c.mu.Lock()
+	c.token = token
+	bridge := c.bridgeScriptLocked("function(m) { posted.push(m); }")
+	c.mu.Unlock()
+
+	type load struct {
+		URL   string `json:"url"`
+		Top   bool   `json:"top"`
+		Want  bool   `json:"want"`
+		GoKey string `json:"goKey"`
+	}
+	var loads []load
+	for _, u := range trusted {
+		loads = append(loads, load{URL: u, Top: true, Want: true, GoKey: originOf(u)})
+	}
+	loads = append(loads,
+		load{URL: "http://localhost:8081/page", Top: true},
+		load{URL: "http://localhost:8080/page", Top: false},
+		load{URL: "about:blank", Top: true},
+		load{URL: "data:text/html,<p>other</p>", Top: true},
+	)
+	loadsJSON, err := json.Marshal(loads)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	harness := `
+const bridge = ` + marshalJSON(bridge) + `;
+const loads = ` + string(loadsJSON) + `;
+let failed = false;
+for (const l of loads) {
+  const u = new URL(l.url);
+  const posted = [];
+  const win = { crypto: { getRandomValues: function(a) { return a; } },
+    location: { protocol: u.protocol, host: u.host, href: u.href } };
+  win.top = l.top ? win : {};
+  new Function('window', 'posted', bridge)(win, posted);
+  const got = typeof win.__webview__ === 'object';
+  if (got !== l.want) {
+    console.error(l.url + ' (top=' + l.top + '): bridge=' + got + ', want ' + l.want +
+      '; browser key ' + (u.host ? u.protocol + '//' + u.host : u.href.split('#')[0]) +
+      ', Go key ' + l.goKey);
+    failed = true;
+    continue;
+  }
+  if (got) {
+    win.__webview__.post('{"method":"m"}');
+    if (posted[0] !== ` + marshalJSON(token) + ` + '{"method":"m"}') {
+      console.error(l.url + ': post sent ' + posted[0]);
+      failed = true;
+    }
+  }
+}
+if (bridge.indexOf('"about:') >= 0) { console.error('about: is in the trusted set'); failed = true; }
+process.exit(failed ? 1 : 0);
+`
+	file := filepath.Join(t.TempDir(), "gate.js")
+	if err := os.WriteFile(file, []byte(harness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, file).CombinedOutput(); err != nil {
+		t.Fatalf("bridge gate: %v\n%s", err, out)
+	}
+}
+
+func TestCheckToken(t *testing.T) {
+	var c viewCore
+	if _, ok := c.checkToken(`{"method":"m"}`); ok {
+		t.Fatal("a view with no token accepted a message")
+	}
+	c.mu.Lock()
+	_ = c.bridgeScriptLocked("function(m){}")
+	token := c.token
+	c.mu.Unlock()
+	if len(token) != bridgeTokenLen {
+		t.Fatalf("token length %d, want %d", len(token), bridgeTokenLen)
+	}
+	if body, ok := c.checkToken(token + `{"method":"m"}`); !ok || body != `{"method":"m"}` {
+		t.Fatalf("checkToken(token+body) = %q, %v", body, ok)
+	}
+	wrong := strings.Repeat("0", bridgeTokenLen)
+	for _, body := range []string{"", token[:10], `{"method":"m"}`, wrong + `{"method":"m"}`} {
+		if _, ok := c.checkToken(body); ok {
+			t.Errorf("checkToken(%q) accepted", body)
 		}
 	}
 }

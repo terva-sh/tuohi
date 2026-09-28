@@ -102,6 +102,7 @@ func TestMain(m *testing.M) {
 		resEmbed.Store(embedScenario())
 		resWaitClose.Store(waitCloseScenario())
 		resOriginGate.Store(originGateScenario())
+		resFrameGate.Store(frameGateScenario())
 	}
 	os.Exit(m.Run())
 }

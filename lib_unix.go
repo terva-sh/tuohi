@@ -888,7 +888,9 @@ func (w *webview) windowInit(window uintptr) error {
 		messageHandlerFn, w.id, 0, 0)
 	registerScriptHandler(w.manager, "__webview__")
 
-	w.pushUserScript(createInitScript(bridgePostFn))
+	w.mu.Lock()
+	w.rebuildScriptsLocked() // installs the bridge
+	w.mu.Unlock()
 	return nil
 }
 
@@ -1256,12 +1258,21 @@ func (w *webview) Navigate(url string) {
 	// the HTTP origin), or - with no server up - the engine serves the app://
 	// scheme natively.
 	url = w.resolveURL(url)
-	w.trustURL(url)
+	w.trust(url)
 	webkitWebViewLoadURI(w.webview, url)
 }
 
+func (w *webview) trust(urls ...string) {
+	if !w.trustURLs(urls) {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.rebuildScriptsLocked()
+}
+
 func (w *webview) loadHTML(html string) {
-	w.trustURL(loadHTMLBase)
+	w.trust(loadHTMLBase)
 	webkitWebViewLoadHTML(w.webview, html, loadHTMLBase)
 }
 
@@ -1605,11 +1616,14 @@ func (w *webview) pushUserScript(src string) {
 	w.rebuildScriptsLocked()
 }
 
+// rebuildScriptsLocked re-injects the bridge, Init() scripts and the current
+// bind script in order. Assumes w.mu is held.
 func (w *webview) rebuildScriptsLocked() {
 	if w.manager == 0 {
 		return
 	}
 	webkitUserContentManagerRemoveAllScripts(w.manager)
+	addUserScript(w.manager, w.bridgeScriptLocked(bridgePostFn))
 	for _, src := range w.userScriptSrcs {
 		addUserScript(w.manager, src)
 	}

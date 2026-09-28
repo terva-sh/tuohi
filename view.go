@@ -640,9 +640,7 @@ func (a *App) showFirst(view *View) error {
 	}
 	var w engine = nw
 	view.w = w
-	for _, o := range view.Origins {
-		w.core().trustURL(o)
-	}
+	w.trust(view.Origins...)
 	fail := func(err error) error {
 		w.Close()
 		view.w = nil

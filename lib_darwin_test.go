@@ -57,6 +57,7 @@ func TestMain(m *testing.M) {
 		resRaise.Store(raiseScenario())
 		resWindowState.Store(windowStateScenario())
 		resOriginGate.Store(originGateScenario())
+		resFrameGate.Store(frameGateScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())

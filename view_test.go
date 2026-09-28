@@ -3,6 +3,7 @@ package tuohi
 import (
 	"encoding/json"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"unsafe"
@@ -245,7 +246,11 @@ func TestBridgeScriptsBehavior(t *testing.T) {
 	}
 	eventsJS := eventsInitScript("events")
 	acmeJS := eventsInitScript("acme")
-	bindJS := createInitScript("function(m) { posts.push(JSON.parse(m)); }")
+	token := strings.Repeat("ab", bridgeTokenLen/2)
+	bindJS := createInitScript(`function(m) {
+  assert(m.slice(0, `+strconv.Itoa(bridgeTokenLen)+`) === '`+token+`', 'post carries the token');
+  posts.push(JSON.parse(m.slice(`+strconv.Itoa(bridgeTokenLen)+`)));
+}`, token, []string{"http://127.0.0.1:8080"})
 
 	harness := `
 const posts = [];
@@ -256,7 +261,9 @@ global.window = {
     goEvents.push([name, args]);
     return Promise.resolve();
   },
+  location: { protocol: 'http:', host: '127.0.0.1:8080', href: 'http://127.0.0.1:8080/index.html' },
 };
+window.top = window;
 function assert(cond, msg) {
   if (!cond) { console.error('ASSERT: ' + msg); process.exit(1); }
 }

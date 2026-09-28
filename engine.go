@@ -1,12 +1,16 @@
 package tuohi
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,6 +69,12 @@ type engine interface {
 	// bindings, where no binding has an internal name.
 	handleInternal(method string, params json.RawMessage) bool
 
+	// trust adds the origins of urls to the view's trusted origins (see
+	// viewCore.trustURL). When that adds one, it rebuilds the document-start
+	// scripts, so the next document on that origin receives the bridge. Each
+	// engine's Navigate calls it before starting the load.
+	trust(urls ...string)
+
 	// updateBindings applies mutate to the binding table and rebuilds the
 	// document-start scripts, on whichever thread and under whichever lock
 	// the platform's script rebuild needs. When mutate returns an error, the
@@ -112,6 +122,12 @@ type viewCore struct {
 	// origin the application itself navigated the view to, plus View.Origins.
 	// Guarded by mu.
 	origins map[string]bool
+
+	// token is the view's bridge secret, bridgeTokenLen hex characters, made
+	// by the first bridgeScriptLocked. The bridge script keeps it only in a
+	// document on a trusted origin, and prefixes it to every message, so a
+	// message from any other document or frame lacks it. Guarded by mu.
+	token string
 }
 
 func (c *viewCore) core() *viewCore { return c }
@@ -121,17 +137,77 @@ func (c *viewCore) core() *viewCore { return c }
 // it is about to load, after any app:// rewrite, so the trusted origin is
 // the one the page really has: the loopback port on macOS and under
 // App.HTTP, the app scheme or its https vhost otherwise.
-func (c *viewCore) trustURL(raw string) {
+//
+// It reports whether the origin is new, in which case the caller rebuilds the
+// document-start scripts (see engine.trust).
+func (c *viewCore) trustURL(raw string) bool {
 	o := originOf(raw)
 	if o == "" {
-		return
+		return false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.origins[o] {
+		return false
+	}
 	if c.origins == nil {
 		c.origins = map[string]bool{}
 	}
 	c.origins[o] = true
+	return true
+}
+
+// trustURLs trusts every URL in urls and reports whether any origin was new.
+func (c *viewCore) trustURLs(urls []string) bool {
+	added := false
+	for _, u := range urls {
+		if c.trustURL(u) {
+			added = true
+		}
+	}
+	return added
+}
+
+// bridgeTokenLen is the length of a view's bridge token: 32 random bytes in
+// hex.
+const bridgeTokenLen = 64
+
+// bridgeScriptLocked returns the document-start bridge for this view, with
+// its token and its trusted origins (see createInitScript), making the token
+// on first use. Each engine's script rebuild puts it first. Assumes mu is
+// held.
+func (c *viewCore) bridgeScriptLocked(postFn string) string {
+	if c.token == "" {
+		var b [bridgeTokenLen / 2]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			// crypto/rand does not fail on the supported platforms; a view
+			// with no token accepts no message.
+			panic("tuohi: no randomness for the bridge token: " + err.Error())
+		}
+		c.token = hex.EncodeToString(b[:])
+	}
+	origins := make([]string, 0, len(c.origins))
+	for o := range c.origins {
+		origins = append(origins, o)
+	}
+	sort.Strings(origins)
+	return createInitScript(postFn, c.token, origins)
+}
+
+// checkToken strips the view's bridge token from the front of body and
+// reports whether it was there. The comparison takes the same time whatever
+// the body holds.
+func (c *viewCore) checkToken(body string) (string, bool) {
+	c.mu.Lock()
+	token := c.token
+	c.mu.Unlock()
+	if token == "" || len(body) < len(token) {
+		return "", false
+	}
+	if subtle.ConstantTimeCompare([]byte(body[:len(token)]), []byte(token)) != 1 {
+		return "", false
+	}
+	return body[len(token):], true
 }
 
 // trusts reports whether a message from a page at senderURL may use the
@@ -387,13 +463,18 @@ type bridgeMessage struct {
 
 // onMessage is where every engine hands over a message the page posted,
 // with the URL of the page that sent it when the engine knows it. A message
-// from an origin the view does not trust is dropped before anything reads
-// it, so bindings, events, and the internal window messages share one gate.
+// that does not start with the view's bridge token, or that comes from an
+// origin the view does not trust, is dropped before anything reads it, so
+// bindings, events, and the internal window messages share one gate. The
+// token covers what the sender URL cannot: WebKitGTK does not say which frame
+// posted, and reads the URI when the message arrives, which after a
+// navigation names the next page.
 // Otherwise it handles the bridge's internal messages, and runs any other
 // method as a call of the binding with that name on the view's serial call
 // queue, off the UI thread.
 func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
-	if !w.trusts(senderURL, senderKnown) {
+	body, ok := w.checkToken(body)
+	if !ok || !w.trusts(senderURL, senderKnown) {
 		return
 	}
 	var m bridgeMessage

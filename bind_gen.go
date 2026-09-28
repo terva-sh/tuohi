@@ -53,11 +53,29 @@ func marshalJSON(msg string) string {
 // on Windows. It is defined per backend in the lib files (lib_darwin.go /
 // lib_unix.go and the Windows backend).
 
-// initBridgeHead and initBridgeTail are the two halves of the document-start
-// bridge template; createInitScript splices the caller's post() hook between
-// them.
-const initBridgeHead = `(function() {
-  'use strict';
+// initBridgeGate, initBridgeHead and initBridgeTail are the parts of the
+// document-start bridge template. createInitScript puts the view's token and
+// trusted origins in front of initBridgeGate, and splices the caller's post()
+// hook between initBridgeHead and initBridgeTail.
+//
+// The gate runs before anything else in the document, so the page cannot have
+// changed location or Object.prototype yet. It computes the document's origin
+// key the way originOf does in Go: scheme://host[:port] for a URL with a host,
+// which the engine has already canonicalized; the URL without its fragment
+// for any other URL, such as data:; and nothing for about:. A document that
+// is not the top frame, or whose key is not trusted, gets no bridge at all,
+// and never holds the token.
+const initBridgeGate = `
+  if (window.top !== window) { return; }
+  var loc = window.location;
+  var key = '';
+  if (loc.protocol !== 'about:') {
+    key = loc.host ? loc.protocol + '//' + loc.host : loc.href.split('#')[0];
+  }
+  if (!key || !Object.prototype.hasOwnProperty.call(trusted, key)) { return; }
+`
+
+const initBridgeHead = `
   function generateId() {
     var crypto = window.crypto || window.msCrypto;
     var bytes = new Uint8Array(16);
@@ -97,7 +115,7 @@ const initBridgeHead = `(function() {
     Webview_.prototype.post = function(message) {
       return (`
 
-const initBridgeTail = `)(message);
+const initBridgeTail = `)(token + message);
     };
     Webview_.prototype.call = function(method) {
       var id = generateId();
@@ -311,8 +329,20 @@ const initBridgeTail = `)(message);
 // terminator freezeBinds(), and onUnbind() - matching the transport
 // the lib backends post into. Every object a bind creates is tracked and
 // frozen once the binding batch of the document is complete.
-func createInitScript(postFn string) string {
-	return initBridgeHead + postFn + initBridgeTail
+//
+// The bridge is installed only in a top-level document whose origin is one of
+// origins (see initBridgeGate). post() prefixes token to every message, and
+// the Go side drops any message without it (see webview.onMessage).
+func createInitScript(postFn, token string, origins []string) string {
+	trusted := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		trusted[o] = true
+	}
+	trustedJSON, _ := json.Marshal(trusted) // a map of strings to bools always marshals
+	return "(function() {\n  'use strict';\n" +
+		"  var token = " + marshalJSON(token) + ";\n" +
+		"  var trusted = " + string(trustedJSON) + ";\n" +
+		initBridgeGate + initBridgeHead + postFn + initBridgeTail
 }
 
 // createBindScript returns the document-start script that installs every
