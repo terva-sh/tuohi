@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T21:53:00Z
+updated_at: 2026-09-28T22:04:48Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -59,7 +59,7 @@ The architecture review, TKT-01M3HWWRSJC4QVVGPW04H5CQBD, may prefer one rule for
 
 - [ ] Navigate, Eval, and Focus on Unix run their GTK calls on the UI thread from any goroutine
 - [ ] A GUI scenario calls each from a binding goroutine on both WebKitGTK stacks
-- [ ] Concurrent View.Close calls do not race under go test -race
+- [x] Concurrent View.Close calls do not race under go test -race
 
 ## Implementation plan
 
@@ -134,3 +134,25 @@ The rule instead:
 **agent:claude-code/c04aed4f** at 2026-09-28T20:29:09Z
 
 Consumer report from git-ticket-canvas, working TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J (Open the loopback canvas in a native window) against v0.1.0-alpha.1. The canvas hit this outside a binding. Its GUI test drives the page with View.Eval from a test goroutine, and that is off the GTK thread for the same reason a binding is. The test calls Eval from View.Ready instead, which runs on the UI thread. So any goroutine is affected, not only bindings: a consumer's own background work is the more common caller. Filed under TKT-01M3MV9EBAGG435E6V7JFQHYA2 (Capture problems tuohi's consumers find).
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:04:48Z
+
+### Implemented; Forgejo PR #24, stacked on #23
+
+Landed as planned, with these differences from the plan:
+
+- **Where `Close` locks:** `View.Close` takes and clears the engine handle and the App under a new `View.mu`. Every other reader of `v.w` in the shared code goes through `View.live()`.
+- **`App.Show`'s reveal path** (a second `Show` on a live view) goes through `ui.run` too. It is one line, and it removes the direct Raise and Focus off the UI thread.
+- **Test workarounds removed:** three shared scenarios wrapped `w.w.Navigate` and `w.w.Eval` in `w.w.Dispatch` only because the public methods were not safe off the UI thread. They now call `w.Navigate` and `w.Eval` directly. The wrappers also read `w.w` unguarded, which is the one race `-race` found (see below).
+
+### Evidence (Linux)
+
+- **The scenario catches the bug:** `TestViewMethodsFromBinding` calls Eval, Focus(true) and Navigate from a binding. With the old direct calls restored in view.go, it aborted with SIGABRT in 3 of 3 runs on WebKitGTK 6.0. With the fix it passes on both stacks.
+- **`just ci` and `just test-gui`** pass.
+- **The GUI suite under `-race`** (`CGO_ENABLED=1 go test -race`) passes with zero races on both stacks. The first run found one race, in nav_policy_test.go: the test read `w.w` inside a `Dispatch` closure while a `Close` cleared it. Using the public methods removed it.
+- **Headless `-race`** passes: the dispatcher tests and `TestViewCloseConcurrent`, which runs 8 goroutines over 50 rounds.
+
+### Not verified here
+
+- The macOS and Windows engines. The branch is pushed to the GitHub mirror, whose CI runs on every push (run 36490108667).
+- The Windows message-only window is new native code that nothing here can run.
