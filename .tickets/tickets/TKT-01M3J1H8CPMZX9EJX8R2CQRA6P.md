@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J1H8CPMZX9EJX8R2CQRA6P
 title: Make every View method safe to call from any goroutine
 type: bug
-status: ready
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -19,10 +19,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: fix/view-threading
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
+  commit: 222f69a073f738781119ab07a8a9aced02c54e44
+  session: null
+  claimed_at: 2026-09-28T21:34:32Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T21:34:09Z
+updated_at: 2026-09-28T21:53:00Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -53,6 +60,46 @@ The architecture review, TKT-01M3HWWRSJC4QVVGPW04H5CQBD, may prefer one rule for
 - [ ] Navigate, Eval, and Focus on Unix run their GTK calls on the UI thread from any goroutine
 - [ ] A GUI scenario calls each from a binding goroutine on both WebKitGTK stacks
 - [ ] Concurrent View.Close calls do not race under go test -race
+
+## Implementation plan
+
+### Scope
+
+The owner chose, 2026-09-29: the whole View surface on all three engines, through one shared marshal layer. App-level gaps go to their own tickets (see "Not in this ticket").
+
+### Approach
+
+1. **Shared layer, `uithread.go`.** A `uiDispatcher` holds three per-engine hooks: `onUI() bool`, `post(func()) bool`, and `external() bool`, which reports that someone else's loop is draining the UI queue (macOS only, for the tray or a host `[NSApp run]`). It offers:
+   - `run(f)`: in place on the UI thread, otherwise posted without waiting.
+   - `call(f) error`: in place on the UI thread. Otherwise it creates an operation with an atomic state (pending, running, cancelled, done), posts it, and waits. The UI thread moves it from pending to running before running it and skips a cancelled one. The caller gives up only when the loop stops, never on a timer.
+   - Loop tracking: `enterLoop` and `exitLoop` count running loops. When the count reaches zero, every pending operation is cancelled and its caller gets `errUILoopStopped`. A running operation is left to finish, and its caller waits for it. A `call` made while no loop runs, and none runs externally, returns `errUILoopStopped` at once.
+   - "Stopped" means "no loop is running now", not "stopped for good". Tests and embedders call `Run` again after it returns, so a permanent mark would break the second `Run`.
+2. **Loop owners mark the loop.** `App.Wait` wraps its loop, and each engine's `webview.Run` wraps its own.
+3. **View methods** (view.go, bind_evt.go):
+   - `Navigate`, `Eval`, `Focus`, `Show`, `Hide`, `Maximize`, `Minimize`, `Unminimize` and `Unmaximize` go through `run`.
+   - `Dialog` goes through `call`, so it no longer hangs after the loop stops. On the UI thread it now runs in place, where it deadlocked before.
+   - `v.w` and `v.app` are guarded by a mutex on View. `Close` takes both and clears them under the lock, so exactly one caller closes the engine.
+4. **Engines:**
+   - **Unix:** `post` is `dispatchMain`, and `onUI` is the existing `onUIThread`.
+   - **macOS:** `performOnMain` waits through `call` semantics instead of forever. `onUI` is `onMainThread() || !uiIsMain`, which keeps today's inline case. `external` is `NSApp isRunning && !appkitRunsLoop`. As a side effect, `Quit` before `Wait` returns instead of hanging.
+   - **Windows:** the first `newView` records the app UI thread and creates a message-only window (HWND_MESSAGE) on it. `post` sends WM_APP to that window. A message-only window keeps receiving messages during modal loops, where a thread message would be lost. `Destroy` uses `onUI` instead of `w.window != 0`, so a `Close` after the user closed the window no longer releases COM objects off the UI thread. `webview.Dispatch` falls back to `post` once the window is gone, instead of posting to a NULL HWND, which delivers to the caller's own thread.
+5. **Tests:**
+   - Headless: the dispatcher's operation states, cancellation when the loop stops, running in place, a failed post, and concurrent `View.Close` against a fake engine under `-race`.
+   - GUI, shared by all engines: a scenario that calls `Navigate`, `Eval` and `Focus(true)` from inside a binding and checks each took effect.
+6. **Docs:** the threading table in docs/architecture.md, the stale `performOnMain` line citation there, and the View method comments.
+
+### Alternatives rejected
+
+- **Per-engine fixes only** (the ticket's original direction). This repeats marshalling three times, and the contract drifted exactly that way before TKT-01M3J59M0V.
+- **Removing the engines' own internal dispatch.** `App.Show`'s reveal path and `handleInternal` call engine methods from the caller's goroutine, and `App.Show` is out of scope, so the engines keep their own marshalling. On the UI thread it is harmless.
+- **A timeout on waiting calls.** Rejected in the architecture review: a timeout cannot tell a stopped loop from a busy one.
+- **Thread messages on Windows** (PostThreadMessageW). These are dropped while a modal loop, such as a window drag or a dialog, runs its own pump.
+
+### Not in this ticket (filed separately)
+
+- `App.Show` from a goroutine creates the window on the caller's thread. On Windows, its `BindBatch` pumps `GetMessageW` there.
+- `App.Notify`, `Open` and `Reveal` make direct native calls on macOS and Windows.
+- On macOS, a `Destroy`-driven close may not reach `appWindowClosed`. This was found by reading and has not been checked on macOS.
 
 ## Notes
 
