@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T03:37:42Z
+updated_at: 2026-09-28T03:46:34Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -360,3 +360,33 @@ Before the cancel, the untrusted server has already received the request, with a
 
 - **Navigation time for everything.** It breaks cross-origin frames.
 - **Treating link clicks as top-level.** A link clicked inside a frame looks the same.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T03:46:34Z
+
+### Linux navigation policy on branch feat/bridge-nav-policy-linux
+
+#### What landed
+
+- **The shared rule** is `viewCore.navigationPolicy` in `engine.go`:
+  - a trusted origin or about:blank proceeds;
+  - http, https, and mailto go to the system;
+  - anything else is cancelled and logged.
+- **`refuseNavigation` and `openExternal`** carry out a refusal. `openExternal` is the stand-in point for tests.
+- **Linux** judges the top-level document at `RESPONSE`, new windows at `NEW_WINDOW_ACTION`, and schemes that have no response at `NAVIGATION_ACTION`.
+
+#### Findings
+
+- **WebKit's popup blocker.** It drops a `window.open` that no user gesture started, including one from `Eval`, before `decide-policy` runs. A `target=_blank` click reaches `NEW_WINDOW_ACTION`, and a `window.open` the user started takes the same path. The scenario therefore clicks a `target=_blank` link.
+- **`TestOriginGate` now depends on the engine.** It reached an untrusted page by having the page navigate itself, and the policy now refuses that. It accepts either `untrusted=0 bridge=no`, from an engine with no policy yet, or `untrusted=refused`. It logs which one happened, and Linux reports `untrusted=refused`.
+
+#### Verified
+
+- **`TestNavigationPolicy`** passes on both WebKitGTK stacks. It checks each step and that the cross-origin frame still runs (`frameRan=true`).
+  - **Negative control:** with `decidePolicy` returning false, every step fails with `left`, and nothing is handed off.
+- **Unit test** `TestNavigationPolicy_Decisions` covers the rule's cases.
+- **Local runs:** `just ci` and `just test-gui` pass on both stacks. golangci-lint reports 0 issues on linux, darwin, windows, and freebsd.
+
+#### Left for the Windows and macOS pull requests
+
+- `refuseNavigation` and `navPolicyScenario` carry `//nolint:unused` until those engines call them.
+- `TestNavigationPolicy` skips on darwin and windows with that reason.
