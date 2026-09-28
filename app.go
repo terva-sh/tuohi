@@ -440,16 +440,18 @@ type appScope struct {
 	exitOnce    sync.Once
 	exitFlag    int32
 
-	// views is the set of Views currently shown (and managed) by this App.
-	// App.Show registers a View the first time it creates its window and
-	// View.Close unregisters it, so Show(view) on a live window knows to
-	// reveal instead of recreating.
+	// views is the set of Views currently shown (and managed) by this App,
+	// each with the engine App.Show created for it. App.Show registers a View
+	// the first time it creates its window and View.Close unregisters it. The
+	// engine lets a Close unregister only the window it closed: a View shown
+	// again while an earlier Close was still tearing down keeps its new entry.
 	viewsMu sync.Mutex
-	views   map[*View]bool
+	views   map[*View]engine
 }
 
-// registerView records v as a window this App manages (called by App.Show).
-func (a *App) registerView(v *View) {
+// registerView records v, shown with engine w, as a window this App manages
+// (called by App.Show).
+func (a *App) registerView(v *View, w engine) {
 	if a == nil || v == nil {
 		return
 	}
@@ -459,14 +461,15 @@ func (a *App) registerView(v *View) {
 	}
 	s.viewsMu.Lock()
 	if s.views == nil {
-		s.views = make(map[*View]bool)
+		s.views = make(map[*View]engine)
 	}
-	s.views[v] = true
+	s.views[v] = w
 	s.viewsMu.Unlock()
 }
 
-// unregisterView drops v from the managed set (called by View.Close).
-func (a *App) unregisterView(v *View) {
+// unregisterView drops v from the managed set when it is still registered
+// with engine w, the one being closed (called by View.Close).
+func (a *App) unregisterView(v *View, w engine) {
 	if a == nil || v == nil {
 		return
 	}
@@ -475,7 +478,9 @@ func (a *App) unregisterView(v *View) {
 		return
 	}
 	s.viewsMu.Lock()
-	delete(s.views, v)
+	if s.views[v] == w {
+		delete(s.views, v)
+	}
 	s.viewsMu.Unlock()
 }
 

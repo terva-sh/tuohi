@@ -256,3 +256,50 @@ func TestViewCloseConcurrent(t *testing.T) {
 		}
 	}
 }
+
+func TestUICallCancelledWhenExternalLoopStops(t *testing.T) {
+	// An external loop reports nothing when it stops, so a call admitted
+	// under it must notice the stop itself rather than wait forever.
+	f := newFakeUI()
+	f.extFlag.Store(true)
+	var ran atomic.Bool
+	errc := make(chan error, 1)
+	go func() { errc <- f.call(func() { ran.Store(true) }) }()
+	f.waitQueued(t, 1)
+	f.extFlag.Store(false)
+	select {
+	case err := <-errc:
+		if !errors.Is(err, errUILoopStopped) {
+			t.Fatalf("call after the external loop stopped: err = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("call still waiting after the external loop stopped")
+	}
+	f.drain()
+	if ran.Load() {
+		t.Fatal("a cancelled operation ran")
+	}
+}
+
+// TestViewCloseKeepsReshownRegistration checks that a Close which lost a
+// race with App.Show re-showing the View does not unregister the new window.
+func TestViewCloseKeepsReshownRegistration(t *testing.T) {
+	s := &appScope{}
+	app := &App{scope: s}
+	v := &View{}
+	oldEngine, newEngine := &closeCountingEngine{}, &closeCountingEngine{}
+	app.registerView(v, oldEngine)
+	// The View was closed and shown again before the first Close unregistered.
+	app.registerView(v, newEngine)
+	app.unregisterView(v, oldEngine)
+	s.viewsMu.Lock()
+	got := s.views[v]
+	s.viewsMu.Unlock()
+	if got != newEngine {
+		t.Fatal("closing the old engine unregistered the re-shown View")
+	}
+	app.unregisterView(v, newEngine)
+	if _, ok := s.views[v]; ok {
+		t.Fatal("closing the current engine left the View registered")
+	}
+}

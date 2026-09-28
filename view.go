@@ -688,7 +688,7 @@ func (a *App) showFirst(view *View) error {
 	// the UI thread, when the first page load after Show finishes (see the
 	// View.Ready doc).
 	w.core().onReady = view.Ready
-	a.registerView(view)
+	a.registerView(view, w)
 	// Load the window's first page: the declarative URL. With an empty URL
 	// no navigation happens (a blank window) and Ready stays pending until
 	// a later Navigate completes.
@@ -988,7 +988,7 @@ func (v *View) Close() {
 	}
 	w.Close()
 	if app != nil {
-		app.unregisterView(v)
+		app.unregisterView(v, w)
 	}
 }
 

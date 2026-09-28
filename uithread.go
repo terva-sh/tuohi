@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // This file carries the threading rule from docs/architecture.md ("One
@@ -91,11 +92,39 @@ func (d *uiDispatcher) call(f func()) error {
 	if !d.post(func() { d.runOp(op) }) {
 		d.cancel(op)
 	}
-	<-op.done
+	d.wait(op)
 	if op.state.Load() == opCancelled {
 		return errUILoopStopped
 	}
 	return nil
+}
+
+// externalLoopPoll is how often a waiting call checks that some loop is still
+// running. A loop tuohi owns cancels its callers when it exits (exitLoop), but
+// an external loop reports nothing when it stops, so its end is only seen by
+// looking.
+const externalLoopPoll = 50 * time.Millisecond
+
+// wait blocks until op is final. While it waits it checks that a loop is
+// still running, and cancels op when none is: an external loop that stopped
+// before op started will never run it. This is not a timeout: a busy loop
+// that still runs is waited for however long it takes.
+func (d *uiDispatcher) wait(op *uiOp) {
+	tick := time.NewTicker(externalLoopPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case <-op.done:
+			return
+		case <-tick.C:
+			d.mu.Lock()
+			stopped := d.loops == 0 && !d.external()
+			d.mu.Unlock()
+			if stopped {
+				d.cancel(op) // no-op once op has started; keep waiting then
+			}
+		}
+	}
 }
 
 // runOp is the UI-thread half of call: it claims op, runs it, and releases
