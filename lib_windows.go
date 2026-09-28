@@ -915,10 +915,16 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		if b != 0 {
 			args := asNavigationStartingArgs(b)
 			uri := args.URI()
+			id, ok := args.NavigationID()
 			if action := w.navigationPolicy(uri); action != navProceed {
 				args.Cancel()
 				refuseNavigation(uri, action)
-			} else if id, ok := args.NavigationID(); ok {
+				// A redirect the policy refuses ends a navigation recorded
+				// when it started, and no document of its commits.
+				if ok {
+					delete(w.pendingNavs, id)
+				}
+			} else if ok {
 				// A redirect keeps its navigation's ID, so the last URI
 				// recorded is where the document came from.
 				if w.pendingNavs == nil {
