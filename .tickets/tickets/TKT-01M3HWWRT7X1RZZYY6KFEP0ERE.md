@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T18:45:57Z
+updated_at: 2026-09-28T18:50:32Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -690,3 +690,15 @@ The user chose to test this on GitHub before merging: the branch is pushed to th
 **agent:claude-code/bridge-trust-3** at 2026-09-28T18:45:57Z
 
 GitHub run 36467087840 on the test branch fix/windows-data-sender-3 (0c1fd73) is green on every job. TestDataURLCanUseBindings passes on Windows, and so do OriginGate, FrameGate, NavigationPolicy, and LoopbackAppDefaultPolicy. The sender URI is committed at ContentLoading. Committing it at NavigationCompleted failed on fix/windows-data-sender-2: diagnostic run 36466440440 showed a page's messages arrive before its NavigationCompleted.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:50:32Z
+
+### Review 1 disposition (ready-review-1)
+
+**medium: track pending navigation URIs by ID, not in a single slot. Fixed in the commit after 52ec088.**
+
+The finding holds. With one slot, navigation A's `ContentLoading` cleared navigation B's record when B had started before A committed, so B's data: page got no sender.
+
+Pending URIs are now kept in a map keyed by navigation ID. A `ContentLoading` commits its own entry and drops every entry at or below its ID. Navigation IDs rise, as the diagnostic run showed, so those earlier navigations have been replaced. If an earlier navigation's document committed after a later one, which WebView2 does not do, the committed URI would be empty and the message dropped. That fails safe.
+
+No unit test covers this: the handler runs only under WebView2. The branch is re-run on the GitHub mirror before merge. Lint on four targets, `just ci`, and `just test-gui` pass.
