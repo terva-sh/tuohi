@@ -34,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:57:33Z
-updated_at: 2026-09-28T23:14:21Z
+updated_at: 2026-09-28T23:16:42Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -87,3 +87,24 @@ To a consumer, this is a binding call from a data: page that is silently dropped
 - [ ] The cause of the empty sender is found and recorded
 - [ ] A data: page's binding call is not dropped when its message arrives before or around ContentLoading
 - [ ] TestDataURLCanUseBindings passes on 20 consecutive Windows runs
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:16:42Z
+
+### First reading of the failing run
+
+I read the WEBVIEW2_DEBUG trace from GitHub run 36480092776, attempt 1 (job 109123317964). For the data: scenario's view, the handler events arrived in this order:
+
+1. NavigationStarting (kind 6)
+2. ContentLoading (kind 8)
+3. WebMessageReceived (kind 2), dropped
+4. WebMessageReceived (kind 2), dropped
+5. NavigationCompleted (kind 5)
+
+So ContentLoading **did** run before both messages. "A message can precede ContentLoading", the ticket's second hypothesis, is not what happened in this run. The empty sender therefore came from one of these:
+
+- ContentLoading ran without committing a URI: its navigation ID did not match one NavigationStarting recorded, `get_NavigationId` failed, or `get_IsErrorPage` failed or returned true.
+- `get_Source` on the message failed, or returned `""` rather than `about:blank`, so the committed URI was never substituted.
+
+The existing trace logs only the event kinds, so it cannot tell these apart. Commit 3d5cda8 adds debug lines with the navigation IDs, the recorded and error-page flags, the committed URI, and each message's `get_Source` HRESULT and value. It also adds `TUOHI_REPEAT_DATAURL=n`, and a branch-only workflow, `diag-dataurl.yml`, that runs 20 repeats on each of six Windows runners.
