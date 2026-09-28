@@ -418,6 +418,17 @@ func encodeOpaque(s string, decode bool, also string) string {
 // load two different documents, and a newline can end a // comment in an
 // inline script. The rest is put in canonicalOpaque's form, with the
 // fragment kept. Any other URL is returned unchanged.
+//
+// A data: URL's metadata, body, and fragment are also given escapes for
+// every byte RFC 3986 does not allow there, such as '<' and '"', so the URL
+// is one NSURL parses as written. Given one it cannot, NSURL encodes the
+// whole string again, '%' included, and WKWebView loads a document whose
+// %20 is the text "%20": GitHub run 36382395146. The body is decoded before
+// it is keyed, so the extra escapes leave its key as it was. The metadata is
+// keyed as written, so there they change the key, which is still the key of
+// the URL Navigate loads and trusts; a quoted MIME parameter reaches the
+// page escaped, as NSURL would have left it anyway. Another scheme's
+// fragment is kept as written, so its handler gets the URL it was given.
 func canonicalNavigateURL(rawurl string) string {
 	trimmed := strings.TrimFunc(rawurl, func(r rune) bool { return r <= ' ' })
 	scheme, rest, ok := splitOpaque(trimmed)
@@ -426,11 +437,22 @@ func canonicalNavigateURL(rawurl string) string {
 	}
 	rest, fragment, hasFragment := strings.Cut(rest, "#")
 	out := scheme + ":" + canonicalOpaque(scheme, rest)
+	if head, body, hasBody := strings.Cut(rest, ","); scheme == "data" && hasBody {
+		out = scheme + ":" + encodeOpaque(head, false, rfc3986Disallowed) + "," + encodeOpaque(body, true, "%#"+rfc3986Disallowed)
+	}
+	if hasFragment && scheme == "data" {
+		fragment = encodeOpaque(fragment, false, "#"+rfc3986Disallowed)
+	}
 	if hasFragment {
 		out += "#" + fragment
 	}
 	return out
 }
+
+// rfc3986Disallowed is every printable ASCII byte RFC 3986 allows in no part
+// of a URL but a host, besides '%' and '#'. encodeOpaque adds spaces,
+// controls, and bytes that are not ASCII.
+const rfc3986Disallowed = "\"<>[\\]^`{|}"
 
 func isHex(c byte) bool {
 	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')
@@ -710,7 +732,13 @@ type bridgeMessage struct {
 // queue, off the UI thread.
 func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
 	body, ok := w.checkToken(body)
-	if !ok || !w.trusts(senderURL, senderKnown) {
+	if !ok {
+		return
+	}
+	if !w.trusts(senderURL, senderKnown) {
+		// The page holds the token, so it was trusted when it loaded; an
+		// engine that names it differently now would otherwise fail silently.
+		log.Printf("tuohi: message from %q dropped: its origin %q is not trusted", senderURL, originOf(senderURL))
 		return
 	}
 	var m bridgeMessage

@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:29:42Z
+updated_at: 2026-09-28T05:48:25Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -613,3 +613,43 @@ It is what this is, except that re-encoding keeps the key printable. Without tha
 **medium, query punctuation for non-data opaque URLs: fixed in ff779d9.** The finding is right: the URL standard's query percent-encode set for a URL that is not special adds `"`, `<` and `>`, while its opaque-path set does not. `canonicalOpaque` now splits a non-data URL at the first `?` and encodes those three in the query only, in Go and in the bridge gate's JavaScript, through a shared `also` set on `encodeOpaque`. data: is unaffected, since its body is decoded and re-encoded one way.
 
 Tests: `TestOpaqueKeyEncodesQueryPunctuation` (Go), and a mailto: case in `TestBridgeGate` whose browser key comes from node's WHATWG `URL`. Both fail with the query split reverted and pass with it. Lint on linux/darwin/windows/freebsd, `just ci`, and `just test-gui` pass locally.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:39:27Z
+
+GitHub run 36382395146 (main at 6bfaff1, after PR #17):
+
+- Linux, all four jobs: pass.
+- macOS: TestDataURLCanUseBindings still fails. The policy log shows the loaded URL with `%2520` where Navigate wrote `%20`. NSURL `URLWithString:` re-encodes a whole string that has RFC 3986-disallowed bytes such as `<`, `%` included. Fix: canonicalNavigateURL escapes those bytes in a data: body and the fragment. The key is unchanged, because the body is decoded before keying. Alternatives considered and rejected:
+  - `URLWithString:encodingInvalidCharacters:NO` exists only on macOS 14 and later.
+  - Building the NSURL from components still re-encodes.
+  - Encoding in darwin Navigate alone would let the engines load different strings.
+- Windows: the diagnostic shows `chrome=object&webview=object&bridge=object&hit=function`, so the gate trusted the page and the binding is installed, but no call reached Go. The likely drop is onMessage's sender check on what `get_Source` reports for a data: document. onMessage now logs a sender it drops, with its key, so the next run names it.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:39:40Z
+
+Correction to the previous note: the claim that building the NSURL from NSURLComponents still re-encodes was not tested. It lost because it would give macOS its own URL construction path while the other engines load canonicalNavigateURL's string, not because it was shown to fail.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:44:09Z
+
+### Review 1 disposition (ready-review-1)
+
+**medium: escape disallowed bytes in data: URL metadata too. Fixed in the commit after 9128956.**
+
+The finding holds. Metadata such as `charset="utf-8"` still reached NSURL with raw quotes. `canonicalNavigateURL` now escapes the RFC 3986-disallowed set in the metadata too.
+
+This changes the key of such a URL. That is safe because it is still the key of the URL Navigate loads and trusts, and the page keeps the metadata as written, so both sides key it the same way. The one visible cost: a quoted MIME parameter reaches the page as `%22`, which is what NSURL would have produced anyway.
+
+Rejecting such URLs was the other option. It lost because it refuses a page every other engine loads.
+
+Tests:
+- `TestNavigateURLParsesAsWritten` now covers quoted metadata, with the earlier metadata exemption removed.
+- `TestBridgeGate` loads `data:text/plain;charset="utf-8",<p>hello` through node's WHATWG URL and confirms the page's key matches Go's.
+- Negative control: both metadata cases fail with the change reverted.
+
+Lint on four targets, `just ci`, and `just test-gui` pass.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:48:25Z
+
+### Review 2 disposition (ready-review-2)
+
+**low: limit fragment escaping to data: URLs. Fixed in the commit after d8b1b09.** The finding holds: the fragment escape ran for every opaque scheme, so `custom:payload#<section>` reached its handler as `#%3Csection%3E`. It now runs only for data:. `TestNavigateURLParsesAsWritten` checks that a custom-scheme fragment is kept as written, and fails with the scheme check removed. Lint on four targets, `just ci`, and `just test-gui` pass.
