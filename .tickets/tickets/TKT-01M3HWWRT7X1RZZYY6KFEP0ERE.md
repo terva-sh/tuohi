@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T04:44:08Z
+updated_at: 2026-09-28T04:52:26Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -69,7 +69,7 @@ A loopback consumer's origin is `http://127.0.0.1:PORT`, so the default must cov
 
 - [x] A page from an origin the application did not allow cannot call any binding, on all three engines
 - [x] Every engine's message handler checks the sender's origin
-- [ ] Top-level navigation away from allowed origins is refused or opened in the system browser
+- [x] Top-level navigation away from allowed origins is refused or opened in the system browser
 - [ ] A loopback-served interface works with the default policy
 
 ## Implementation plan
@@ -480,3 +480,21 @@ macOS runs on GitHub after the merge. If the redirect step shows `left`, neither
 #### Criterion 3
 
 It is met on Linux and Windows. It will be met on macOS if GitHub passes after the merge, and gets ticked then.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:52:26Z
+
+### PR #14 merged; the navigation policy passes on all three engines
+
+- **Merge.** PR #14 was merged as a52ef0a, and GitHub `main` was fast-forwarded to it by hand.
+- **GitHub run 36379293075 passed on every job.**
+- **Windows** names `TestNavigationPolicy`, `TestOriginGate`, `TestFrameGate`, and `TestNavigationPolicy_Decisions` as passed.
+- **macOS runs without `-v`,** so its log names no test. The evidence is:
+  - macOS runs every GUI scenario unless `-short` is set, and a failing one prints its got and want lines. None were printed.
+  - The root package took 26.9 seconds, against 17.5 and 13.3 in the two runs before, which is the navigation scenario's roughly 12 seconds.
+  - So `TestNavigationPolicy` ran and passed, and either `decidePolicyForNavigationAction` or the response backstop caught the redirect.
+- **Criterion 3 is ticked.**
+
+#### Criterion 4, a loopback interface under the default policy: still open
+
+- **What is covered.** A loopback page that Go navigated to loads with the bridge (`TestOriginGate`, `TestNavigationPolicy`). A new window to the same origin loads in the view with the bridge. A cross-origin frame still loads.
+- **What is not tested.** An in-app link to another path, a reload, and back and forward. The earlier note set those as the bar.
