@@ -62,19 +62,23 @@ func marshalJSON(msg string) string {
 // changed location, String.prototype or Object.prototype yet. It computes the
 // document's origin key the way originOf does in Go: scheme://host[:port] for
 // a URL with a host, which the engine has already canonicalized; for any other
-// URL, such as data:, the URL without its fragment in opaqueKey's canonical
-// form (percent-escapes decoded, then spaces, controls, '%' and non-ASCII
-// bytes encoded again); and nothing for about:. A document
+// URL, such as data:, the URL without its fragment in canonicalOpaque's form
+// (a data: body's escapes decoded and encoded again one way, everything else
+// kept as written); and nothing for about:. A document
 // that is not the top frame, or whose key is not trusted, gets no bridge at
 // all, and never holds the token.
 const initBridgeGate = `
-  function canonicalOpaque(s) {
-    var bytes = [], i, j, c, u;
+  function encodeOpaque(s, decode) {
+    var bytes = [], i, j, c, u, out = '';
     for (i = 0; i < s.length; i++) {
       c = s.charCodeAt(i);
-      if (c === 37 && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) {
-        bytes.push(parseInt(s.substr(i + 1, 2), 16));
-        i += 2;
+      if (c === 37) {
+        if (decode && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) {
+          bytes.push(parseInt(s.substr(i + 1, 2), 16));
+          i += 2;
+        } else {
+          bytes.push(decode ? 37 : -1);
+        }
       } else if (c < 128) {
         bytes.push(c);
       } else {
@@ -84,16 +88,23 @@ const initBridgeGate = `
         for (j = 0; j < u.length; j++) { bytes.push(u.charCodeAt(j)); }
       }
     }
-    var out = '';
     for (i = 0; i < bytes.length; i++) {
       c = bytes[i];
-      if (c <= 32 || c >= 127 || c === 37) {
+      if (c === -1) {
+        out += '%';
+      } else if (c <= 32 || c >= 127 || (decode && (c === 37 || c === 35))) {
         out += '%' + (c < 16 ? '0' : '') + c.toString(16).toUpperCase();
       } else {
         out += String.fromCharCode(c);
       }
     }
     return out;
+  }
+  function canonicalOpaque(href) {
+    var colon = href.indexOf(':'), scheme = href.slice(0, colon), rest = href.slice(colon + 1);
+    var comma = scheme === 'data' ? rest.indexOf(',') : -1;
+    if (comma < 0) { return scheme + ':' + encodeOpaque(rest, false); }
+    return scheme + ':' + encodeOpaque(rest.slice(0, comma), false) + ',' + encodeOpaque(rest.slice(comma + 1), true);
   }
   if (window.top !== window) { return; }
   var loc = window.location;

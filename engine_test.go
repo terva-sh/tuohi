@@ -148,6 +148,26 @@ func TestOpaqueKeyAgreesAcrossEngines(t *testing.T) {
 	}
 }
 
+// TestOpaqueKeyKeepsDataMetadata checks that a data: URL's metadata, before
+// its first raw comma, is never decoded: %2C there is not the comma that ends
+// it, so decoding it moves where the body starts. Nor does decoding a body
+// ever start a fragment. terva-review finding on PR #17.
+func TestOpaqueKeyKeepsDataMetadata(t *testing.T) {
+	if originOf("data:text/plain%2Cfoo,bar") == originOf("data:text/plain,foo,bar") {
+		t.Error("an escaped comma in the metadata shares a key with a raw one")
+	}
+	for in, want := range map[string]string{
+		"data:text/plain%2Cfoo,bar":      "data:text/plain%2Cfoo,bar",
+		"data:text/html,a%23b#frag":      "data:text/html,a%23b#frag",
+		"data:text/html;charset=a b,x y": "data:text/html;charset=a%20b,x%20y",
+		"mailto:a%2Cb@x.invalid":         "mailto:a%2Cb@x.invalid",
+	} {
+		if got := canonicalNavigateURL(in); got != want {
+			t.Errorf("canonicalNavigateURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestOpaqueKeyKeepsEscapedNewlines checks that an escaped newline is content:
 // two data: URLs that differ only by one are different documents, and must
 // not share a key. terva-review finding on PR #17.
