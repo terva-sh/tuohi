@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:19:45Z
+updated_at: 2026-09-28T05:24:52Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -591,3 +591,17 @@ It is what this is, except that re-encoding keeps the key printable. Without tha
   - **The key.** `canonicalOpaque` and the page-side copy now keep a decoded tab or newline as content. `originOf` still strips a raw one, as a browser does, but `Navigate` never passes one on.
   - **Test.** `TestOpaqueKeyKeepsEscapedNewlines` covers the finding's example, a tab, and CRLF. With the dropping restored, it and `TestBridgeGate` fail.
   - **A side effect worth knowing.** A multi-line `data:` View.URL now keeps its newlines on WebKitGTK too, where they used to be stripped. That matches WebView2, and what the author wrote.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T05:24:52Z
+
+### Review disposition, PR #17, terva-review run 330c1943 on 5fa1ef0
+
+- **The earlier finding, escaped newlines,** is confirmed resolved by this review.
+- **high: do not decode data URL metadata when rewriting or keying the URL. Fixed in 779d57a.**
+  - **The finding is right.** `data:text/plain%2Cfoo,bar` was rewritten to `data:text/plain,foo,bar`, which moves where the body starts, and the two shared a key. Decoding `%23` in the URL `Navigate` loads could also start a fragment.
+  - **The rule applied.** The fetch standard's `data:` URL processor percent-decodes only the body, after the first raw comma.
+  - **What `canonicalOpaque` does now:**
+    - It decodes and re-encodes only that body, and always writes `%` and `#` escaped.
+    - It keeps the metadata, and every other opaque scheme, as written, encoding only raw spaces, controls, and non-ASCII bytes.
+  - **The page side** does the same.
+  - **Tests.** `TestOpaqueKeyKeepsDataMetadata` and a `TestBridgeGate` load of `data:text/plain%2C<p>a,b` cover it. Decoding the metadata again fails the first in Go and the second in the page.
