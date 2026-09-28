@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:50:55Z
+updated_at: 2026-09-28T02:54:06Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -271,3 +271,14 @@ macOS and Windows run on GitHub after the merge. On Windows, `rebuildScripts` no
 - **Criterion 1** stays unticked until GitHub passes on macOS and Windows.
 - **Reply side:** filed as TKT-01M3JYQWZB01CPZ938Y8C24PXX (Deliver binding replies and events only to trusted documents). Replies and events are still evaluated into whatever document is current.
 - **Remaining here:** the navigation policy on each engine, and settling `data:` `View.URL` on Windows.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T02:54:06Z
+
+### Review disposition, PR #11, terva-review run 07c6b492 on 4960c24
+
+- **low: require proof that the hostile frame ran before passing TestFrameGate. Fixed in 34b579c.**
+  - After posting, the frame fetches `/ran` from its own server. The scenario reports `frameRan=true frameHits=0` and requires both parts.
+  - This was the real failure mode found while writing the test: under `listenLoopbackHTTP`'s COEP and CORP headers the frame never loaded, and the test still passed.
+  - **Controls,** on WebKitGTK 6.0:
+    - frame script made to throw before the fetch: fails with `frameRan=false`;
+    - token check removed: fails with `frameHits=1`.
