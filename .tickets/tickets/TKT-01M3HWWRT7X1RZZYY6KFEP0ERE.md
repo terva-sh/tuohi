@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T18:50:32Z
+updated_at: 2026-09-28T18:53:59Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -702,3 +702,13 @@ The finding holds. With one slot, navigation A's `ContentLoading` cleared naviga
 Pending URIs are now kept in a map keyed by navigation ID. A `ContentLoading` commits its own entry and drops every entry at or below its ID. Navigation IDs rise, as the diagnostic run showed, so those earlier navigations have been replaced. If an earlier navigation's document committed after a later one, which WebView2 does not do, the committed URI would be empty and the message dropped. That fails safe.
 
 No unit test covers this: the handler runs only under WebView2. The branch is re-run on the GitHub mirror before merge. Lint on four targets, `just ci`, and `just test-gui` pass.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:53:59Z
+
+### Review 2 disposition (ready-review-2)
+
+**low: remove the pending URI when a redirect is cancelled. Fixed in the commit after 4b51a0c.** When the policy cancels a navigation at `NavigationStarting`, a redirect included, the handler now deletes that navigation's entry, since no document of its will commit.
+
+A navigation that fails after starting, without a redirect, keeps its entry until the next `ContentLoading`. That handler drops every entry at or below its own ID, so the map stays small. Pruning at `NavigationCompleted` as well would need its navigation ID read there. That was left out as not worth another vtable method.
+
+Lint on four targets and `just ci` pass. GitHub run 36468042176 on 4b51a0c, just before this commit, was green on every job, with `TestDataURLCanUseBindings` passing on Windows.
