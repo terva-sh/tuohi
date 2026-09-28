@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:44:09Z
+updated_at: 2026-09-28T05:48:25Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -647,3 +647,9 @@ Tests:
 - Negative control: both metadata cases fail with the change reverted.
 
 Lint on four targets, `just ci`, and `just test-gui` pass.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:48:25Z
+
+### Review 2 disposition (ready-review-2)
+
+**low: limit fragment escaping to data: URLs. Fixed in the commit after d8b1b09.** The finding holds: the fragment escape ran for every opaque scheme, so `custom:payload#<section>` reached its handler as `#%3Csection%3E`. It now runs only for data:. `TestNavigateURLParsesAsWritten` checks that a custom-scheme fragment is kept as written, and fails with the scheme check removed. Lint on four targets, `just ci`, and `just test-gui` pass.
