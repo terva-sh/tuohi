@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T18:23:49Z
+updated_at: 2026-09-28T18:33:10Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -678,3 +678,11 @@ Alternatives rejected:
 - **(c)** Document the limitation. This leaves data: pages unable to call Go on Windows.
 
 `TestDataURLCanUseBindings` no longer skips on Windows. Only GitHub's Windows runner can verify the fix, after the merge and sync.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:33:10Z
+
+GitHub run 36465210066 (main at 8f4b6b5, after PR #19) failed on Windows. `TestDataURLCanUseBindings` failed, logging `message from "" dropped`. `ICoreWebView2::get_Source` also did not give the data: URL, so the fallback produced an empty sender. The run could not tell whether the call failed or returned an empty string. macOS and all four Linux jobs passed.
+
+The next attempt keeps the approach the user chose, the page the view shows, but takes the URL from a different source. `NavigationStarting` names the data: URL: an earlier Windows run logged the policy refusing one by name. The view now records that URL by navigation ID and commits it when `NavigationCompleted` reports that ID succeeded. A message reported as `about:blank` is read as coming from the committed URL.
+
+The user chose to test this on GitHub before merging: the branch is pushed to the GitHub mirror, whose CI runs on every push, so `main` does not go red again. `main` stays red on Windows until this lands, and the test is left failing there as the marker.
