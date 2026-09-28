@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:13:29Z
+updated_at: 2026-09-28T02:15:24Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -162,3 +162,11 @@ Both findings fixed in 508953d.
 - **`loadHTML` on macOS** loads with base URL `http://loadhtml.tuohi.invalid/` and trusts it. `loadHTMLBase` moved to `loadhtml_webkit.go` (`!windows`), because WebView2's `NavigateToString` takes no base URL and Windows needs another way.
 - **Tests.** `originGateScenario` moved to `origin_gate_test.go`, built for Linux, the BSDs, and macOS. `badMessagesScenario` covers macOS non-string bodies and an iframe message.
 - **Not run locally.** Verified here by vet and golangci-lint for darwin, with Linux `just ci` and `test-gui` unchanged and passing. The macOS scenarios run on GitHub after the merge.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:15:24Z
+
+### Review disposition, PR #8, terva-review run b1426440 on 0625328
+
+- **high: identify the message's frame, not the web view's current page. Fixed in 305b51c.** The sender is `message.frameInfo.request.URL`, which belongs to the posting document.
+  - **Untested assumption:** that WKWebView reports the base URL as `frameInfo.request.URL` for `loadHTMLString:baseURL:`. The macOS bridge scenarios will show it on GitHub after the merge. If it is wrong, those scenarios fail and it is fixed forward.
+- **The same race exists on Linux,** where the sender is `webkit_web_view_get_uri` read at receipt, and WebKitGTK gives no frame with the message. That is not fixed here. The proposed fix: a per-document token that Go puts into the bridge script it injects into trusted documents, and the gate requires on every message. The injection-only-into-trusted-origins part of this ticket needs the same mechanism, so it lands there. The Linux iframe gap is closed at the same time.
