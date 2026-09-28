@@ -241,9 +241,9 @@ func (c *viewCore) trusts(senderURL string, known bool) bool {
 //     document inherits the origin of whoever created it, so any page can
 //     make one. They are never trusted.
 //   - Any other URL with an opaque path, such as data:, is keyed by the whole
-//     URL without its fragment, serialized as a browser does (see opaqueKey).
-//     A data: URL is its own content, so only the exact page Go loaded
-//     matches, however Go spelled it.
+//     URL without its fragment, in a canonical form every engine's spelling
+//     reduces to (see opaqueKey). A data: URL is its own content, so only
+//     the page Go loaded matches, however Go or the engine spelled it.
 //
 // Like a browser, it first strips leading and trailing C0 controls and
 // spaces, and removes every tab and newline: a data: URL built from
@@ -339,34 +339,60 @@ func splitOpaque(rawurl string) (scheme, rest string, ok bool) {
 	return scheme, rest, true
 }
 
-// opaqueKey serializes an opaque-path URL without its fragment as the WHATWG
-// URL standard does, which is how WebKit reports it: the path keeps
-// everything but C0 controls and non-ASCII bytes, which are percent-encoded;
-// the query, for a non-special scheme, also encodes space, '"', '#', '<', and
-// '>'. Existing percent-escapes are kept as they are.
+// opaqueKey returns the key of an opaque-path URL: the scheme, a colon, and
+// what follows, without its fragment, in one canonical form. The engines do
+// not agree on how to spell such a URL. WebKitGTK follows the WHATWG URL
+// standard: it drops tabs and newlines, keeps the path raw, and
+// percent-encodes the query. WebView2 keeps newlines as %0A and encodes
+// quotes and spaces in the query. NSURL may encode more still. All of them
+// name the same document, because a data: URL's content is percent-decoded
+// before use. So the key decodes every valid percent-escape, drops tabs and
+// newlines, and encodes again one way: every byte that is a space, a
+// control, '%', or not ASCII. The bridge script computes the same key in
+// the page (see initBridgeGate), and TestBridgeGate holds the two together.
 func opaqueKey(scheme, rest string) string {
 	rest, _, _ = strings.Cut(rest, "#")
-	path, query, hasQuery := strings.Cut(rest, "?")
-	key := scheme + ":" + percentEncode(path, "")
-	if hasQuery {
-		key += "?" + percentEncode(query, ` "#<>`)
-	}
-	return key
+	return scheme + ":" + canonicalOpaque(rest)
 }
 
-// percentEncode percent-encodes, in upper-case hex, every byte of s that is a
-// C0 control, is above '~', or is in extra.
-func percentEncode(s, extra string) string {
-	var b strings.Builder
+// canonicalOpaque is opaqueKey's canonical form of s.
+func canonicalOpaque(s string) string {
+	decoded := make([]byte, 0, len(s))
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if c < 0x20 || c > 0x7E || strings.IndexByte(extra, c) >= 0 {
+		if c == '%' && i+2 < len(s) && isHex(s[i+1]) && isHex(s[i+2]) {
+			c = unhex(s[i+1])<<4 | unhex(s[i+2])
+			i += 2
+		}
+		if c == '\t' || c == '\n' || c == '\r' {
+			continue
+		}
+		decoded = append(decoded, c)
+	}
+	var b strings.Builder
+	for _, c := range decoded {
+		if c <= ' ' || c >= 0x7F || c == '%' {
 			fmt.Fprintf(&b, "%%%02X", c)
 			continue
 		}
 		b.WriteByte(c)
 	}
 	return b.String()
+}
+
+func isHex(c byte) bool {
+	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }
 
 // unescapeHost percent-decodes the host of a scheme://host[:port]/... URL and

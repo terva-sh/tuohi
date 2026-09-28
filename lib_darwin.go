@@ -8,6 +8,7 @@ package tuohi
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"runtime"
 	"strings"
 	"sync"
@@ -1491,6 +1492,12 @@ func (w *webview) Navigate(url string) {
 	performOnMain(func() {
 		autorelease(func() {
 			nsurl := class("NSURL").Send(sel("URLWithString:"), nsstr(url))
+			if nsurl == 0 {
+				// NSURL refuses a string it cannot parse, and the view would
+				// silently load nothing.
+				log.Printf("tuohi: navigate: NSURL refused %q", url)
+				return
+			}
 			req := class("NSURLRequest").Send(sel("requestWithURL:"), nsurl)
 			w.webView.Send(sel("loadRequest:"), req)
 		})

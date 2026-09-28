@@ -45,13 +45,13 @@ func TestOriginOf(t *testing.T) {
 		"http://[1::]/":                  "http://[1::]",
 		"http://１２７.１:8080/":             "http://127.0.0.1:8080",
 		"http://1.example/":              "http://1.example",
-		// Opaque-path URLs, keyed as WebKit reports them: tabs and newlines
-		// dropped, the query percent-encoded, the fragment removed. The
-		// first is the spelling WebKitGTK 2.52 reported for it.
-		"data:text/html,<p>a b</p>\t<i>\"q\" 'r'</i>?x y<z>é&k=%41#frag": `data:text/html,<p>a b</p><i>"q" 'r'</i>?x%20y%3Cz%3E%C3%A9&k=%41`,
+		// Opaque-path URLs, in the canonical form: escapes decoded, tabs and
+		// newlines dropped, spaces, controls, '%' and non-ASCII encoded.
+		"data:text/html,<p>a b</p>\t<i>\"q\" 'r'</i>?x y<z>é&k=%41#frag": `data:text/html,<p>a%20b</p><i>"q"%20'r'</i>?x%20y<z>%C3%A9&k=A`,
 		"  data:text/html,a\nb\r\n  ":                                    "data:text/html,ab",
 		"DATA:text/html,x":                                               "data:text/html,x",
-		"data:text/html,100%":                                            "data:text/html,100%",
+		"data:text/html,100%":                                            "data:text/html,100%25",
+		"data:text/html,%zz":                                             "data:text/html,%25zz",
 		"data:text/html,é":                                               "data:text/html,%C3%A9",
 		"About:blank":                                                    "",
 		"mailto:a@b.invalid":                                             "mailto:a@b.invalid",
@@ -121,6 +121,25 @@ func TestNavigationPolicy_Decisions(t *testing.T) {
 	for u, want := range cases {
 		if got := c.navigationPolicy(u); got != want {
 			t.Errorf("navigationPolicy(%q) = %d, want %d", u, got, want)
+		}
+	}
+}
+
+// TestOpaqueKeyAgreesAcrossEngines checks that every engine's spelling of one
+// data: URL gets one key. The spellings follow what each engine reported:
+// WebKitGTK 2.52 in a probe, WebView2 in GitHub run 36380534759, and the fully
+// percent-encoded form NSURL may produce.
+func TestOpaqueKeyAgreesAcrossEngines(t *testing.T) {
+	spellings := []string{
+		"data:text/html,<p>a b</p>\n<i>'r'</i>?x y&k='z'",                              // as Go wrote it
+		"data:text/html,<p>a b</p><i>'r'</i>?x%20y&k=%27z%27",                          // WebKitGTK
+		"data:text/html,<p>a b</p>%0A<i>'r'</i>?x%20y&k=%27z%27",                       // WebView2
+		"data:text/html,%3Cp%3Ea%20b%3C/p%3E%0A%3Ci%3E%27r%27%3C/i%3E?x%20y&k=%27z%27", // fully encoded
+	}
+	want := originOf(spellings[0])
+	for _, s := range spellings[1:] {
+		if got := originOf(s); got != want {
+			t.Errorf("originOf(%q) = %q, want %q", s, got, want)
 		}
 	}
 }
