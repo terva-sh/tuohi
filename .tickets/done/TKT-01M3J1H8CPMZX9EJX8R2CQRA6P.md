@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J1H8CPMZX9EJX8R2CQRA6P
 title: Make every View method safe to call from any goroutine
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -19,17 +19,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/view-threading
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
-  commit: 222f69a073f738781119ab07a8a9aced02c54e44
-  session: null
-  claimed_at: 2026-09-28T21:34:32Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T22:25:41Z
+updated_at: 2026-09-28T23:12:21Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -57,8 +50,8 @@ The architecture review, TKT-01M3HWWRSJC4QVVGPW04H5CQBD, may prefer one rule for
 
 ## Acceptance criteria
 
-- [ ] Navigate, Eval, and Focus on Unix run their GTK calls on the UI thread from any goroutine
-- [ ] A GUI scenario calls each from a binding goroutine on both WebKitGTK stacks
+- [x] Navigate, Eval, and Focus on Unix run their GTK calls on the UI thread from any goroutine
+- [x] A GUI scenario calls each from a binding goroutine on both WebKitGTK stacks
 - [x] Concurrent View.Close calls do not race under go test -race
 
 ## Implementation plan
@@ -225,3 +218,31 @@ Both round-3 findings were reported resolved. GitHub run 36491915153 on b0d3334 
 1. **Medium: keep pending calls when an external UI loop is still running.** Fixed. `exitLoop` now cancels pending operations only when `loops == 0 && !external()`, the same condition `wait` uses. Test: `TestUIExitLoopKeepsCallsUnderExternalLoop`. With the old condition it fails.
 
 Checks: `just ci`, golangci-lint on three GOOS, and the headless dispatcher and View tests under `-race`.
+
+## Summary
+
+Landed through Forgejo PR #24, stacked on #23. The owner chose the scope on 2026-09-29: the whole View surface on all three engines, with App-level gaps filed separately.
+
+`uithread.go` is a shared dispatcher that carries the rule in docs/architecture.md ("One threading rule"):
+
+- On the UI thread a call runs in place; elsewhere it is queued.
+- A call that needs a result waits on an operation with an atomic state. The caller gives up only when no loop, owned or external, is left to run it, never on a timer.
+
+Each engine supplies `onUIThread`, `postUI` and `uiLoopExternal`. Windows gained a message-only dispatch window on the UI thread.
+
+What changed for callers:
+
+- **View methods:** `Navigate`, `Eval`, `Focus`, `Show`, `Hide` and the window-state methods queue through it, and a queued call is dropped if Close destroyed its engine first.
+- **`Dialog`:** it no longer hangs when the loop has stopped.
+- **`Close`:** it is race-free, and `App.Show` publishes the engine only once it is set up.
+- **macOS:** `performOnMain` no longer waits forever.
+- **Windows:** WM_DESTROY releases the WebView2 controller and environment on the UI thread, and `Destroy` never tears down on the wrong thread.
+
+Verification:
+
+- **Linux:** `just ci` and `just test-gui` on both stacks pass. The GUI suite under `-race` has zero races on both stacks.
+- **New GUI scenario:** `TestViewMethodsFromBinding` crashed with SIGABRT in 3 of 3 runs without the fix.
+- **GitHub:** run 36492330193 passed on macOS, Windows and all Linux jobs.
+- **terva-review:** five rounds. Round 5 was clean. Every finding was fixed, except the off-main macOS creation shape, which was deferred to TKT-01M3J59M5V.
+
+Follow-ups: TKT-01M3N0PTQ7 (Let App.Show create a window from any goroutine), TKT-01M3N0PTR5 (Check App.Notify, Open, Reveal and Quit off the UI thread), and TKT-01M3N0PTS1 (Check that a Close from Go reaches App.Wait on macOS).
