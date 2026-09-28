@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T03:11:38Z
+updated_at: 2026-09-28T03:27:21Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -296,3 +296,44 @@ macOS and Windows run on GitHub after the merge. On Windows, `rebuildScripts` no
   - the navigation policy, one PR per engine: WebKitGTK `decide-policy`, WKWebView `decidePolicyForNavigationAction`, and WebView2 `NavigationStarting` with `NewWindowRequested`;
   - settling whether a `data:` `View.URL` can use bindings on Windows.
 - **Also untested:** criterion 4, a loopback-served interface under the default policy. `TestOriginGate` covers a loopback page that Go navigated to. The criterion is left open until the navigation policy lands, because that policy is what could break it.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T03:27:21Z
+
+### Navigation policy: decisions, settled with human:sothr on 2026-09-28
+
+#### 1. A fixed rule, with no hook
+
+- **The rule.** A top-level navigation to a trusted origin proceeds. Any other is cancelled in the view, and handed to the system browser when `App.Open` accepts its scheme (`http`, `https`, `mailto`).
+- **Consequence.** The only way to show a page in the window is to trust it with `View.Origins`, which also gives it the bindings.
+- **Rejected: a callback on `View`,** returning allow, open externally, or cancel. It separates "shown" from "trusted", but it is new API, and a synchronous callback on the UI thread of every engine. No consumer shows third-party pages in the window: terva-sh tools serve one origin, and git-ticket-canvas asked for exactly the fixed rule.
+- **Rejected: a second list of origins** that may be shown without the bridge. It is a second list to keep in step, with no current use.
+- **Later.** Either can be added without breaking anyone, because unset keeps the fixed rule.
+
+#### 2. A redirect is treated like any navigation
+
+- **The rule.** A redirect from a trusted page to an untrusted origin is cancelled and opened in the system browser.
+- **Rejected: letting redirects of Go's own navigations through without the bridge.** It would put untrusted content in the app's window, which decision 1 rules out.
+- **Consequences to document:**
+  - A `View.URL` that redirects off-origin, such as to a login page, leaves the view blank. The fix is to list that origin in `View.Origins`.
+  - A scheme or host change, such as http to https or 127.0.0.1 to localhost, counts as a different origin.
+- **To verify in the macOS PR:** whether WKWebView asks `decidePolicyForNavigationAction` before it follows a server redirect. If it does not, macOS needs a fallback, such as stopping the load when the redirect is reported.
+
+#### 3. Page-initiated top-level navigations to URLs without a normal origin
+
+- **about:blank proceeds.** It is empty and gets no bridge, and nothing can script it once the page that navigated is gone. Allowing it also keeps `Navigate("")` working without marking which navigations Go started.
+- **Cancelled:** `data:`, `blob:`, `file:`, and custom schemes. `mailto:` goes to the mail client through `App.Open`. A dropped navigation gets a log line, so a developer can see why a click did nothing.
+- **Not intercepted:** `javascript:`, which runs in the current page.
+- **Go's own navigations are unaffected,** including a `data:` `View.URL`, which Navigate trusts by its exact URL.
+- **Rejected: cancelling about:blank as well.** It needs a marker for Go's own navigations, and gains no safety.
+- **Rejected: allowing `blob:` URLs whose creator origin is trusted.** No consumer needs it yet, and it can be added later.
+
+#### 4. Order: Linux, then Windows, then macOS
+
+- **Linux first,** because it is the one engine testable locally. Its PR builds the shared parts:
+  - the decision function in `engine.go`;
+  - a stand-in for the system-browser call, so tests do not launch a browser;
+  - a GUI scenario run on every engine: a link, a redirect, `window.open`, and about:blank.
+- **Windows second.** Its hooks are already declared: `NavigationStarting` with `put_Cancel`, and `NewWindowRequested` with `put_Handled`.
+- **macOS last.** It has the most unknowns: calling the Objective-C decision block, and the redirect question.
+- **Rejected: Windows first,** to close the WebView2 popup window soonest. That popup has none of tuohi's scripts, so no bridge, and its exposure is the same kind as ordinary link navigation. Designing the shared code with no local test loop costs more.
+- **Rejected: Linux, then macOS, then Windows.** It puts macOS's unknowns ahead of the simpler Windows hooks.
