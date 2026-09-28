@@ -46,10 +46,10 @@ jobs:
       # The reviewer is the published image: this action's source, its prompt
       # templates, locked dependencies and a checksum-pinned Terva. Nothing is
       # checked out or installed, so the job holding the credentials runs no
-      # code from your repository. This is the v0.4.0 release image, pinned by
+      # code from your repository. This is the v0.5.0 release image, pinned by
       # digest because a tag can move; docs/installation.md#adopting-a-new-pin
       # says how to move it.
-      image: container.local.sothr.com/terva-sh/terva-action-code-review@sha256:331aa31bd9bed466db50b19e06d7db3cf21d8f49bca18323976bfd90979a0c74
+      image: container.local.sothr.com/terva-sh/terva-action-code-review@sha256:64a7ba59ca8a0932e2b4d4cf8e50a2231f46fa6eaefa046acbef84f2a2886252
       # The runner prepares its workspace inside the job container; the image's
       # own user is unprivileged, for local reviews of a read-only mount.
       options: --user root
@@ -69,6 +69,10 @@ jobs:
           REVIEW_BASE_URL: ${{ vars.TERVA_REVIEW_BASE_URL }}
           REVIEW_MODEL: ${{ vars.TERVA_REVIEW_MODEL }}
           REVIEW_THINKING: ${{ vars.TERVA_REVIEW_THINKING }}
+          # Tried in order when the model is unavailable or the endpoint is
+          # down. Empty means none. A named reviewer that sets its own model
+          # gets none of these.
+          REVIEW_FALLBACKS: ${{ vars.TERVA_REVIEW_FALLBACKS }}
           # Findings at or above this fail the status.
           REVIEW_FAIL_SEVERITY: medium
           # Optional: a checklist, conventions and named reviewers kept in the
