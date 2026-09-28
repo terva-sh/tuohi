@@ -605,7 +605,7 @@ func (a *App) Show(view *View) error {
 	}
 	if w := view.live(); w != nil {
 		// Already shown: reveal the live window (un-minimize, show, focus).
-		ui.run(func() {
+		view.onUIWith(w, func(w engine) {
 			w.Unminimize()
 			w.Show()
 			w.Raise()
@@ -633,29 +633,18 @@ func (a *App) showFirst(view *View) error {
 	if err := a.start(s); err != nil {
 		return err
 	}
-	view.mu.Lock()
-	view.app = a
-	view.mu.Unlock()
-	// The engines return the live *webview; keep it on the View so its
-	// methods delegate to the window (and can be called right after Show).
+	// The engine stays private to showFirst until it is fully set up: only
+	// then is it published on the View, so a Close from another goroutine
+	// cannot tear it down while it is still being configured. A Close that
+	// arrives before that finds the View unshown and does nothing.
 	nw, err := newView(view, serveAppFS(cfg.FS))
 	if err != nil {
-		view.mu.Lock()
-		view.app = nil
-		view.mu.Unlock()
 		return err
 	}
 	var w engine = nw
-	view.mu.Lock()
-	view.w = w
-	view.mu.Unlock()
 	w.trust(view.Origins...)
 	fail := func(err error) error {
 		w.Close()
-		view.mu.Lock()
-		view.w = nil
-		view.app = nil
-		view.mu.Unlock()
 		return err
 	}
 	// Name the global the events API is installed at: window.<name> with
@@ -689,6 +678,11 @@ func (a *App) showFirst(view *View) error {
 	// View.Ready doc).
 	w.core().onReady = view.Ready
 	a.registerView(view, w)
+	// Publish the engine, so the View's methods delegate to the window (and
+	// can be called right after Show).
+	view.mu.Lock()
+	view.w, view.app = w, a
+	view.mu.Unlock()
 	// Load the window's first page: the declarative URL. With an empty URL
 	// no navigation happens (a blank window) and Ready stays pending until
 	// a later Navigate completes.
@@ -885,6 +879,23 @@ func (v *View) live() engine {
 	return v.w
 }
 
+// onUI runs f on the UI thread with the View's engine (see uiDispatcher.run).
+// A call queued from another goroutine runs later, so when it runs it first
+// checks that the View still holds the engine it was queued for: a Close in
+// between has destroyed that engine, and f is dropped.
+func (v *View) onUI(f func(w engine)) {
+	v.onUIWith(v.mustEngine(), f)
+}
+
+// onUIWith is onUI for an engine the caller already holds.
+func (v *View) onUIWith(w engine, f func(w engine)) {
+	ui.run(func() {
+		if v.live() == w {
+			f(w)
+		}
+	})
+}
+
 // State values configure window sizing and resizing at creation time.
 type State int
 
@@ -955,8 +966,7 @@ func notShown() error {
 //	v.Navigate("app://app/index.html")
 //	v.Navigate("data:text/html,%3Ch1%3EHello%3C%2Fh1%3E")
 func (v *View) Navigate(url string) {
-	w := v.mustEngine()
-	ui.run(func() { w.Navigate(url) })
+	v.onUI(func(w engine) { w.Navigate(url) })
 }
 
 // Window marshals f to the UI thread and calls it with the view's native
@@ -999,8 +1009,7 @@ func (v *View) Close() {
 // exists is not reliable across the three engines, so appkit exposes no
 // declarative JS/CSS injection API.
 func (v *View) Eval(js string) {
-	w := v.mustEngine()
-	ui.run(func() { w.Eval(js) })
+	v.onUI(func(w engine) { w.Eval(js) })
 }
 
 // Focus moves keyboard focus into the web content - so typing, and a screen
@@ -1011,8 +1020,7 @@ func (v *View) Eval(js string) {
 // sparingly - stealing focus from someone typing in another application is
 // worse than the extra click it saves.
 func (v *View) Focus(raise bool) {
-	w := v.mustEngine()
-	ui.run(func() {
+	v.onUI(func(w engine) {
 		if raise {
 			w.Raise()
 		}
@@ -1025,8 +1033,7 @@ func (v *View) Focus(raise bool) {
 // Minimize. Safe to call from any goroutine (the backends marshal to the
 // UI thread).
 func (v *View) Show() {
-	w := v.mustEngine()
-	ui.run(w.Show)
+	v.onUI(engine.Show)
 }
 
 // Hide removes the window from the screen AND from the taskbar / window
@@ -1034,8 +1041,7 @@ func (v *View) Show() {
 // and the window stays alive until Show brings it back. Safe to call from
 // any goroutine.
 func (v *View) Hide() {
-	w := v.mustEngine()
-	ui.run(w.Hide)
+	v.onUI(engine.Hide)
 }
 
 // Maximize enlarges the window to fill the available screen area. On macOS
@@ -1043,32 +1049,28 @@ func (v *View) Hide() {
 // already-zoomed window restores its previous size. Safe to call from any
 // goroutine.
 func (v *View) Maximize() {
-	w := v.mustEngine()
-	ui.run(w.Maximize)
+	v.onUI(engine.Maximize)
 }
 
 // Minimize shrinks the window to the taskbar / Dock (on macOS it is
 // miniaturized into the Dock). Show restores it. Safe to call from any
 // goroutine.
 func (v *View) Minimize() {
-	w := v.mustEngine()
-	ui.run(w.Minimize)
+	v.onUI(engine.Minimize)
 }
 
 // Unminimize restores a minimized window to its normal on-screen state
 // (the inverse of Minimize). It is a no-op when the window is not
 // minimized. Safe to call from any goroutine.
 func (v *View) Unminimize() {
-	w := v.mustEngine()
-	ui.run(w.Unminimize)
+	v.onUI(engine.Unminimize)
 }
 
 // Unmaximize restores a maximized window to its previous normal size (the
 // inverse of Maximize). It is a no-op when the window is not maximized.
 // Safe to call from any goroutine.
 func (v *View) Unmaximize() {
-	w := v.mustEngine()
-	ui.run(w.Unmaximize)
+	v.onUI(engine.Unmaximize)
 }
 
 // Unbind is not part of the public View API - bindings are fixed at Show time

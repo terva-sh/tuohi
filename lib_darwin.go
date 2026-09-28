@@ -696,6 +696,13 @@ var (
 // onUIThread is the dispatcher's onUI hook (see uiDispatcher). The UI thread
 // is the main thread, except when uiIsMain is false: then there is no other
 // thread to defer to, which includes the time before the first webview.
+//
+// A first webview created off the main thread with no loop running leaves
+// uiIsMain false for good, and every goroutine then counts as the UI thread:
+// nothing drains a queue on the thread that created the view, so there is
+// nowhere to marshal to. That shape runs AppKit off the main thread whatever
+// tuohi does, and TKT-01M3J59M5V12QW1WRBEJPJ5H38 (Make the macOS main-thread
+// rule explicit and enforced) refuses it.
 func onUIThread() bool {
 	return onMainThread() || !uiIsMain.Load()
 }

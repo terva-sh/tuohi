@@ -303,3 +303,37 @@ func TestViewCloseKeepsReshownRegistration(t *testing.T) {
 		t.Fatal("closing the current engine left the View registered")
 	}
 }
+
+// navCountingEngine counts Navigate and Close; other methods panic through
+// the nil embedded interface.
+type navCountingEngine struct {
+	closeCountingEngine
+	navigates atomic.Int32
+}
+
+func (e *navCountingEngine) Navigate(string) { e.navigates.Add(1) }
+
+// TestViewQueuedCallDroppedAfterClose checks that a View call queued from
+// another goroutine does not reach an engine that Close destroyed before the
+// queue drained.
+func TestViewQueuedCallDroppedAfterClose(t *testing.T) {
+	f := newFakeUI()
+	prev := ui
+	ui = f.uiDispatcher
+	defer func() { ui = prev }()
+
+	e := &navCountingEngine{}
+	v := &View{w: e}
+	v.Navigate("https://example.com/")
+	f.drain()
+	if n := e.navigates.Load(); n != 1 {
+		t.Fatalf("a queued Navigate on a live View ran %d times, want 1", n)
+	}
+
+	v.Navigate("https://example.com/")
+	v.Close()
+	f.drain()
+	if n := e.navigates.Load(); n != 1 {
+		t.Fatal("a Navigate queued before Close reached the closed engine")
+	}
+}

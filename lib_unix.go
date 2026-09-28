@@ -1284,6 +1284,9 @@ func (w *webview) resolveURL(url string) string {
 }
 
 func (w *webview) Navigate(url string) {
+	if w.webview == 0 {
+		return // web view destroyed (e.g. a navigation queued before Close).
+	}
 	if url == "" {
 		url = "about:blank"
 	}
