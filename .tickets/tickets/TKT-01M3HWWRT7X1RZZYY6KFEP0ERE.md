@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T03:46:34Z
+updated_at: 2026-09-28T04:18:48Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -390,3 +390,17 @@ Before the cancel, the untrusted server has already received the request, with a
 
 - `refuseNavigation` and `navPolicyScenario` carry `//nolint:unused` until those engines call them.
 - `TestNavigationPolicy` skips on darwin and windows with that reason.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:18:48Z
+
+### PR #12 merged; GitHub green
+
+- **Merge.** PR #12 was merged as 3c3006c. GitHub `main` was fast-forwarded to it by hand, after `git merge-base --is-ancestor` confirmed the fast-forward.
+- **GitHub run 36375315774 passed:** macOS, Windows, all four Linux jobs (x86-64 and arm64, GTK3 and GTK4), lint, and every cross build.
+- **Windows log:**
+  - `TestNavigationPolicy` skips, because it has no hook yet.
+  - `TestOriginGate` logs `untrusted=0 bridge=no trusted=1 bridge=yes`, the shown-without-a-bridge branch.
+  - `TestNavigationPolicy_Decisions` passes.
+- **Linux, inferred.** The Linux jobs run without `-v` and without `TUOHI_REQUIRE_GUI=1`, so their logs name no GUI test. Each job's Xvfb step took 21 to 22 seconds, against 3 to 6 for the headless step. That matches local runs with the navigation scenario, about 20 seconds against about 8 before it. So the scenarios ran, `TestNavigationPolicy` included.
+- **Gap noted.** GitHub's Linux GUI step does not set `TUOHI_REQUIRE_GUI=1`, so a failed GUI probe there would skip silently. That is worth its own small ticket.
+- **Next:** the Windows navigation policy, on branch feat/bridge-nav-policy-windows.
