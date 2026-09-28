@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T04:32:41Z
+updated_at: 2026-09-28T04:39:00Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -438,3 +438,18 @@ Windows runs on GitHub after the merge. Expectations that are unverified there:
 
 - whether `mailto:` raises `NavigationStarting` rather than going straight to the OS;
 - that a `data:` navigation by the page reaches `NavigationStarting`, or is blocked by Chromium first, which gives the same result.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:39:00Z
+
+### PR #13 merged; the Windows policy passes on GitHub the first time
+
+- **Merge.** PR #13 was merged as 0a1e770, and GitHub `main` was fast-forwarded to it by hand.
+- **GitHub run 36378372443 passed on every job.**
+- **The Windows log names each test as passed:**
+  - `TestNavigationPolicy` passes with its exact expected string, so every step behaved as on Linux. That settles both open questions:
+    - `mailto:` reaches `NavigationStarting` and is handed off.
+    - A page's `data:` navigation ends with the view unchanged and nothing handed off.
+  - `TestOriginGate` logs `untrusted=refused trusted=1 bridge=yes`.
+  - `TestFrameGate` and `TestNavigationPolicy_Decisions` pass.
+- **Remaining for criterion 3: macOS.** That is `decidePolicyForNavigationAction` for top-level navigations, with the main frame taken from `targetFrame`, and `createWebViewWithConfiguration`, which returns nil and calls `handleNewWindow`. It also has to settle whether WKWebView asks the delegate before it follows a server redirect.
+- **Next branch:** feat/bridge-nav-policy-darwin.
