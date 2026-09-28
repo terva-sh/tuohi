@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:56:03Z
+updated_at: 2026-09-28T18:23:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -666,3 +666,15 @@ The fix is a decision for a person, because it relaxes the sender check. Options
 - **(a)** When args.Source is `about:blank`, check `ICoreWebView2::get_Source` (the view's current document) instead.
 - **(b)** Treat `about:blank` as an unknown sender and rely on the token alone.
 - **(c)** Document the limitation on `View.URL` and leave the check as it is.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:23:49Z
+
+Decision (the user chose it, 2026-09-28): on Windows, when WebMessageReceived reports the sender as `about:blank`, read the sender from `ICoreWebView2::get_Source`, the URL of the view's top-level document.
+
+Why it holds: this event carries only the top-level document's messages, because frames have their own event. The token covers a navigation between the post and the read, just as it does for WebKitGTK's late URI read.
+
+Alternatives rejected:
+- **(b)** Treat `about:blank` as an unknown sender and rely on the token alone. This drops the sender check for every such message.
+- **(c)** Document the limitation. This leaves data: pages unable to call Go on Windows.
+
+`TestDataURLCanUseBindings` no longer skips on Windows. Only GitHub's Windows runner can verify the fix, after the merge and sync.
