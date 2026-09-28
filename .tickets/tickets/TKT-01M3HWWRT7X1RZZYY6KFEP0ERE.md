@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:28:03Z
+updated_at: 2026-09-28T02:32:30Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -68,7 +68,7 @@ A loopback consumer's origin is `http://127.0.0.1:PORT`, so the default must cov
 ## Acceptance criteria
 
 - [ ] A page from an origin the application did not allow cannot call any binding, on all three engines
-- [ ] Every engine's message handler checks the sender's origin
+- [x] Every engine's message handler checks the sender's origin
 - [ ] Top-level navigation away from allowed origins is refused or opened in the system browser
 - [ ] A loopback-served interface works with the default policy
 
@@ -197,3 +197,7 @@ Both findings fixed in 508953d.
 - **Cause, not established.** Either WebView2 reports a `data:` document's source differently from the navigated URL, or it does not give `data:` documents the bridge. Neither can be told apart without a Windows machine.
 - **Fix, on branch fix/windows-loadhtml-loopback.** `loadHTML` serves the page from a temporary loopback server and navigates to it.
 - **Consequence for applications:** a `View.URL` that is a `data:` URL probably cannot use bindings on Windows. The View.URL doc lists `data:`. Settle that with the navigation-policy work, by testing it on GitHub and either fixing it or documenting it.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:32:30Z
+
+Criterion 2 ticked: every engine's message handler checks the sender. Linux uses the top-level URI, macOS the main frame's request URL, and Windows GetSource. GitHub run 36370005911 on 5ba6945 passed TestOriginGate on all three engines, plus TestBadMessagesAreDropped on macOS. Criteria 1, 3, and 4 remain. Next is part 4, a per-document token that closes the Linux frame and queued-message gaps and limits bridge injection to trusted origins. Then comes the navigation policy on each engine.
