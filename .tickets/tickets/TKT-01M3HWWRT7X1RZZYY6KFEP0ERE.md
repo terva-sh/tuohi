@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:39:27Z
+updated_at: 2026-09-28T05:39:40Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -624,3 +624,7 @@ GitHub run 36382395146 (main at 6bfaff1, after PR #17):
   - Building the NSURL from components still re-encodes.
   - Encoding in darwin Navigate alone would let the engines load different strings.
 - Windows: the diagnostic shows `chrome=object&webview=object&bridge=object&hit=function`, so the gate trusted the page and the binding is installed, but no call reached Go. The likely drop is onMessage's sender check on what `get_Source` reports for a data: document. onMessage now logs a sender it drops, with its key, so the next run names it.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:39:40Z
+
+Correction to the previous note: the claim that building the NSURL from NSURLComponents still re-encodes was not tested. It lost because it would give macOS its own URL construction path while the other engines load canonicalNavigateURL's string, not because it was shown to fail.
