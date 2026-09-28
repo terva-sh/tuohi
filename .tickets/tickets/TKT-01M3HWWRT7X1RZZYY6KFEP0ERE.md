@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:54:06Z
+updated_at: 2026-09-28T03:11:38Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -67,7 +67,7 @@ A loopback consumer's origin is `http://127.0.0.1:PORT`, so the default must cov
 
 ## Acceptance criteria
 
-- [ ] A page from an origin the application did not allow cannot call any binding, on all three engines
+- [x] A page from an origin the application did not allow cannot call any binding, on all three engines
 - [x] Every engine's message handler checks the sender's origin
 - [ ] Top-level navigation away from allowed origins is refused or opened in the system browser
 - [ ] A loopback-served interface works with the default policy
@@ -282,3 +282,17 @@ macOS and Windows run on GitHub after the merge. On Windows, `rebuildScripts` no
   - **Controls,** on WebKitGTK 6.0:
     - frame script made to throw before the fetch: fails with `frameRan=false`;
     - token check removed: fails with `frameHits=1`.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T03:11:38Z
+
+### PR #11 merged; GitHub green on every engine
+
+- **Merge.** PR #11 was merged as 6fd77f7. GitHub `main` was fast-forwarded to it by hand, after `git merge-base --is-ancestor` confirmed the fast-forward. `just sync-github --yes` still does not push; see TKT-01M3J0VR65.
+- **GitHub run 36372523259 passed:** macOS, Windows, all four Linux GTK jobs, lint, and every cross build.
+  - **Windows:** its log names `TestOriginGate` and `TestFrameGate` as PASS.
+  - **macOS:** it runs every GUI scenario unless `-short` is set, and a scenario that does not run returns a non-empty error string, so its pass means both scenarios ran.
+- **Criterion 1 is ticked.** On all three engines, a page on an untrusted origin gets no bridge, and a message without the token is dropped. That covers top-level pages, frames, and messages queued across a navigation.
+- **What remains here:**
+  - the navigation policy, one PR per engine: WebKitGTK `decide-policy`, WKWebView `decidePolicyForNavigationAction`, and WebView2 `NavigationStarting` with `NewWindowRequested`;
+  - settling whether a `data:` `View.URL` can use bindings on Windows.
+- **Also untested:** criterion 4, a loopback-served interface under the default policy. `TestOriginGate` covers a loopback page that Go navigated to. The criterion is left open until the navigation policy lands, because that policy is what could break it.
