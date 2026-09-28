@@ -73,7 +73,7 @@ window.addEventListener('pageshow', function(){ window.shown(location.pathname +
 		}
 		report := []string{"start=" + next()}
 		for _, st := range steps {
-			w.w.Dispatch(func() { w.w.Eval(st.js) })
+			w.Eval(st.js)
 			report = append(report, st.name+"="+next())
 		}
 		mu.Lock()

@@ -709,6 +709,17 @@ func dispatchMain(f func()) {
 	gIdleAddFull(gPriorityHighIdle, dispatchSourceFn, id, 0)
 }
 
+// postUI is the dispatcher's post hook (see uiDispatcher). The default main
+// context always takes an idle source, so it never refuses.
+func postUI(f func()) bool {
+	dispatchMain(f)
+	return true
+}
+
+// uiLoopExternal is the dispatcher's external hook. Only App.Wait and Run
+// iterate the GTK main context, so no loop runs that tuohi does not know of.
+func uiLoopExternal() bool { return false }
+
 // --- webview ---------------------------------------------------------------
 
 // webview is the Unix implementation behind the View struct (Linux,
@@ -1000,6 +1011,8 @@ func (w *webview) onWindowDestroy() {
 }
 
 func (w *webview) Run() {
+	ui.enterLoop()
+	defer ui.exitLoop()
 	w.stopRunLoop = false
 	for !w.stopRunLoop {
 		gMainContextIteration(0, true)

@@ -533,9 +533,11 @@ func (a *App) Wait() error {
 		}
 		defer tray.Remove()
 	}
+	ui.enterLoop()
 	for atomic.LoadInt32(&s.exitFlag) == 0 {
 		appUIWait()
 	}
+	ui.exitLoop()
 	if s.releaseInst != nil {
 		s.releaseInst()
 		s.releaseInst = nil

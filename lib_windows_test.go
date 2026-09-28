@@ -56,6 +56,7 @@ func TestMain(m *testing.M) {
 		resNavPolicy.Store(navPolicyScenario())
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
+		resGoroutineCalls.Store(goroutineCallsScenario())
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
 	os.Exit(m.Run())

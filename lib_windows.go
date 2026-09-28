@@ -2044,8 +2044,9 @@ var (
 	winInitOnce sync.Once
 	winInitErr  error
 
-	wndProcCB  uintptr // window class proc for owned windows
-	hostProcCB uintptr // subclass proc for embedded (caller-owned) host HWNDs
+	wndProcCB      uintptr // window class proc for owned windows
+	hostProcCB     uintptr // subclass proc for embedded (caller-owned) host HWNDs
+	dispatchProcCB uintptr // window proc for the UI thread's dispatch window
 )
 
 func ensureWinInit() error {
@@ -2111,6 +2112,7 @@ func ensureWinInit() error {
 		}
 		wndProcCB = pure.NewCallback(wndProc)
 		hostProcCB = pure.NewCallback(hostProc)
+		dispatchProcCB = pure.NewCallback(dispatchProc)
 	})
 	return winInitErr
 }
@@ -2153,6 +2155,9 @@ var (
 	engineSeq uintptr
 
 	uiThreadOnce sync.Once
+	// uiThreadApp is the thread the first newView pinned, which owns every
+	// window and the dispatch window. Zero until the first view is created.
+	uiThreadApp atomic.Uint32
 
 	// windowCount tracks live owned windows so a user-initiated close of the
 	// last one ends Run() with WM_QUIT.
@@ -2279,7 +2284,11 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	if err != nil {
 		return nil, err
 	}
-	uiThreadOnce.Do(runtime.LockOSThread)
+	uiThreadOnce.Do(func() {
+		runtime.LockOSThread()
+		uiThreadApp.Store(getCurrentThreadID())
+		createDispatchWindow()
+	})
 
 	w := &webview{
 		ownsWindow:  v.window == nil,
@@ -2511,6 +2520,95 @@ func (w *webview) clientPoint(hwnd uintptr, lp uintptr) (point, bool) {
 	return pt, true
 }
 
+// The UI thread's dispatch window is a message-only window (HWND_MESSAGE)
+// created with the first view, on the thread that owns every view. It carries
+// the dispatcher's posts (postUI) and outlives every view's own window. A
+// window, unlike a thread message (PostThreadMessageW), still receives its
+// messages while a modal loop such as a window drag or a dialog pumps
+// instead of Run.
+var (
+	dispatchHWND  atomic.Uintptr
+	uiDispatchMu  sync.Mutex
+	uiDispatchMap = map[uintptr]func(){}
+	uiDispatchSeq uintptr
+
+	dispatchClassName = utf16("tuohi_dispatch")
+)
+
+// hwndMessage is HWND_MESSAGE, ((HWND)-3): the parent that makes a window
+// message-only.
+const hwndMessage = ^uintptr(2)
+
+// createDispatchWindow creates the dispatch window on the calling thread,
+// which must be the UI thread. On failure postUI refuses, and callers fall
+// back as they did before the dispatch window existed.
+func createDispatchWindow() {
+	hinst := getModuleHandleW(0)
+	wc := wndClassExW{
+		lpfnWndProc:   dispatchProcCB,
+		hInstance:     hinst,
+		lpszClassName: dispatchClassName,
+	}
+	wc.cbSize = uint32(unsafe.Sizeof(wc))
+	registerClassExW(&wc)
+	hwnd := createWindowExW(0, dispatchClassName, utf16(""), 0, 0, 0, 0, 0,
+		hwndMessage, 0, hinst, 0)
+	if hwnd == 0 {
+		log.Printf("tuohi: dispatch window: CreateWindowExW failed")
+		return
+	}
+	dispatchHWND.Store(hwnd)
+}
+
+// dispatchProc is the dispatch window's proc: WM_APP carries the id of a
+// closure postUI queued.
+func dispatchProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
+	if msg != wmApp {
+		return defWindowProcW(hwnd, msg, wp, lp)
+	}
+	uiDispatchMu.Lock()
+	f := uiDispatchMap[lp]
+	delete(uiDispatchMap, lp)
+	uiDispatchMu.Unlock()
+	if f != nil {
+		f()
+	}
+	return 0
+}
+
+// postUI is the dispatcher's post hook (see uiDispatcher). It refuses before
+// the first view has created the dispatch window, or when the post fails.
+func postUI(f func()) bool {
+	hwnd := dispatchHWND.Load()
+	if hwnd == 0 {
+		return false
+	}
+	uiDispatchMu.Lock()
+	uiDispatchSeq++
+	id := uiDispatchSeq
+	uiDispatchMap[id] = f
+	uiDispatchMu.Unlock()
+	if postMessageW(hwnd, wmApp, 0, id) == 0 {
+		uiDispatchMu.Lock()
+		delete(uiDispatchMap, id)
+		uiDispatchMu.Unlock()
+		return false
+	}
+	return true
+}
+
+// onUIThread is the dispatcher's onUI hook. It is true before any view
+// exists, when there is no other thread to defer to.
+func onUIThread() bool {
+	t := uiThreadApp.Load()
+	return t == 0 || getCurrentThreadID() == t
+}
+
+// uiLoopExternal is the dispatcher's external hook. The UI thread's messages
+// are pumped by App.Wait and Run; a caller-owned host window's loop is not
+// counted, since tuohi cannot tell whether it runs.
+func uiLoopExternal() bool { return false }
+
 func (w *webview) runDispatch(lp uintptr) {
 	w.dispatchMu.Lock()
 	f := w.dispatchMap[lp]
@@ -2524,6 +2622,8 @@ func (w *webview) runDispatch(lp uintptr) {
 // --- View lifecycle --------------------------------------------------------
 
 func (w *webview) Run() {
+	ui.enterLoop()
+	defer ui.exitLoop()
 	var m msgStruct
 	for getMessageW(&m, 0, 0, 0) > 0 {
 		translateMessage(&m)
@@ -2538,6 +2638,13 @@ func (w *webview) Terminate() {
 	w.Dispatch(func() { postQuitMessage(0) })
 }
 func (w *webview) Dispatch(f func()) {
+	if w.window == 0 {
+		// The window is gone, and PostMessageW with a NULL HWND would post to
+		// the caller's own thread, where nothing runs the closure. The UI
+		// thread's dispatch window still takes it.
+		postUI(f)
+		return
+	}
 	w.dispatchMu.Lock()
 	w.dispatchSeq++
 	id := w.dispatchSeq
@@ -2618,12 +2725,12 @@ func (w *webview) Destroy() {
 	// close) still owns a temporary loopback server: stop it here - the
 	// load-finished path (fireReady) never ran.
 	w.releaseLoopback()
-	// The dispatch below rides the window's WM_APP queue, so it can only be
-	// used while the window is alive; a window already gone (a second Close,
-	// or a Close after a user-initiated WM_CLOSE) has no UI-thread work left
-	// and is torn down in place.
-	if w.uiThread != 0 && getCurrentThreadID() != w.uiThread && w.window != 0 {
-		w.Dispatch(func() { w.destroyOnUI() })
+	// The dispatch window outlives this view's window, so the teardown is
+	// marshalled even when the window is already gone (a second Close, or a
+	// Close after a user-initiated WM_CLOSE): the controller and environment
+	// still belong to the UI thread. Only when no dispatch window exists, so
+	// no view was ever created on a UI thread, does it run in place.
+	if w.uiThread != 0 && getCurrentThreadID() != w.uiThread && postUI(w.destroyOnUI) {
 		return
 	}
 	w.destroyOnUI()

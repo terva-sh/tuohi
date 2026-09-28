@@ -161,44 +161,58 @@ we would keep for no user.
 ## One threading rule
 
 GTK, AppKit, and Win32 windows must be driven from the thread that owns them.
-tuohi's bindings run on their own goroutines (`serialQueue`, `bind.go:418`),
-so code inside a binding is off the UI thread by construction. appkit's rule
-for what may be called from there differs by engine:
+tuohi's bindings run on their own goroutines (`serialQueue`, `bind.go`), so
+code inside a binding is off the UI thread by construction.
 
-| Method | Unix | macOS | Windows |
-|---|---|---|---|
-| `Navigate`, `Eval`, `Focus`, `Raise` | direct | synchronous marshal | direct |
-| `Show`, `Hide`, and the window-state methods | asynchronous marshal | synchronous marshal | asynchronous marshal |
-| `Destroy` | asynchronous marshal when off the UI thread | synchronous marshal | asynchronous marshal when off the UI thread |
-| internal `BindBatch` | direct | synchronous marshal | direct, and pumps messages on the caller's thread |
+The rule: **every exported `View` method is safe to call from any goroutine on
+every engine.** On the UI thread a call runs in place. Elsewhere it is
+marshalled to the UI thread asynchronously. `uithread.go` carries the rule
+once, for all three engines, through three hooks each engine supplies:
+`onUIThread`, `postUI`, and `uiLoopExternal`.
 
-"Direct" means the native call runs on the caller's goroutine. That is the
-class of bug that crashed every Linux GUI scenario in `Destroy`, fixed in
-`ab07b8a` for `Destroy` alone.
+| Engine | UI thread | `postUI` |
+|---|---|---|
+| Unix | the GThread the first `newView` pinned | a GLib idle source |
+| macOS | the main thread, or any thread when the UI never ran on main (`uiIsMain`) | the main dispatch queue |
+| Windows | the thread the first `newView` pinned | WM_APP to a message-only window created on that thread |
 
-The rule from now on: **every exported `View` and `App` method is safe to call
-from any goroutine on every engine.** On the UI thread a call runs in place.
-Elsewhere it is marshalled to the UI thread asynchronously.
+Windows uses a message-only window rather than a thread message because a
+modal loop, such as a window drag or a dialog, pumps its own messages and drops
+thread messages. The window also outlives every view's own window, so work
+posted after a view's window has closed still reaches the UI thread.
 
 A call whose caller needs a result, such as a dialog, waits for it, and must
 neither hang nor report a failure that later turns out false:
 
-- **Each marshalled operation carries a state:** pending, running, or
-  cancelled. The UI thread claims an operation atomically before running it,
+- **Each marshalled operation carries a state:** pending, running, cancelled,
+  or done. The UI thread claims an operation atomically before running it,
   and skips a cancelled one.
-- **The loop owner marks the loop stopped when its loop exits for good,** at
-  the end of `App.Wait` or `Run`. Anything still pending is then cancelled,
-  and a later call returns an error at once instead of queuing.
-- **A waiting caller gives up only when the loop is marked stopped,** never on
-  a timer. It then cancels its operation atomically. If the operation has
-  already started, the caller waits for it instead.
+- **Each loop tuohi owns marks itself running,** `App.Wait` and each engine's
+  `Run`. When the last one returns, everything still pending is cancelled, and
+  a later call returns an error at once instead of queuing. "Stopped" means no
+  loop runs now, not that none ever will: `Run` may be called again.
+- **A loop tuohi does not own,** the tray package's or an embedding host's
+  `[NSApp run]` on macOS, counts as running for as long as it runs.
+- **A waiting caller gives up only when no loop is left,** never on a timer.
+  It then cancels its operation atomically. If the operation has already
+  started, the caller waits for it instead.
 
 A timeout was the first draft and lost. A timeout cannot tell a stopped loop
 from a busy one, so a call could report failure and then run anyway when the
 loop resumed, and a caller that retried a dialog would get two. macOS's
-`performOnMain` waits forever today (`lib_darwin.go:550-561`) and changes to
-match. TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to call
-from any goroutine) carries this out in the shared layer.
+`performOnMain` now waits through the same mechanism, so a call after the loop
+has stopped returns instead of hanging.
+
+The engines keep their own marshalling for the methods that had it, because
+`App.Show` and the bridge's internal window messages call engine methods
+directly. On the UI thread that marshalling costs one extra queue hop.
+
+`App` methods are not yet covered. `App.Show` from a goroutine creates the
+window on the caller's thread: TKT-01M3N0PTQ7ZY1X78PX70SZ56AN (Let App.Show
+create a window from any goroutine). `Notify`, `Open`, and `Reveal` make
+native calls on the caller on macOS and Windows:
+TKT-01M3N0PTR5E1NP8TT9XV07GBTK (Check App.Notify, Open, Reveal and Quit off
+the UI thread).
 
 Running the native call in place when the loop is not running was also
 considered. It is the crash the rule exists to prevent.

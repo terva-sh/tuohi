@@ -106,6 +106,7 @@ func TestMain(m *testing.M) {
 		resNavPolicy.Store(navPolicyScenario())
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
+		resGoroutineCalls.Store(goroutineCallsScenario())
 	}
 	os.Exit(m.Run())
 }

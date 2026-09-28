@@ -100,12 +100,12 @@ func navPolicyScenario() string {
 		}
 		var report []string
 		for _, st := range steps {
-			w.w.Dispatch(func() { w.w.Eval(st.js) })
+			w.Eval(st.js)
 			time.Sleep(1500 * time.Millisecond)
 			for len(loaded) > 0 {
 				<-loaded
 			}
-			w.w.Dispatch(func() { w.w.Eval(`window.loaded(location.href)`) })
+			w.Eval(`window.loaded(location.href)`)
 			where := "left"
 			select {
 			case href := <-loaded:
