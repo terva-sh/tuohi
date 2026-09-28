@@ -1,8 +1,8 @@
 # Diagnostic for TKT-01M3MWY0QQQ6J07DHDY0CCBN2V (Stop dropping a data: page's
 # binding call on Windows now and then). Runs on this branch only, and is
-# removed before the branch merges. Each job runs the Windows GUI scenarios
-# once, then the data: scenario 20 more times in the same process, with the
-# WebView2 debug trace on.
+# removed before the branch merges. Each job launches the test binary 10
+# times; each launch runs the Windows GUI scenarios once and then the data:
+# scenario 200 more times, with the WebView2 debug trace on.
 name: diag-dataurl
 
 on:
@@ -26,23 +26,34 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Repeat the data URL scenario
-        timeout-minutes: 8
+        timeout-minutes: 30
         env:
           WEBVIEW2_DEBUG: '1'
-          TUOHI_REPEAT_DATAURL: '20'
+          TUOHI_REPEAT_DATAURL: '200'
         shell: pwsh
         run: |
           go test -c -o appkit_test.exe .
-          $p = Start-Process -FilePath .\appkit_test.exe `
-            -ArgumentList '-test.v','-test.timeout=400s' `
-            -NoNewWindow -PassThru `
-            -RedirectStandardOutput out.txt -RedirectStandardError err.txt
-          $exited = $p.WaitForExit(420000)
-          if (Test-Path out.txt) { Get-Content out.txt }
-          if (Test-Path err.txt) { Get-Content err.txt }
-          if (-not $exited) {
-            Write-Host "::error::timed out; force-killing"
-            Stop-Process -Id $p.Id -Force
-            exit 1
+          $failed = 0
+          for ($launch = 1; $launch -le 10; $launch++) {
+            Write-Host "== launch $launch"
+            $p = Start-Process -FilePath .\appkit_test.exe `
+              -ArgumentList '-test.v','-test.timeout=240s' `
+              -NoNewWindow -PassThru `
+              -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+            $exited = $p.WaitForExit(260000)
+            if (-not $exited) {
+              Write-Host "::error::launch $launch timed out; force-killing"
+              Stop-Process -Id $p.Id -Force
+              $failed++
+              continue
+            }
+            # The trace is long; print it only for a launch that failed.
+            Get-Content err.txt | Select-String -Pattern '^dataURL' | ForEach-Object { $_.Line } | Select-Object -Last 1
+            if ($p.ExitCode -ne 0) {
+              $failed++
+              Write-Host "::error::launch $launch failed"
+              Get-Content out.txt
+              Get-Content err.txt
+            }
           }
-          exit $p.ExitCode
+          exit $failed
