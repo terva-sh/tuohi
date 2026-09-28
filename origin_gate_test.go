@@ -109,8 +109,11 @@ var resFrameGate atomic.Value // string
 // bridge from inside a trusted page. The frame posts a well-formed bridge
 // message straight to the engine's message channel, as a hostile frame
 // would. WebKitGTK does not say which frame posted and names the top-level
-// page as the sender, so only the bridge token stops it there.
+// page as the sender, so only the bridge token stops it there. The frame then
+// fetches /ran from its own server, so a frame that never loaded or ran fails
+// the scenario instead of passing it.
 func frameGateScenario() string {
+	var ran atomic.Bool
 	// Plain servers, not listenLoopbackHTTP: its COEP and CORP headers would
 	// keep the page from loading a frame from another origin at all.
 	frameURL, closeFrame, err := servePlainHTML(`<!DOCTYPE html><script>
@@ -120,18 +123,23 @@ if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandl
 }
 if (window.chrome && window.chrome.webview) { window.chrome.webview.postMessage(m); }
 try { window.top.__webview__.post(m); } catch (e) {}
-</script>`)
+fetch('/ran');
+</script>`, func(target string) {
+		if target == "/ran" {
+			ran.Store(true)
+		}
+	})
 	if err != nil {
 		return "listen error: " + err.Error()
 	}
 	defer closeFrame()
 	pageURL, closePage, err := servePlainHTML(`<!DOCTYPE html><html><body>
-<iframe src="` + frameURL + `frame"></iframe>
+<iframe src="`+frameURL+`frame"></iframe>
 <script>
 window.addEventListener('load', function(){
   setTimeout(function(){ window.done(); }, 500);
 });
-</script></body></html>`)
+</script></body></html>`, nil)
 	if err != nil {
 		return "listen error: " + err.Error()
 	}
@@ -161,7 +169,7 @@ window.addEventListener('load', function(){
 	w.w.Run()
 	select {
 	case <-done:
-		return fmt.Sprintf("frameHits=%d", hits.Load())
+		return fmt.Sprintf("frameRan=%v frameHits=%d", ran.Load(), hits.Load())
 	default:
 		return "no report"
 	}
@@ -170,15 +178,16 @@ window.addEventListener('load', function(){
 func TestFrameGate(t *testing.T) {
 	got, _ := resFrameGate.Load().(string)
 	requireGUI(t, got)
-	if got != "frameHits=0" {
-		t.Fatalf("frame gate = %q, want %q", got, "frameHits=0")
+	if want := "frameRan=true frameHits=0"; got != want {
+		t.Fatalf("frame gate = %q, want %q", got, want)
 	}
 }
 
 // servePlainHTML answers every request on a fresh loopback port with html and
 // no headers beyond the content type and length, and returns the server's
-// base URL, ending in a slash, and a function that stops it.
-func servePlainHTML(html string) (string, func(), error) {
+// base URL, ending in a slash, and a function that stops it. seen, when not
+// nil, is called with each request's target.
+func servePlainHTML(html string, seen func(target string)) (string, func(), error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, err
@@ -192,6 +201,13 @@ func servePlainHTML(html string) (string, func(), error) {
 			go func() {
 				defer func() { _ = conn.Close() }()
 				br := bufio.NewReader(conn)
+				line, err := br.ReadString('\n')
+				if err != nil {
+					return
+				}
+				if f := strings.Fields(line); seen != nil && len(f) == 3 {
+					seen(f[1])
+				}
 				for {
 					line, err := br.ReadString('\n')
 					if err != nil {
