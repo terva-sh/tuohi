@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T04:32:41Z
+updated_at: 2026-09-28T04:44:08Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -438,3 +438,45 @@ Windows runs on GitHub after the merge. Expectations that are unverified there:
 
 - whether `mailto:` raises `NavigationStarting` rather than going straight to the OS;
 - that a `data:` navigation by the page reaches `NavigationStarting`, or is blocked by Chromium first, which gives the same result.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:39:00Z
+
+### PR #13 merged; the Windows policy passes on GitHub the first time
+
+- **Merge.** PR #13 was merged as 0a1e770, and GitHub `main` was fast-forwarded to it by hand.
+- **GitHub run 36378372443 passed on every job.**
+- **The Windows log names each test as passed:**
+  - `TestNavigationPolicy` passes with its exact expected string, so every step behaved as on Linux. That settles both open questions:
+    - `mailto:` reaches `NavigationStarting` and is handed off.
+    - A page's `data:` navigation ends with the view unchanged and nothing handed off.
+  - `TestOriginGate` logs `untrusted=refused trusted=1 bridge=yes`.
+  - `TestFrameGate` and `TestNavigationPolicy_Decisions` pass.
+- **Remaining for criterion 3: macOS.** That is `decidePolicyForNavigationAction` for top-level navigations, with the main frame taken from `targetFrame`, and `createWebViewWithConfiguration`, which returns nil and calls `handleNewWindow`. It also has to settle whether WKWebView asks the delegate before it follows a server redirect.
+- **Next branch:** feat/bridge-nav-policy-darwin.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:44:08Z
+
+### macOS navigation policy, on branch feat/bridge-nav-policy-darwin
+
+- **`decidePolicyForNavigationAction`** runs before any request is sent:
+  - no `targetFrame` means a new window, which is cancelled and handed to `handleNewWindow`;
+  - a frame that is not the main frame is allowed;
+  - the main frame is judged by the policy.
+- **`decidePolicyForNavigationResponse`** judges the main frame's final response URL again. A response with no URL is allowed.
+  - **Why it is here:** the open question was whether WKWebView asks the action delegate before it follows a server redirect. This backstop makes the redirect case independent of the answer. A navigation the action check cancelled has no response, so nothing is judged twice.
+- **`createWebViewWithConfiguration`** returns nil and calls `handleNewWindow`.
+- **The decision block** is called with `invokeDecisionHandler`, the old media-capture helper renamed: `v@?q` through `NSInvocation`, because all three WebKit decision blocks take one `NSInteger`.
+- **Placeholders removed.** The `nolint:unused` markers and the darwin skip in `TestNavigationPolicy` are gone, and the scenario is registered in the macOS `TestMain`.
+
+#### Verified locally
+
+- **Builds:** vet and golangci-lint pass on linux, darwin, windows, and freebsd, and `just ci` passes.
+- **`just test-gui`** passes on both WebKitGTK stacks.
+
+#### Not run locally
+
+macOS runs on GitHub after the merge. If the redirect step shows `left`, neither hook caught the redirect.
+
+#### Criterion 3
+
+It is met on Linux and Windows. It will be met on macOS if GitHub passes after the merge, and gets ticked then.

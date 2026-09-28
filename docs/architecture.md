@@ -280,6 +280,15 @@ call a view's Go bindings) carries out:
     server has received the request before the view cancels it, although
     nothing is shown. It judges new windows, and schemes with no response
     such as `mailto:`, when they start.
+  - **WebView2** judges the top-level document in `NavigationStarting`,
+    before any request is sent, and marks every `NewWindowRequested`
+    handled.
+  - **WKWebView** judges each navigation in
+    `decidePolicyForNavigationAction`, before any request is sent. It uses
+    `targetFrame` to tell frames and new windows apart. It judges the main
+    frame's response again in `decidePolicyForNavigationResponse`, which
+    catches a server redirect wherever WebKit reports it. Its
+    `createWebViewWithConfiguration` returns nil.
 
 A per-binding allowlist was the alternative. It lost because the consumer case
 is one trusted origin per view, and per-binding policy multiplies

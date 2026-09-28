@@ -499,8 +499,6 @@ func (c *viewCore) navigationPolicy(rawurl string) navAction {
 // after the engine has cancelled it in the view: it opens the URL in the
 // system when action is navExternal, and logs it otherwise, so a developer
 // can see why a click did nothing.
-//
-//nolint:unused // the macOS engine calls it once its navigation hook lands (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
 func refuseNavigation(rawurl string, action navAction) {
 	if action == navExternal {
 		openExternal(rawurl)
@@ -515,8 +513,6 @@ func refuseNavigation(rawurl string, action navAction) {
 // in this view instead, so the page keeps the bridge and stays under the
 // policy. An about:blank window is dropped, because loading it here would
 // replace the application's page. Anything else is refused as a navigation.
-//
-//nolint:unused // the macOS engine calls it once its navigation hook lands (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
 func (w *webview) handleNewWindow(rawurl string) {
 	switch action := w.navigationPolicy(rawurl); {
 	case action == navProceed && w.trusts(rawurl, true):

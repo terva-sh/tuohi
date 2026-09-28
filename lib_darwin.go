@@ -44,6 +44,18 @@ const (
 	// decision handler to allow camera/microphone access.
 	wkPermissionDecisionGrant = 1
 
+	// wkNavigationActionPolicyCancel and wkNavigationActionPolicyAllow are
+	// WKNavigationDelegate's WKNavigationActionPolicy values, passed to the
+	// navigation decision handler (see decidePolicyForNavigationAction).
+	wkNavigationActionPolicyCancel = 0
+	wkNavigationActionPolicyAllow  = 1
+
+	// wkNavigationResponsePolicyCancel and wkNavigationResponsePolicyAllow
+	// are WKNavigationResponsePolicy values (see
+	// decidePolicyForNavigationResponse).
+	wkNavigationResponsePolicyCancel = 0
+	wkNavigationResponsePolicyAllow  = 1
+
 	// nsURLErrorFileDoesNotExist is Foundation's NSURLErrorFileDoesNotExist,
 	// reported to a URL-scheme task when its handler has no resource to serve.
 	nsURLErrorFileDoesNotExist = -1100
@@ -281,7 +293,20 @@ func registerClasses() error {
 				Fn:  requestMediaCapturePermission,
 			},
 			{
-				// The same delegate object also serves as the WKNavigationDelegate:
+				Cmd: sel("webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:"),
+				Fn:  createWebView,
+			},
+			{
+				// The same delegate object also serves as the WKNavigationDelegate,
+				// which applies the navigation policy.
+				Cmd: sel("webView:decidePolicyForNavigationAction:decisionHandler:"),
+				Fn:  decidePolicyForNavigationAction,
+			},
+			{
+				Cmd: sel("webView:decidePolicyForNavigationResponse:decisionHandler:"),
+				Fn:  decidePolicyForNavigationResponse,
+			},
+			{
 				// webView:didFinishNavigation: is the "page fully loaded" moment
 				// View.Ready waits for.
 				Cmd: sel("webView:didFinishNavigation:"),
@@ -491,15 +516,115 @@ func invokeOpenPanelCompletion(completionHandler, urls objc.ID) {
 // in its Info.plist, and Screen Recording permission (TCC) for screen capture.
 func requestMediaCapturePermission(self objc.ID, _cmd objc.SEL, webView, origin, frame objc.ID, captureType int, decisionHandler objc.ID) {
 	autorelease(func() {
-		invokeCaptureDecision(decisionHandler, wkPermissionDecisionGrant)
+		invokeDecisionHandler(decisionHandler, wkPermissionDecisionGrant)
 	})
 }
 
-// invokeCaptureDecision calls the media-capture decision block with a
-// WKPermissionDecision value. The handler is an opaque block, so it is driven
-// through NSInvocation with the signature "v@?q": index 0 is the block itself,
-// index 1 the NSInteger decision argument.
-func invokeCaptureDecision(decisionHandler objc.ID, decision int) {
+// decidePolicyForNavigationAction implements WKNavigationDelegate's
+// webView:decidePolicyForNavigationAction:decisionHandler:, which WKWebView
+// asks before every navigation, and calls decisionHandler exactly once:
+//   - a navigation with no target frame asks for a new window, which is never
+//     opened: see handleNewWindow;
+//   - a frame's navigation is allowed, because the policy leaves frames alone;
+//   - a main-frame navigation is allowed only when the navigation policy lets
+//     it proceed, and is otherwise cancelled and refused.
+//
+// Unlike WebKitGTK, WKWebView names the target frame, so the decision is made
+// before any request is sent.
+func decidePolicyForNavigationAction(self objc.ID, _cmd objc.SEL, _webView, action, decisionHandler objc.ID) {
+	autorelease(func() {
+		w := lookupEngine(self)
+		if w == nil {
+			invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyAllow)
+			return
+		}
+		uri := navigationActionURL(action)
+		frame := action.Send(sel("targetFrame"))
+		switch {
+		case frame == 0:
+			invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyCancel)
+			w.handleNewWindow(uri)
+		case !objc.Send[bool](frame, sel("isMainFrame")):
+			invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyAllow)
+		default:
+			if a := w.navigationPolicy(uri); a != navProceed {
+				invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyCancel)
+				refuseNavigation(uri, a)
+				return
+			}
+			invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyAllow)
+		}
+	})
+}
+
+// decidePolicyForNavigationResponse implements WKNavigationDelegate's
+// webView:decidePolicyForNavigationResponse:decisionHandler:, the backstop for
+// a server redirect: it applies the navigation policy again to the final URL
+// of the main frame's response. A navigation the action check already
+// cancelled has no response, so nothing is judged twice. Whether WKWebView
+// asks decidePolicyForNavigationAction before following a redirect is not
+// something this code relies on.
+func decidePolicyForNavigationResponse(self objc.ID, _cmd objc.SEL, _webView, response, decisionHandler objc.ID) {
+	autorelease(func() {
+		w := lookupEngine(self)
+		if w == nil || !objc.Send[bool](response, sel("isForMainFrame")) {
+			invokeDecisionHandler(decisionHandler, wkNavigationResponsePolicyAllow)
+			return
+		}
+		uri := ""
+		if r := response.Send(sel("response")); r != 0 {
+			if u := r.Send(sel("URL")); u != 0 {
+				uri = cstr(u.Send(sel("absoluteString")).Send(sel("UTF8String")))
+			}
+		}
+		// A response with no URL has nothing to judge; the action check
+		// already saw its request.
+		if uri == "" {
+			invokeDecisionHandler(decisionHandler, wkNavigationResponsePolicyAllow)
+			return
+		}
+		if a := w.navigationPolicy(uri); a != navProceed {
+			invokeDecisionHandler(decisionHandler, wkNavigationResponsePolicyCancel)
+			refuseNavigation(uri, a)
+			return
+		}
+		invokeDecisionHandler(decisionHandler, wkNavigationResponsePolicyAllow)
+	})
+}
+
+// createWebView implements WKUIDelegate's
+// webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:,
+// which WKWebView calls when a page asks for a new window. It returns nil, so
+// no window opens, and handleNewWindow decides what loads instead.
+func createWebView(self objc.ID, _cmd objc.SEL, _webView, _config, action, _features objc.ID) objc.ID {
+	autorelease(func() {
+		if w := lookupEngine(self); w != nil {
+			w.handleNewWindow(navigationActionURL(action))
+		}
+	})
+	return 0
+}
+
+// navigationActionURL returns the absolute URL a WKNavigationAction's request
+// is for, or "" when it has none.
+func navigationActionURL(action objc.ID) string {
+	req := action.Send(sel("request"))
+	if req == 0 {
+		return ""
+	}
+	u := req.Send(sel("URL"))
+	if u == 0 {
+		return ""
+	}
+	return cstr(u.Send(sel("absoluteString")).Send(sel("UTF8String")))
+}
+
+// invokeDecisionHandler calls a WebKit decision block that takes one NSInteger
+// enum: the media-capture handler's WKPermissionDecision, or the navigation
+// handler's WKNavigationActionPolicy. The handler is an opaque block, so it is
+// driven through NSInvocation with the signature "v@?q": index 0 is the block
+// itself, index 1 the NSInteger decision argument.
+func invokeDecisionHandler(decisionHandler objc.ID, decision int) {
 	sig := class("NSMethodSignature").Send(sel("signatureWithObjCTypes:"), "v@?q")
 	inv := class("NSInvocation").Send(sel("invocationWithMethodSignature:"), sig)
 	inv.Send(sel("setTarget:"), decisionHandler)
