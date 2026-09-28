@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M3MWY0QQQ6J07DHDY0CCBN2V
 title: "Stop dropping a data: page's binding call on Windows now and then"
 type: bug
-status: in-progress
-status_reason: null
+status: blocked
+status_reason: "Not reproducible on WebView2 153 (0 of 12,186 runs); the only failure since PR #20 ran on runtime 149. Waiting for a recurrence in GitHub CI, whose WEBVIEW2_DEBUG trace now names the cause."
 priority: high
 due_on: null
 labels:
@@ -24,17 +24,10 @@ references:
   - ref: evidence:github-run-36480092776-attempt-1
     path: null
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/windows-data-sender-flake
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
-  commit: 5d9a4882234c7ee023483714d75736f71278de22
-  session: null
-  claimed_at: 2026-09-28T23:14:21Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T20:57:33Z
-updated_at: 2026-09-28T23:46:20Z
+updated_at: 2026-09-28T23:57:01Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -137,3 +130,11 @@ Nothing anomalous appeared: no empty commit, no ID mismatch, no failed `get_Sour
 **Reading.** The flake is tied to the older runtime, or to that older runner image, not to a race that the current runtime exhibits. On 149 the committed URI was empty when both messages arrived, although ContentLoading had fired first. The likely cause is a navigation-ID mismatch, an error-page report, or `get_Source` returning `""` instead of `about:blank` on that version. Which one cannot be settled without a failing trace from 149.
 
 GitHub's hosted runners do not let a job pick an older image. Reproducing on 149 would mean installing the WebView2 Fixed Version runtime 149 on the runner and pointing the loader at it, which `findEmbeddedBrowserDLL` does not support today.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:57:01Z
+
+The owner decided, 2026-09-29, to merge the diagnostics and park this ticket until the flake recurs. The rejected options were reproducing on WebView2 149 through a Fixed Version runtime, which takes loader work and depends on a download that may no longer be offered, and hardening the sender lookup against all three candidate causes without knowing which one it is. The WEBVIEW2_DEBUG trace lines and TUOHI_REPEAT_DATAURL are merged, and the branch-only workflow is removed. GitHub CI runs the Windows tests with WEBVIEW2_DEBUG=1, so a recurrence will log the navigation IDs, the ContentLoading flags, and each message's get_Source result. To resume: find the failing job's 'navigation starting', 'content loading' and 'message: source' lines for the data: view and see which one differs from a passing run, then fix that. Criteria 1 and 2 are unticked, and criterion 3 is open.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:57:01Z
+
+in-progress to blocked: Not reproducible on WebView2 153 (0 of 12,186 runs); the only failure since PR #20 ran on runtime 149. Waiting for a recurrence in GitHub CI, whose WEBVIEW2_DEBUG trace now names the cause.
