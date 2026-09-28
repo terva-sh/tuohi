@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T18:33:10Z
+updated_at: 2026-09-28T18:45:57Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -686,3 +686,7 @@ GitHub run 36465210066 (main at 8f4b6b5, after PR #19) failed on Windows. `TestD
 The next attempt keeps the approach the user chose, the page the view shows, but takes the URL from a different source. `NavigationStarting` names the data: URL: an earlier Windows run logged the policy refusing one by name. The view now records that URL by navigation ID and commits it when `NavigationCompleted` reports that ID succeeded. A message reported as `about:blank` is read as coming from the committed URL.
 
 The user chose to test this on GitHub before merging: the branch is pushed to the GitHub mirror, whose CI runs on every push, so `main` does not go red again. `main` stays red on Windows until this lands, and the test is left failing there as the marker.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:45:57Z
+
+GitHub run 36467087840 on the test branch fix/windows-data-sender-3 (0c1fd73) is green on every job. TestDataURLCanUseBindings passes on Windows, and so do OriginGate, FrameGate, NavigationPolicy, and LoopbackAppDefaultPolicy. The sender URI is committed at ContentLoading. Committing it at NavigationCompleted failed on fix/windows-data-sender-2: diagnostic run 36466440440 showed a page's messages arrive before its NavigationCompleted.
