@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,9 @@ func TestMain(m *testing.M) {
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
+		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
+			os.Exit(repeatDataURL(n))
+		}
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
 	os.Exit(m.Run())
@@ -413,4 +417,25 @@ func TestSchemeURLRoundTrip(t *testing.T) {
 	if got != want {
 		t.Errorf("round-trip = %q, want %q", got, want)
 	}
+}
+
+// repeatDataURL runs dataURLScenario n times in this process, printing each
+// result, and returns the exit status: 1 when any run failed. It is a
+// diagnostic for TKT-01M3MWY0QQQ6J07DHDY0CCBN2V (Stop dropping a data: page's
+// binding call on Windows now and then), set by TUOHI_REPEAT_DATAURL=n, and
+// replaces the ordinary test run.
+func repeatDataURL(n int) int {
+	failed := 0
+	for i := 1; i <= n; i++ {
+		got := dataURLScenario()
+		fmt.Fprintf(os.Stderr, "dataURL run %d/%d: %s\n", i, n, got)
+		if got != "called data" {
+			failed++
+		}
+	}
+	fmt.Fprintf(os.Stderr, "dataURL: %d of %d failed\n", failed, n)
+	if failed > 0 {
+		return 1
+	}
+	return 0
 }

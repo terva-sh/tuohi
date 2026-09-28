@@ -1,0 +1,48 @@
+# Diagnostic for TKT-01M3MWY0QQQ6J07DHDY0CCBN2V (Stop dropping a data: page's
+# binding call on Windows now and then). Runs on this branch only, and is
+# removed before the branch merges. Each job runs the Windows GUI scenarios
+# once, then the data: scenario 20 more times in the same process, with the
+# WebView2 debug trace on.
+name: diag-dataurl
+
+on:
+  push:
+    branches: ['fix/windows-data-sender-flake']
+
+permissions:
+  contents: read
+
+jobs:
+  repeat:
+    name: data URL repeat ${{ matrix.shard }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Repeat the data URL scenario
+        timeout-minutes: 8
+        env:
+          WEBVIEW2_DEBUG: '1'
+          TUOHI_REPEAT_DATAURL: '20'
+        shell: pwsh
+        run: |
+          go test -c -o appkit_test.exe .
+          $p = Start-Process -FilePath .\appkit_test.exe `
+            -ArgumentList '-test.v','-test.timeout=400s' `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          $exited = $p.WaitForExit(420000)
+          if (Test-Path out.txt) { Get-Content out.txt }
+          if (Test-Path err.txt) { Get-Content err.txt }
+          if (-not $exited) {
+            Write-Host "::error::timed out; force-killing"
+            Stop-Process -Id $p.Id -Force
+            exit 1
+          }
+          exit $p.ExitCode
