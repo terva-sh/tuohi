@@ -234,11 +234,16 @@ func registerClasses() error {
 				if frame == 0 || !objc.Send[bool](frame, sel("isMainFrame")) {
 					return
 				}
-				// The sender is the main frame's current URL, as on Linux. A
-				// nil URL names no origin, and the gate refuses it.
+				// The sender is the URL of the document that posted, from the
+				// message's own frame. The web view's current URL would be
+				// wrong for a message still queued when the view navigated
+				// on to another page. A nil URL names no origin, and the gate
+				// refuses it.
 				sender := ""
-				if u := w.webView.Send(sel("URL")); u != 0 {
-					sender = cstr(u.Send(sel("absoluteString")).Send(sel("UTF8String")))
+				if req := frame.Send(sel("request")); req != 0 {
+					if u := req.Send(sel("URL")); u != 0 {
+						sender = cstr(u.Send(sel("absoluteString")).Send(sel("UTF8String")))
+					}
 				}
 				w.onMessage(cstr(body.Send(sel("UTF8String"))), sender, true)
 			},
