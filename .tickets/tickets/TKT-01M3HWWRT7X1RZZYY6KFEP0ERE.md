@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:39:40Z
+updated_at: 2026-09-28T05:44:09Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -628,3 +628,22 @@ GitHub run 36382395146 (main at 6bfaff1, after PR #17):
 **agent:claude-code/bridge-trust-3** at 2026-09-28T05:39:40Z
 
 Correction to the previous note: the claim that building the NSURL from NSURLComponents still re-encodes was not tested. It lost because it would give macOS its own URL construction path while the other engines load canonicalNavigateURL's string, not because it was shown to fail.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:44:09Z
+
+### Review 1 disposition (ready-review-1)
+
+**medium: escape disallowed bytes in data: URL metadata too. Fixed in the commit after 9128956.**
+
+The finding holds. Metadata such as `charset="utf-8"` still reached NSURL with raw quotes. `canonicalNavigateURL` now escapes the RFC 3986-disallowed set in the metadata too.
+
+This changes the key of such a URL. That is safe because it is still the key of the URL Navigate loads and trusts, and the page keeps the metadata as written, so both sides key it the same way. The one visible cost: a quoted MIME parameter reaches the page as `%22`, which is what NSURL would have produced anyway.
+
+Rejecting such URLs was the other option. It lost because it refuses a page every other engine loads.
+
+Tests:
+- `TestNavigateURLParsesAsWritten` now covers quoted metadata, with the earlier metadata exemption removed.
+- `TestBridgeGate` loads `data:text/plain;charset="utf-8",<p>hello` through node's WHATWG URL and confirms the page's key matches Go's.
+- Negative control: both metadata cases fail with the change reverted.
+
+Lint on four targets, `just ci`, and `just test-gui` pass.
