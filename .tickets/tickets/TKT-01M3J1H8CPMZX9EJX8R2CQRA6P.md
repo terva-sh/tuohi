@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T22:16:17Z
+updated_at: 2026-09-28T22:21:38Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -200,3 +200,18 @@ Both round-1 findings were reported resolved.
 Still open, and not part of this ticket: two concurrent first `App.Show` calls on one View both see it unshown and both create a window. That belongs with TKT-01M3N0PTQ7ZY1X78PX70SZ56AN (Let App.Show create a window from any goroutine).
 
 After the fixes, `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:21:38Z
+
+### Review disposition for PR #24, round 3 (terva-review run on d55329b)
+
+The round-2 findings were reported handled: 1 and 2 resolved, and 3 declined, as deferred to TKT-01M3J59M5V. GitHub run 36491384974 on d55329b passed every job.
+
+1. **High: do not queue Windows teardown after the last message loop has exited.** Fixed at the source.
+   - `engineMsg`'s WM_DESTROY now closes the controller and releases the environment on the UI thread (`closeController`, `releaseEnvironment`), while the window and the loop that delivered the message are still alive.
+   - A user close that ends the last loop therefore leaves nothing for a later Close to release. That Close's posted `destroyOnUI` would only drop pending closures and unregister the engine, and WM_DESTROY already unregisters it.
+   - Test: `winCloseViaUIScenario` now also checks that the controller and environment are zero once `Run` returns after WM_CLOSE. Only GitHub's Windows runner can run it.
+   - Not fixed, and unchanged from before this PR: a Close from a goroutine after `App.Quit` has ended the loop while the window is still open posts a teardown that never runs. A process that quit its loop is exiting.
+2. **Medium: do not release COM objects off-thread if dispatch-window creation fails.** Fixed. Off the UI thread, `Destroy` always goes through `w.Dispatch`. That posts to the view's window while it lives, which is the pre-PR path, and otherwise to the dispatch window. When neither can take the teardown, it is dropped and never run in place. The earlier code ran it in place whenever `postUI` refused.
+
+Checks: `just ci`, and golangci-lint on linux, darwin and windows. The change is Windows-only, so the Linux GUI suite is unaffected.
