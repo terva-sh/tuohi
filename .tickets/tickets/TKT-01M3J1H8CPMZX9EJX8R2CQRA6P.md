@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T22:04:48Z
+updated_at: 2026-09-28T22:07:02Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -156,3 +156,7 @@ Landed as planned, with these differences from the plan:
 
 - The macOS and Windows engines. The branch is pushed to the GitHub mirror, whose CI runs on every push (run 36490108667).
 - The Windows message-only window is new native code that nothing here can run.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:07:02Z
+
+The owner decided, 2026-09-29, that PR #24 keeps its macOS and Windows engine changes together. This relaxes the earlier guidance to change one native engine per PR. That guidance comes back when platform-specific failures start appearing. Until then, a change that spans engines may land as one PR, tested on GitHub before merging.
