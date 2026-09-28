@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J0VR65WX7HQAEDT5P6Q8P3
 title: just sync-github ignores --yes and never pushes
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: high
 due_on: null
@@ -20,12 +20,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T18:08:29Z
-updated_at: 2026-09-27T18:08:29Z
+updated_at: 2026-09-28T21:34:09Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---

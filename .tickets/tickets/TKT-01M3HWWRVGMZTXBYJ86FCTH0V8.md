@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRVGMZTXBYJ86FCTH0V8
 title: Harden the single-instance channel against other local users
 type: task
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -23,12 +23,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T19:35:06Z
+updated_at: 2026-09-28T21:34:09Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
