@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:48:25Z
+updated_at: 2026-09-28T18:23:49Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -70,7 +70,7 @@ A loopback consumer's origin is `http://127.0.0.1:PORT`, so the default must cov
 - [x] A page from an origin the application did not allow cannot call any binding, on all three engines
 - [x] Every engine's message handler checks the sender's origin
 - [x] Top-level navigation away from allowed origins is refused or opened in the system browser
-- [ ] A loopback-served interface works with the default policy
+- [x] A loopback-served interface works with the default policy
 
 ## Implementation plan
 
@@ -653,3 +653,28 @@ Lint on four targets, `just ci`, and `just test-gui` pass.
 ### Review 2 disposition (ready-review-2)
 
 **low: limit fragment escaping to data: URLs. Fixed in the commit after d8b1b09.** The finding holds: the fragment escape ran for every opaque scheme, so `custom:payload#<section>` reached its handler as `#%3Csection%3E`. It now runs only for data:. `TestNavigateURLParsesAsWritten` checks that a custom-scheme fragment is kept as written, and fails with the scheme check removed. Lint on four targets, `just ci`, and `just test-gui` pass.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:56:03Z
+
+GitHub run 36383745514 (main at 238d87b, after PR #18) is green on every job.
+
+Criterion 4 is ticked. `TestLoopbackAppDefaultPolicy` passes on Linux (both stacks, amd64 and arm64), Windows, and macOS. On macOS, `TestDataURLCanUseBindings` also passes, so NSURL loads what Navigate trusts.
+
+Windows data: pages still cannot use bindings, and the cause is now known. PR #18's log line shows `ICoreWebView2WebMessageReceivedEventArgs::get_Source` reports `about:blank` for a data: document. `originOf("about:blank")` is empty, so `onMessage` drops the message, even though the page's own gate trusted it and holds the token.
+
+The fix is a decision for a person, because it relaxes the sender check. Options:
+- **(a)** When args.Source is `about:blank`, check `ICoreWebView2::get_Source` (the view's current document) instead.
+- **(b)** Treat `about:blank` as an unknown sender and rely on the token alone.
+- **(c)** Document the limitation on `View.URL` and leave the check as it is.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:23:49Z
+
+Decision (the user chose it, 2026-09-28): on Windows, when WebMessageReceived reports the sender as `about:blank`, read the sender from `ICoreWebView2::get_Source`, the URL of the view's top-level document.
+
+Why it holds: this event carries only the top-level document's messages, because frames have their own event. The token covers a navigation between the post and the read, just as it does for WebKitGTK's late URI read.
+
+Alternatives rejected:
+- **(b)** Treat `about:blank` as an unknown sender and rely on the token alone. This drops the sender check for every such message.
+- **(c)** Document the limitation. This leaves data: pages unable to call Go on Windows.
+
+`TestDataURLCanUseBindings` no longer skips on Windows. Only GitHub's Windows runner can verify the fix, after the merge and sync.

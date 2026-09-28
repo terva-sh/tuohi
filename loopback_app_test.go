@@ -2,7 +2,6 @@ package tuohi
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -178,17 +177,14 @@ window.addEventListener('load', function(){
 }
 
 // TestDataURLCanUseBindings checks that a data: View.URL can call a binding.
-// On Windows that has never worked, for a reason not yet established, so a
-// failure there skips with the page's own report instead of failing
+// WebView2 names a data: document's messages as coming from about:blank, so
+// on Windows this checks that the sender is read from the view instead
 // (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
 func TestDataURLCanUseBindings(t *testing.T) {
 	got, _ := resDataURL.Load().(string)
 	requireGUI(t, got)
 	if got == "called data" {
 		return
-	}
-	if runtime.GOOS == "windows" {
-		t.Skipf("data: pages cannot use bindings on Windows yet: %s", got)
 	}
 	t.Fatalf("data: URL = %q, want %q", got, "called data")
 }

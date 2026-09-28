@@ -523,6 +523,12 @@ func (i *coreWebView2) GetSettings(out *uintptr) uintptr {
 	r, _, _ := pure.SyscallN(i.vtbl.GetSettings, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
+
+// GetSource returns the URI of the top-level document the view shows.
+func (i *coreWebView2) GetSource(out *uintptr) uintptr {
+	r, _, _ := pure.SyscallN(i.vtbl.GetSource, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	return r
+}
 func (i *coreWebView2) Navigate(url *uint16) {
 	pure.SyscallN(i.vtbl.Navigate, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(url)))
 }
@@ -810,6 +816,21 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 				if int32(args.GetSource(&psrc)) >= 0 && psrc != 0 {
 					sender = wideToString(psrc)
 					coTaskMemFree(psrc)
+				}
+				// WebView2 names a data: document about:blank here (GitHub
+				// run 36383745514). This event carries only the top-level
+				// document's messages, frames having their own, so the
+				// sender is the document the view shows, and its URI is
+				// read from the view instead. After a navigation that may
+				// already name the next page, as WebKitGTK's does; the
+				// token covers that, since only the page it was given to
+				// can put it in front of a message.
+				if sender == "about:blank" {
+					sender = ""
+					if a != 0 && int32(asWebView2(a).GetSource(&psrc)) >= 0 && psrc != 0 {
+						sender = wideToString(psrc)
+						coTaskMemFree(psrc)
+					}
 				}
 				w.onMessage(msg, sender, true)
 			}
