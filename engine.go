@@ -500,13 +500,32 @@ func (c *viewCore) navigationPolicy(rawurl string) navAction {
 // system when action is navExternal, and logs it otherwise, so a developer
 // can see why a click did nothing.
 //
-//nolint:unused // only the Unix engine calls it until the Windows and macOS navigation hooks land (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
+//nolint:unused // the macOS engine calls it once its navigation hook lands (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
 func refuseNavigation(rawurl string, action navAction) {
 	if action == navExternal {
 		openExternal(rawurl)
 		return
 	}
-	log.Printf("tuohi: navigation to %q refused: not a trusted origin, and not a URL the system may open", rawurl)
+	log.Printf("tuohi: navigation to %q refused by the navigation policy", rawurl)
+}
+
+// handleNewWindow applies the navigation policy to a page's request for a
+// new window (target=_blank, window.open), which the engine has already
+// refused to open: tuohi never opens a second window. A trusted origin loads
+// in this view instead, so the page keeps the bridge and stays under the
+// policy. An about:blank window is dropped, because loading it here would
+// replace the application's page. Anything else is refused as a navigation.
+//
+//nolint:unused // the macOS engine calls it once its navigation hook lands (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
+func (w *webview) handleNewWindow(rawurl string) {
+	switch action := w.navigationPolicy(rawurl); {
+	case action == navProceed && w.trusts(rawurl, true):
+		w.Dispatch(func() { w.Navigate(rawurl) })
+	case action == navProceed:
+		log.Printf("tuohi: new window for %q dropped: it would replace the view's page", rawurl)
+	default:
+		refuseNavigation(rawurl, action)
+	}
 }
 
 // openExternal hands a refused navigation's URL to the system browser or mail

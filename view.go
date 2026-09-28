@@ -751,7 +751,10 @@ type View struct {
 	// the view stays where it was and an http, https, or mailto URL opens in
 	// the system browser or mail client instead; data:, blob:, file:, and
 	// other schemes are dropped. about:blank is shown, and frames are left
-	// alone. So a URL that redirects to a sign-in page on another origin
+	// alone. A new window (target=_blank, window.open) never opens: one to a
+	// trusted origin loads in this view instead, one to about:blank is
+	// dropped, and any other follows the rule above. So a URL that
+	// redirects to a sign-in page on another origin
 	// needs that origin listed here, or the view stays blank while the
 	// browser opens it. A redirect to another scheme or host, such as http
 	// to https, or 127.0.0.1 to localhost, counts as another origin.

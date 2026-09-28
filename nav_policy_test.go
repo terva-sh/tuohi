@@ -22,7 +22,7 @@ var resNavPolicy atomic.Value // string
 // view still on the trusted page answers; a view that left it does not,
 // because no other page gets the bridge.
 //
-//nolint:unused // only the Unix TestMain runs it until the Windows and macOS navigation hooks land (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
+//nolint:unused // the macOS TestMain runs it once the macOS navigation hook lands (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
 func navPolicyScenario() string {
 	var frameRan atomic.Bool
 	untrusted, closeUntrusted, err := servePlain(func(target string) (string, string) {
@@ -82,6 +82,8 @@ func navPolicyScenario() string {
 		{"popup", `var b = document.createElement('a'); b.href = '` + untrusted + `popup'; b.target = '_blank'; document.body.appendChild(b); b.click();`},
 		{"data", `location.href = 'data:text/html,<p>data</p>';`},
 		{"mailto", `location.href = 'mailto:someone@example.invalid';`},
+		// A new window to a trusted origin loads in the view instead.
+		{"trustedpopup", `var c = document.createElement('a'); c.href = '` + trusted + `page?popup'; c.target = '_blank'; document.body.appendChild(c); c.click();`},
 		{"blank", `location.href = 'about:blank';`},
 	}
 
@@ -138,14 +140,15 @@ func navPolicyScenario() string {
 
 // TestNavigationPolicy checks that only trusted origins and about:blank are
 // shown in the view, that http(s) and mailto: go to the system, that data:
-// is dropped, and that a cross-origin frame is left alone.
+// is dropped, that a new window to a trusted origin loads in the view, and
+// that a cross-origin frame is left alone.
 func TestNavigationPolicy(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+	if runtime.GOOS == "darwin" {
 		t.Skip("this engine has no navigation hook yet (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE)")
 	}
 	got, _ := resNavPolicy.Load().(string)
 	requireGUI(t, got)
-	want := "link=stay redirect=stay popup=stay data=stay mailto=stay blank=left frameRan=true " +
+	want := "link=stay redirect=stay popup=stay data=stay mailto=stay trustedpopup=at T/page?popup blank=left frameRan=true " +
 		"external=[U/link U/redirected U/popup mailto:someone@example.invalid]"
 	if got != want {
 		t.Fatalf("navigation policy:\n got %s\nwant %s", got, want)

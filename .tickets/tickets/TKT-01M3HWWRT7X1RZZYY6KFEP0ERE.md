@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T03:46:34Z
+updated_at: 2026-09-28T04:32:41Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -390,3 +390,51 @@ Before the cancel, the untrusted server has already received the request, with a
 
 - `refuseNavigation` and `navPolicyScenario` carry `//nolint:unused` until those engines call them.
 - `TestNavigationPolicy` skips on darwin and windows with that reason.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:18:48Z
+
+### PR #12 merged; GitHub green
+
+- **Merge.** PR #12 was merged as 3c3006c. GitHub `main` was fast-forwarded to it by hand, after `git merge-base --is-ancestor` confirmed the fast-forward.
+- **GitHub run 36375315774 passed:** macOS, Windows, all four Linux jobs (x86-64 and arm64, GTK3 and GTK4), lint, and every cross build.
+- **Windows log:**
+  - `TestNavigationPolicy` skips, because it has no hook yet.
+  - `TestOriginGate` logs `untrusted=0 bridge=no trusted=1 bridge=yes`, the shown-without-a-bridge branch.
+  - `TestNavigationPolicy_Decisions` passes.
+- **Linux, inferred.** The Linux jobs run without `-v` and without `TUOHI_REQUIRE_GUI=1`, so their logs name no GUI test. Each job's Xvfb step took 21 to 22 seconds, against 3 to 6 for the headless step. That matches local runs with the navigation scenario, about 20 seconds against about 8 before it. So the scenarios ran, `TestNavigationPolicy` included.
+- **Gap noted.** GitHub's Linux GUI step does not set `TUOHI_REQUIRE_GUI=1`, so a failed GUI probe there would skip silently. That is worth its own small ticket.
+- **Next:** the Windows navigation policy, on branch feat/bridge-nav-policy-windows.
+
+**agent:claude-code/t3code-83e85fc3** at 2026-09-28T04:32:41Z
+
+### Windows navigation policy, and new windows on every engine, on branch feat/bridge-nav-policy-windows
+
+#### Decision, settled with human:sothr: a new window to a trusted origin loads in the same view
+
+- **Linux had no behaviour here.** A `target=_blank` link to the trusted origin did nothing: no window, and no hand-off, because tuohi never gives WebKitGTK a second view.
+- **Windows opened a bare WebView2 popup,** with none of the view's scripts or handlers, and so outside the policy.
+- **Chosen: load it in the same view.** The page keeps the bridge and stays under the policy. The cost: `window.open`'s return value is dead, so a popup that messages its opener, as some OAuth flows do, does not work.
+- **Rejected: the system browser.** The page loses the bridge, and an `App.FS` page (`app://`, `https://app.localhost`) cannot load there.
+- **Rejected: dropping it,** as Linux did. A `target=_blank` link to the app's own page would silently do nothing.
+- **Follow-on choice, made here: a new window to about:blank is dropped.** Examples are `window.open('')` and `window.open()`. Loading about:blank in the same view would replace the app's page.
+- **Where it lives.** `handleNewWindow` in `engine.go` holds this for every engine.
+
+#### Windows
+
+- **`NavigationStarting`** fires for the top-level document only, before any request is sent. A refused navigation is cancelled with `put_Cancel`. Frames raise `FrameNavigationStarting`, which is not wired, so they are left alone.
+- **`NewWindowRequested`:** every request is marked handled with `put_Handled`, so WebView2 never opens a popup, and `handleNewWindow` decides.
+- **Source of the IIDs and vtables:** `github.com/zzl/go-webview2`, generated from the SDK, read from the module cache. `NavigationStarting` args: slot 3 `get_Uri`, slot 8 `put_Cancel`. `NewWindowRequested` args: slot 3 `get_Uri`, slot 6 `put_Handled`. The existing `iidMessageReceived` and `iidNavigationCompleted` match that source.
+
+#### Verified locally
+
+- **Builds:** vet and golangci-lint pass for linux, darwin, windows, and freebsd, and `just ci` passes.
+- **`TestNavigationPolicy`** gains a trusted `target=_blank` step and passes on both WebKitGTK stacks.
+  - **Negative control:** with the same-view load removed, it fails with `trustedpopup=stay`.
+- **`just test-gui`** passes on both stacks.
+
+#### Not run locally
+
+Windows runs on GitHub after the merge. Expectations that are unverified there:
+
+- whether `mailto:` raises `NavigationStarting` rather than going straight to the OS;
+- that a `data:` navigation by the page reaches `NavigationStarting`, or is blocked by Chromium first, which gives the same result.

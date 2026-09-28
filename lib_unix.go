@@ -1319,7 +1319,8 @@ var responseSchemes = map[string]bool{
 // which WebKit marks as the main frame's main resource. By then the request
 // has been sent and any redirects followed, but nothing is shown. New windows
 // are always top-level, so they are judged when they start, as are schemes
-// that have no response to judge.
+// that have no response to judge. A new window is never opened: see
+// handleNewWindow.
 func (w *webview) decidePolicy(decision uintptr, decisionType int) bool {
 	var request uintptr
 	switch decisionType {
@@ -1346,6 +1347,11 @@ func (w *webview) decidePolicy(decision uintptr, decisionType int) bool {
 		if responseSchemes[strings.ToLower(scheme)] {
 			return false // judged at its response, if it is top-level
 		}
+	}
+	if decisionType == policyNewWindowAction {
+		webkitPolicyDecisionIgnore(decision)
+		w.handleNewWindow(uri)
+		return true
 	}
 	action := w.navigationPolicy(uri)
 	if action == navProceed {

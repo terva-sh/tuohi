@@ -53,6 +53,7 @@ func TestMain(m *testing.M) {
 		resWinEmbed.Store(winEmbedScenario())
 		resOriginGate.Store(originGateScenario())
 		resFrameGate.Store(frameGateScenario())
+		resNavPolicy.Store(navPolicyScenario())
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
 	os.Exit(m.Run())

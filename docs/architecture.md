@@ -265,9 +265,11 @@ call a view's Go bindings) carries out:
   Anything else is cancelled in the view. An `http`, `https`, or `mailto`
   URL is handed to the system, as `App.Open` does; any other is dropped with
   a log line. This is exactly what git-ticket-canvas asked for. A redirect
-  is judged by where it leads. `window.open` and `target=_blank` follow the
-  same rule. On Windows that matters twice, because WebView2 opens its own
-  popup window today, and that window has none of the bridge. Frames are
+  is judged by where it leads. A new window, from `window.open` or
+  `target=_blank`, is never opened, because WebView2's own popup window
+  would carry none of the bridge or the policy. One to a trusted origin loads
+  in the view instead, one to `about:blank` is dropped, and any other
+  follows the rule. Frames are
   left alone. The token keeps them from Go, and cancelling them would break
   embedded content. `viewCore.navigationPolicy` in `engine.go` holds the
   rule. The decisions behind it, and the alternatives rejected, are in the
