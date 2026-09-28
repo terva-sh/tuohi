@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:29:42Z
+updated_at: 2026-09-28T05:39:27Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -613,3 +613,14 @@ It is what this is, except that re-encoding keeps the key printable. Without tha
 **medium, query punctuation for non-data opaque URLs: fixed in ff779d9.** The finding is right: the URL standard's query percent-encode set for a URL that is not special adds `"`, `<` and `>`, while its opaque-path set does not. `canonicalOpaque` now splits a non-data URL at the first `?` and encodes those three in the query only, in Go and in the bridge gate's JavaScript, through a shared `also` set on `encodeOpaque`. data: is unaffected, since its body is decoded and re-encoded one way.
 
 Tests: `TestOpaqueKeyEncodesQueryPunctuation` (Go), and a mailto: case in `TestBridgeGate` whose browser key comes from node's WHATWG `URL`. Both fail with the query split reverted and pass with it. Lint on linux/darwin/windows/freebsd, `just ci`, and `just test-gui` pass locally.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:39:27Z
+
+GitHub run 36382395146 (main at 6bfaff1, after PR #17):
+
+- Linux, all four jobs: pass.
+- macOS: TestDataURLCanUseBindings still fails. The policy log shows the loaded URL with `%2520` where Navigate wrote `%20`. NSURL `URLWithString:` re-encodes a whole string that has RFC 3986-disallowed bytes such as `<`, `%` included. Fix: canonicalNavigateURL escapes those bytes in a data: body and the fragment. The key is unchanged, because the body is decoded before keying. Alternatives considered and rejected:
+  - `URLWithString:encodingInvalidCharacters:NO` exists only on macOS 14 and later.
+  - Building the NSURL from components still re-encodes.
+  - Encoding in darwin Navigate alone would let the engines load different strings.
+- Windows: the diagnostic shows `chrome=object&webview=object&bridge=object&hit=function`, so the gate trusted the page and the binding is installed, but no call reached Go. The likely drop is onMessage's sender check on what `get_Source` reports for a data: document. onMessage now logs a sender it drops, with its key, so the next run names it.
