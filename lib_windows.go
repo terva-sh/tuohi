@@ -83,6 +83,7 @@ var (
 	// ICoreWebView2NewWindowRequestedEventHandler (the navigation policy).
 	iidNavigationStarting = guid{0x9ADBE429, 0xF36D, 0x432B, [8]byte{0x9D, 0xDC, 0xF8, 0x88, 0x1F, 0xBD, 0x76, 0xE3}}
 	iidNewWindowRequested = guid{0xD4C185FE, 0xC81C, 0x4989, [8]byte{0x97, 0xAF, 0x2D, 0x3F, 0xA7, 0xAB, 0x56, 0x51}}
+	iidContentLoading     = guid{0x364471E7, 0xF2BE, 0x4910, [8]byte{0xBD, 0xBA, 0xD7, 0x20, 0x77, 0xD5, 0x1C, 0x4B}}
 
 	// The ICoreWebView2Settings extension interfaces. Values come verbatim from
 	// Microsoft's WebView2.idl: the Base settings object implements all of them
@@ -321,6 +322,38 @@ type navigationCompletedArgsVtbl struct {
 	GetIsSuccess uintptr
 }
 
+// contentLoadingArgsVtbl mirrors ICoreWebView2ContentLoadingEventArgs in IDL
+// order: get_IsErrorPage, get_NavigationId.
+type contentLoadingArgsVtbl struct {
+	unknownVtbl
+	GetIsErrorPage  uintptr
+	GetNavigationID uintptr
+}
+
+type contentLoadingArgs struct {
+	vtbl *contentLoadingArgsVtbl
+}
+
+func asContentLoadingArgs(p uintptr) *contentLoadingArgs {
+	return (*contentLoadingArgs)(ptr(p))
+}
+
+// NavigationID returns the ID NavigationStarting gave the navigation whose
+// document is loading, and false when WebView2 cannot say.
+func (i *contentLoadingArgs) NavigationID() (uint64, bool) {
+	var id uint64
+	r, _, _ := pure.SyscallN(i.vtbl.GetNavigationID, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&id)))
+	return id, int32(r) >= 0
+}
+
+// IsErrorPage reports whether the document is WebView2's own error page, and
+// true when WebView2 cannot say.
+func (i *contentLoadingArgs) IsErrorPage() bool {
+	var v int32
+	r, _, _ := pure.SyscallN(i.vtbl.GetIsErrorPage, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&v)))
+	return int32(r) < 0 || v != 0
+}
+
 type navigationCompletedArgs struct {
 	vtbl *navigationCompletedArgsVtbl
 }
@@ -351,6 +384,14 @@ func asNavigationStartingArgs(p uintptr) *navigationStartingArgs {
 // URI returns the navigation's target, or "" when WebView2 cannot say.
 func (i *navigationStartingArgs) URI() string {
 	return comString(i.vtbl.GetUri, uintptr(unsafe.Pointer(i)))
+}
+
+// NavigationID returns the navigation's ID, shared by its redirects and its
+// NavigationCompleted, and false when WebView2 cannot say.
+func (i *navigationStartingArgs) NavigationID() (uint64, bool) {
+	var id uint64
+	r, _, _ := pure.SyscallN(i.vtbl.GetNavigationID, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&id)))
+	return id, int32(r) >= 0
 }
 
 func (i *navigationStartingArgs) Cancel() {
@@ -524,11 +565,6 @@ func (i *coreWebView2) GetSettings(out *uintptr) uintptr {
 	return r
 }
 
-// GetSource returns the URI of the top-level document the view shows.
-func (i *coreWebView2) GetSource(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.GetSource, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
-	return r
-}
 func (i *coreWebView2) Navigate(url *uint16) {
 	pure.SyscallN(i.vtbl.Navigate, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(url)))
 }
@@ -552,6 +588,9 @@ func (i *coreWebView2) AddWebMessageReceived(handler uintptr, token *uint64) {
 }
 func (i *coreWebView2) AddNavigationStarting(handler uintptr, token *uint64) {
 	pure.SyscallN(i.vtbl.AddNavigationStarting, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+}
+func (i *coreWebView2) AddContentLoading(handler uintptr, token *uint64) {
+	pure.SyscallN(i.vtbl.AddContentLoading, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddNewWindowRequested(handler uintptr, token *uint64) {
 	pure.SyscallN(i.vtbl.AddNewWindowRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
@@ -669,6 +708,7 @@ const (
 	kindNavigationCompleted
 	kindNavigationStarting
 	kindNewWindowRequested
+	kindContentLoading
 )
 
 type comHandlerVtbl struct {
@@ -786,6 +826,9 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 				w.navStartH = newHandler(w.id, kindNavigationStarting, &iidNavigationStarting)
 				var navStartTok uint64
 				cw.AddNavigationStarting(handlerPtr(w.navStartH), &navStartTok)
+				w.contentH = newHandler(w.id, kindContentLoading, &iidContentLoading)
+				var contentTok uint64
+				cw.AddContentLoading(handlerPtr(w.contentH), &contentTok)
 				w.newWinH = newHandler(w.id, kindNewWindowRequested, &iidNewWindowRequested)
 				var newWinTok uint64
 				cw.AddNewWindowRequested(handlerPtr(w.newWinH), &newWinTok)
@@ -818,19 +861,16 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 					coTaskMemFree(psrc)
 				}
 				// WebView2 names a data: document about:blank here (GitHub
-				// run 36383745514). This event carries only the top-level
+				// run 36383745514), and so does the view's own get_Source
+				// (run 36465210066). This event carries only the top-level
 				// document's messages, frames having their own, so the
-				// sender is the document the view shows, and its URI is
-				// read from the view instead. After a navigation that may
-				// already name the next page, as WebKitGTK's does; the
-				// token covers that, since only the page it was given to
-				// can put it in front of a message.
+				// sender is the document the view last committed, whose URI
+				// NavigationStarting named (see kindContentLoading). One
+				// that has committed since may already name the next page,
+				// as WebKitGTK's URI does; the token covers that, since only
+				// the page it was given to can put it in front of a message.
 				if sender == "about:blank" {
-					sender = ""
-					if a != 0 && int32(asWebView2(a).GetSource(&psrc)) >= 0 && psrc != 0 {
-						sender = wideToString(psrc)
-						coTaskMemFree(psrc)
-					}
+					sender = w.committedURI
 				}
 				w.onMessage(msg, sender, true)
 			}
@@ -842,6 +882,32 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		if b != 0 && asNavigationCompletedArgs(b).IsSuccess() {
 			w.fireReady()
 		}
+	case kindContentLoading:
+		// Invoke(this, ICoreWebView2* sender, ICoreWebView2ContentLoadingEventArgs* args)
+		// A navigation's document has committed, and none of its scripts
+		// has run yet, so none of its messages has arrived: messages come
+		// before NavigationCompleted (GitHub run 36466440440). The URI
+		// NavigationStarting recorded for it becomes the sender a message
+		// from about:blank is read as. A navigation not recorded, or
+		// WebView2's error page, clears it. Navigations can overlap, so
+		// each is looked up by its ID; IDs rise, so every navigation that
+		// started before this one is also dropped, having been replaced.
+		if b != 0 {
+			args := asContentLoadingArgs(b)
+			id, ok := args.NavigationID()
+			uri, recorded := w.pendingNavs[id]
+			w.committedURI = ""
+			if ok && recorded && !args.IsErrorPage() {
+				w.committedURI = uri
+			}
+			if ok {
+				for pending := range w.pendingNavs {
+					if pending <= id {
+						delete(w.pendingNavs, pending)
+					}
+				}
+			}
+		}
 	case kindNavigationStarting:
 		// Invoke(this, ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
 		// A navigation the policy does not let proceed is cancelled here,
@@ -849,9 +915,22 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		if b != 0 {
 			args := asNavigationStartingArgs(b)
 			uri := args.URI()
+			id, ok := args.NavigationID()
 			if action := w.navigationPolicy(uri); action != navProceed {
 				args.Cancel()
 				refuseNavigation(uri, action)
+				// A redirect the policy refuses ends a navigation recorded
+				// when it started, and no document of its commits.
+				if ok {
+					delete(w.pendingNavs, id)
+				}
+			} else if ok {
+				// A redirect keeps its navigation's ID, so the last URI
+				// recorded is where the document came from.
+				if w.pendingNavs == nil {
+					w.pendingNavs = make(map[uint64]string)
+				}
+				w.pendingNavs[id] = uri
 			}
 		}
 	case kindNewWindowRequested:
@@ -2123,10 +2202,18 @@ type webview struct {
 	wrrH        *comHandler // WebResourceRequested handler (custom schemes)
 	navH        *comHandler // NavigationCompleted handler (View.Ready)
 	navStartH   *comHandler // NavigationStarting handler (the navigation policy)
+	contentH    *comHandler // ContentLoading handler (a data: page's sender)
 	newWinH     *comHandler // NewWindowRequested handler (the navigation policy)
 	ready       bool
 	scriptDone  bool
 	lastScript  string
+
+	// The URIs of the navigations NavigationStarting let proceed and whose
+	// documents have not committed, by navigation ID, and the URI of the one
+	// whose document last committed: the document the view shows, read as a
+	// message's sender when WebView2 names it about:blank. UI thread only.
+	pendingNavs  map[uint64]string
+	committedURI string
 
 	// schemeAuthority remembers the scheme:// authority used on Navigate so
 	// request-time URLs can be reconstructed (see rewriteSchemeURL /

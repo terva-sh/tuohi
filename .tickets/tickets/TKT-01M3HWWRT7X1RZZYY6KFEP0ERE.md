@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T18:23:49Z
+updated_at: 2026-09-28T18:53:59Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -678,3 +678,37 @@ Alternatives rejected:
 - **(c)** Document the limitation. This leaves data: pages unable to call Go on Windows.
 
 `TestDataURLCanUseBindings` no longer skips on Windows. Only GitHub's Windows runner can verify the fix, after the merge and sync.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:33:10Z
+
+GitHub run 36465210066 (main at 8f4b6b5, after PR #19) failed on Windows. `TestDataURLCanUseBindings` failed, logging `message from "" dropped`. `ICoreWebView2::get_Source` also did not give the data: URL, so the fallback produced an empty sender. The run could not tell whether the call failed or returned an empty string. macOS and all four Linux jobs passed.
+
+The next attempt keeps the approach the user chose, the page the view shows, but takes the URL from a different source. `NavigationStarting` names the data: URL: an earlier Windows run logged the policy refusing one by name. The view now records that URL by navigation ID and commits it when `NavigationCompleted` reports that ID succeeded. A message reported as `about:blank` is read as coming from the committed URL.
+
+The user chose to test this on GitHub before merging: the branch is pushed to the GitHub mirror, whose CI runs on every push, so `main` does not go red again. `main` stays red on Windows until this lands, and the test is left failing there as the marker.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:45:57Z
+
+GitHub run 36467087840 on the test branch fix/windows-data-sender-3 (0c1fd73) is green on every job. TestDataURLCanUseBindings passes on Windows, and so do OriginGate, FrameGate, NavigationPolicy, and LoopbackAppDefaultPolicy. The sender URI is committed at ContentLoading. Committing it at NavigationCompleted failed on fix/windows-data-sender-2: diagnostic run 36466440440 showed a page's messages arrive before its NavigationCompleted.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:50:32Z
+
+### Review 1 disposition (ready-review-1)
+
+**medium: track pending navigation URIs by ID, not in a single slot. Fixed in the commit after 52ec088.**
+
+The finding holds. With one slot, navigation A's `ContentLoading` cleared navigation B's record when B had started before A committed, so B's data: page got no sender.
+
+Pending URIs are now kept in a map keyed by navigation ID. A `ContentLoading` commits its own entry and drops every entry at or below its ID. Navigation IDs rise, as the diagnostic run showed, so those earlier navigations have been replaced. If an earlier navigation's document committed after a later one, which WebView2 does not do, the committed URI would be empty and the message dropped. That fails safe.
+
+No unit test covers this: the handler runs only under WebView2. The branch is re-run on the GitHub mirror before merge. Lint on four targets, `just ci`, and `just test-gui` pass.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T18:53:59Z
+
+### Review 2 disposition (ready-review-2)
+
+**low: remove the pending URI when a redirect is cancelled. Fixed in the commit after 4b51a0c.** When the policy cancels a navigation at `NavigationStarting`, a redirect included, the handler now deletes that navigation's entry, since no document of its will commit.
+
+A navigation that fails after starting, without a redirect, keeps its entry until the next `ContentLoading`. That handler drops every entry at or below its own ID, so the map stays small. Pruning at `NavigationCompleted` as well would need its navigation ID read there. That was left out as not worth another vtable method.
+
+Lint on four targets and `just ci` pass. GitHub run 36468042176 on 4b51a0c, just before this commit, was green on every job, with `TestDataURLCanUseBindings` passing on Windows.
