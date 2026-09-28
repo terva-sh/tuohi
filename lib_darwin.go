@@ -218,11 +218,34 @@ func registerClasses() error {
 			Cmd: sel("userContentController:didReceiveScriptMessage:"),
 			Fn: func(self objc.ID, _cmd objc.SEL, ucc objc.ID, message objc.ID) {
 				w := lookupEngine(self)
-				if w != nil {
-					// The sender is not checked on macOS yet, so it is
-					// reported as unknown (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
-					w.onMessage(cstr(message.Send(sel("body")).Send(sel("UTF8String"))), "", false)
+				if w == nil {
+					return
 				}
+				// A page can post any JavaScript value. Only a string is a
+				// bridge message, and sending UTF8String to anything else
+				// raises an Objective-C exception, which aborts.
+				body := message.Send(sel("body"))
+				if body == 0 || !objc.Send[bool](body, sel("isKindOfClass:"), class("NSString")) {
+					return
+				}
+				// The bridge is for the top-level page only. A frame, even
+				// one on a trusted origin, is refused.
+				frame := message.Send(sel("frameInfo"))
+				if frame == 0 || !objc.Send[bool](frame, sel("isMainFrame")) {
+					return
+				}
+				// The sender is the URL of the document that posted, from the
+				// message's own frame. The web view's current URL would be
+				// wrong for a message still queued when the view navigated
+				// on to another page. A nil URL names no origin, and the gate
+				// refuses it.
+				sender := ""
+				if req := frame.Send(sel("request")); req != 0 {
+					if u := req.Send(sel("URL")); u != 0 {
+						sender = cstr(u.Send(sel("absoluteString")).Send(sel("UTF8String")))
+					}
+				}
+				w.onMessage(cstr(body.Send(sel("UTF8String"))), sender, true)
 			},
 		}})
 	if err != nil {
@@ -729,7 +752,9 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 		wv = wv.Send(sel("initWithFrame:configuration:"), rect, config)
 		w.webView = wv.Send(sel("retain"))
 		w.webView.Send(sel("setAutoresizingMask:"), uint(nsViewWidthSizable|nsViewHeightSizable))
-		if devTools {
+		// setInspectable: exists from macOS 13.3. Sent to an older WKWebView
+		// it raises an unrecognized-selector exception, which aborts.
+		if devTools && objc.Send[bool](w.webView, sel("respondsToSelector:"), sel("setInspectable:")) {
 			w.webView.Send(sel("setInspectable:"), true)
 		}
 
@@ -1348,9 +1373,11 @@ func (w *webview) Navigate(url string) {
 }
 
 func (w *webview) loadHTML(html string) {
+	w.trustURL(loadHTMLBase)
 	performOnMain(func() {
 		autorelease(func() {
-			w.webView.Send(sel("loadHTMLString:baseURL:"), nsstr(html), objc.ID(0))
+			base := class("NSURL").Send(sel("URLWithString:"), nsstr(loadHTMLBase))
+			w.webView.Send(sel("loadHTMLString:baseURL:"), nsstr(html), base)
 		})
 	})
 }
