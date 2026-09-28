@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T22:21:38Z
+updated_at: 2026-09-28T22:25:41Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -215,3 +215,13 @@ The round-2 findings were reported handled: 1 and 2 resolved, and 3 declined, as
 2. **Medium: do not release COM objects off-thread if dispatch-window creation fails.** Fixed. Off the UI thread, `Destroy` always goes through `w.Dispatch`. That posts to the view's window while it lives, which is the pre-PR path, and otherwise to the dispatch window. When neither can take the teardown, it is dropped and never run in place. The earlier code ran it in place whenever `postUI` refused.
 
 Checks: `just ci`, and golangci-lint on linux, darwin and windows. The change is Windows-only, so the Linux GUI suite is unaffected.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:25:41Z
+
+### Review disposition for PR #24, round 4 (terva-review run on b0d3334)
+
+Both round-3 findings were reported resolved. GitHub run 36491915153 on b0d3334 passed every job, including Windows `winCloseViaUIScenario`, which now asserts that WM_DESTROY released the controller and environment.
+
+1. **Medium: keep pending calls when an external UI loop is still running.** Fixed. `exitLoop` now cancels pending operations only when `loops == 0 && !external()`, the same condition `wait` uses. Test: `TestUIExitLoopKeepsCallsUnderExternalLoop`. With the old condition it fails.
+
+Checks: `just ci`, golangci-lint on three GOOS, and the headless dispatcher and View tests under `-race`.
