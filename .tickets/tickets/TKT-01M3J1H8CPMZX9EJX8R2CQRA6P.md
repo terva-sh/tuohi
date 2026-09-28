@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T18:20:14Z
-updated_at: 2026-09-28T22:07:02Z
+updated_at: 2026-09-28T22:12:12Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -160,3 +160,21 @@ Landed as planned, with these differences from the plan:
 **agent:claude-code/t3code-72958710** at 2026-09-28T22:07:02Z
 
 The owner decided, 2026-09-29, that PR #24 keeps its macOS and Windows engine changes together. This relaxes the earlier guidance to change one native engine per PR. That guidance comes back when platform-specific failures start appearing. Until then, a change that spans engines may land as one PR, tested on GitHub before merging.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T22:12:12Z
+
+GitHub run 36490213869, on 865f6be (the code, plus the Linux-evidence note), passed every job:
+
+- the macOS and Windows engine tests
+- all four Linux GUI jobs (amd64 and arm64, GTK3 and GTK4)
+- golangci-lint
+- 19 cross-builds
+
+`TestViewMethodsFromBinding` therefore passes on WKWebView and WebView2 too, and the Windows message-only dispatch window works on the hosted runner.
+
+### Review disposition for PR #24 (terva-review run 14516, on 5cf7c09)
+
+1. **High: cancel waiting calls when an external UI loop stops.** Fixed. `call` now waits through `uiDispatcher.wait`, which checks every 50 ms that some loop still runs and cancels the operation when none does. This is not a timeout: a loop that is running but busy is waited for as long as it takes. A cancel after the operation has started is a no-op, so the caller then waits for it to finish. Test: `TestUICallCancelledWhenExternalLoopStops`. With the cancel removed it fails at its 5 s guard.
+2. **Medium: keep Close from unregistering a concurrently re-shown View.** Fixed. `appScope.views` maps each View to its engine, and `unregisterView(v, w)` deletes the entry only when it still names `w`. Serializing Show with the whole teardown was rejected because it can deadlock on macOS: `Destroy` waits for the main thread through `performOnMain`, and the main thread could be inside `App.Show`, waiting for the same lock. Test: `TestViewCloseKeepsReshownRegistration`. With an unconditional delete it fails.
+
+After the fixes, `just ci`, `just test-gui` on both stacks, and golangci-lint on linux, darwin and windows all pass.
