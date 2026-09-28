@@ -888,16 +888,25 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		// has run yet, so none of its messages has arrived: messages come
 		// before NavigationCompleted (GitHub run 36466440440). The URI
 		// NavigationStarting recorded for it becomes the sender a message
-		// from about:blank is read as. Another navigation's document, or
-		// WebView2's error page, clears it.
+		// from about:blank is read as. A navigation not recorded, or
+		// WebView2's error page, clears it. Navigations can overlap, so
+		// each is looked up by its ID; IDs rise, so every navigation that
+		// started before this one is also dropped, having been replaced.
 		if b != 0 {
 			args := asContentLoadingArgs(b)
 			id, ok := args.NavigationID()
+			uri, recorded := w.pendingNavs[id]
 			w.committedURI = ""
-			if ok && w.pendingNav && id == w.pendingNavID && !args.IsErrorPage() {
-				w.committedURI = w.pendingNavURI
+			if ok && recorded && !args.IsErrorPage() {
+				w.committedURI = uri
 			}
-			w.pendingNav = false
+			if ok {
+				for pending := range w.pendingNavs {
+					if pending <= id {
+						delete(w.pendingNavs, pending)
+					}
+				}
+			}
 		}
 	case kindNavigationStarting:
 		// Invoke(this, ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
@@ -912,7 +921,10 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 			} else if id, ok := args.NavigationID(); ok {
 				// A redirect keeps its navigation's ID, so the last URI
 				// recorded is where the document came from.
-				w.pendingNav, w.pendingNavID, w.pendingNavURI = true, id, uri
+				if w.pendingNavs == nil {
+					w.pendingNavs = make(map[uint64]string)
+				}
+				w.pendingNavs[id] = uri
 			}
 		}
 	case kindNewWindowRequested:
@@ -2190,14 +2202,12 @@ type webview struct {
 	scriptDone  bool
 	lastScript  string
 
-	// The URI of the navigation NavigationStarting last let proceed, and of
-	// the one whose document last committed: the document the view shows,
-	// read as a message's sender when WebView2 names it about:blank. UI
-	// thread only.
-	pendingNav    bool
-	pendingNavID  uint64
-	pendingNavURI string
-	committedURI  string
+	// The URIs of the navigations NavigationStarting let proceed and whose
+	// documents have not committed, by navigation ID, and the URI of the one
+	// whose document last committed: the document the view shows, read as a
+	// message's sender when WebView2 names it about:blank. UI thread only.
+	pendingNavs  map[uint64]string
+	committedURI string
 
 	// schemeAuthority remembers the scheme:// authority used on Navigate so
 	// request-time URLs can be reconstructed (see rewriteSchemeURL /
