@@ -79,6 +79,10 @@ var (
 	iidWebResourceRequested = guid{0xAB00B74C, 0x15F1, 0x4646, [8]byte{0x80, 0xE8, 0xE7, 0x63, 0x41, 0xD2, 0x5D, 0x71}}
 	// ICoreWebView2NavigationCompletedEventHandler (View.Ready).
 	iidNavigationCompleted = guid{0xD33A35BF, 0x1C49, 0x4F98, [8]byte{0x93, 0xAB, 0x00, 0x6E, 0x05, 0x33, 0xFE, 0x1C}}
+	// ICoreWebView2NavigationStartingEventHandler and
+	// ICoreWebView2NewWindowRequestedEventHandler (the navigation policy).
+	iidNavigationStarting = guid{0x9ADBE429, 0xF36D, 0x432B, [8]byte{0x9D, 0xDC, 0xF8, 0x88, 0x1F, 0xBD, 0x76, 0xE3}}
+	iidNewWindowRequested = guid{0xD4C185FE, 0xC81C, 0x4989, [8]byte{0x97, 0xAF, 0x2D, 0x3F, 0xA7, 0xAB, 0x56, 0x51}}
 
 	// The ICoreWebView2Settings extension interfaces. Values come verbatim from
 	// Microsoft's WebView2.idl: the Base settings object implements all of them
@@ -321,6 +325,84 @@ type navigationCompletedArgs struct {
 	vtbl *navigationCompletedArgsVtbl
 }
 
+// navigationStartingArgsVtbl mirrors ICoreWebView2NavigationStartingEventArgs
+// in IDL order: get_Uri, get_IsUserInitiated, get_IsRedirected,
+// get_RequestHeaders, get_Cancel, put_Cancel, get_NavigationId. Only the URI
+// and put_Cancel are used.
+type navigationStartingArgsVtbl struct {
+	unknownVtbl
+	GetUri             uintptr
+	GetIsUserInitiated uintptr
+	GetIsRedirected    uintptr
+	GetRequestHeaders  uintptr
+	GetCancel          uintptr
+	PutCancel          uintptr
+	GetNavigationID    uintptr
+}
+
+type navigationStartingArgs struct {
+	vtbl *navigationStartingArgsVtbl
+}
+
+func asNavigationStartingArgs(p uintptr) *navigationStartingArgs {
+	return (*navigationStartingArgs)(ptr(p))
+}
+
+// URI returns the navigation's target, or "" when WebView2 cannot say.
+func (i *navigationStartingArgs) URI() string {
+	return comString(i.vtbl.GetUri, uintptr(unsafe.Pointer(i)))
+}
+
+func (i *navigationStartingArgs) Cancel() {
+	pure.SyscallN(i.vtbl.PutCancel, uintptr(unsafe.Pointer(i)), 1)
+}
+
+// newWindowRequestedArgsVtbl mirrors ICoreWebView2NewWindowRequestedEventArgs
+// in IDL order: get_Uri, put_NewWindow, get_NewWindow, put_Handled,
+// get_Handled, get_IsUserInitiated, GetDeferral, get_WindowFeatures. Only the
+// URI and put_Handled are used.
+type newWindowRequestedArgsVtbl struct {
+	unknownVtbl
+	GetUri             uintptr
+	PutNewWindow       uintptr
+	GetNewWindow       uintptr
+	PutHandled         uintptr
+	GetHandled         uintptr
+	GetIsUserInitiated uintptr
+	GetDeferral        uintptr
+	GetWindowFeatures  uintptr
+}
+
+type newWindowRequestedArgs struct {
+	vtbl *newWindowRequestedArgsVtbl
+}
+
+func asNewWindowRequestedArgs(p uintptr) *newWindowRequestedArgs {
+	return (*newWindowRequestedArgs)(ptr(p))
+}
+
+// URI returns the new window's target, or "" when WebView2 cannot say.
+func (i *newWindowRequestedArgs) URI() string {
+	return comString(i.vtbl.GetUri, uintptr(unsafe.Pointer(i)))
+}
+
+// Handle marks the request handled, so WebView2 opens no popup window.
+func (i *newWindowRequestedArgs) Handle() {
+	pure.SyscallN(i.vtbl.PutHandled, uintptr(unsafe.Pointer(i)), 1)
+}
+
+// comString calls a COM getter that returns an LPWSTR the caller frees with
+// CoTaskMemFree, and returns it as a Go string, or "" on failure.
+func comString(getter, this uintptr) string {
+	var p uintptr
+	r, _, _ := pure.SyscallN(getter, this, uintptr(unsafe.Pointer(&p)))
+	if int32(r) < 0 || p == 0 {
+		return ""
+	}
+	defer coTaskMemFree(p)
+	return wideToString(p)
+}
+
 func asNavigationCompletedArgs(p uintptr) *navigationCompletedArgs {
 	return (*navigationCompletedArgs)(ptr(p))
 }
@@ -462,6 +544,12 @@ func (i *coreWebView2) Release() {
 func (i *coreWebView2) AddWebMessageReceived(handler uintptr, token *uint64) {
 	pure.SyscallN(i.vtbl.AddWebMessageReceived, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
+func (i *coreWebView2) AddNavigationStarting(handler uintptr, token *uint64) {
+	pure.SyscallN(i.vtbl.AddNavigationStarting, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+}
+func (i *coreWebView2) AddNewWindowRequested(handler uintptr, token *uint64) {
+	pure.SyscallN(i.vtbl.AddNewWindowRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+}
 func (i *coreWebView2) AddNavigationCompleted(handler uintptr, token *uint64) {
 	pure.SyscallN(i.vtbl.AddNavigationCompleted, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
@@ -573,6 +661,8 @@ const (
 	kindScript
 	kindWebResourceRequested
 	kindNavigationCompleted
+	kindNavigationStarting
+	kindNewWindowRequested
 )
 
 type comHandlerVtbl struct {
@@ -684,6 +774,15 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 				w.navH = newHandler(w.id, kindNavigationCompleted, &iidNavigationCompleted)
 				var navTok uint64
 				cw.AddNavigationCompleted(handlerPtr(w.navH), &navTok)
+				// The navigation policy: NavigationStarting fires for the
+				// top-level document only (frames have their own event,
+				// which is left alone), before any request is sent.
+				w.navStartH = newHandler(w.id, kindNavigationStarting, &iidNavigationStarting)
+				var navStartTok uint64
+				cw.AddNavigationStarting(handlerPtr(w.navStartH), &navStartTok)
+				w.newWinH = newHandler(w.id, kindNewWindowRequested, &iidNewWindowRequested)
+				var newWinTok uint64
+				cw.AddNewWindowRequested(handlerPtr(w.newWinH), &newWinTok)
 				// App-content serving: intercept the app scheme's https vhost
 				// and answer from the app-scope resolver (serveSchemeWindows).
 				if w.serve != nil {
@@ -721,6 +820,28 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		// navigation.
 		if b != 0 && asNavigationCompletedArgs(b).IsSuccess() {
 			w.fireReady()
+		}
+	case kindNavigationStarting:
+		// Invoke(this, ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
+		// A navigation the policy does not let proceed is cancelled here,
+		// before its request is sent, and the page stays as it was.
+		if b != 0 {
+			args := asNavigationStartingArgs(b)
+			uri := args.URI()
+			if action := w.navigationPolicy(uri); action != navProceed {
+				args.Cancel()
+				refuseNavigation(uri, action)
+			}
+		}
+	case kindNewWindowRequested:
+		// Invoke(this, ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args)
+		// WebView2 would open its own popup window, with none of this
+		// view's scripts or handlers. Mark every request handled so it
+		// never does, and let handleNewWindow decide what loads instead.
+		if b != 0 {
+			args := asNewWindowRequestedArgs(b)
+			args.Handle()
+			w.handleNewWindow(args.URI())
 		}
 	case kindScript:
 		// Invoke(this, HRESULT res, LPCWSTR id)
@@ -1979,6 +2100,8 @@ type webview struct {
 	scriptH     *comHandler
 	wrrH        *comHandler // WebResourceRequested handler (custom schemes)
 	navH        *comHandler // NavigationCompleted handler (View.Ready)
+	navStartH   *comHandler // NavigationStarting handler (the navigation policy)
+	newWinH     *comHandler // NewWindowRequested handler (the navigation policy)
 	ready       bool
 	scriptDone  bool
 	lastScript  string
