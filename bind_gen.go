@@ -63,12 +63,13 @@ func marshalJSON(msg string) string {
 // document's origin key the way originOf does in Go: scheme://host[:port] for
 // a URL with a host, which the engine has already canonicalized; for any other
 // URL, such as data:, the URL without its fragment in canonicalOpaque's form
-// (a data: body's escapes decoded and encoded again one way, everything else
-// kept as written); and nothing for about:. A document
+// (a data: body's escapes decoded and encoded again one way, another scheme's
+// query given the URL standard's escapes, everything else kept as written);
+// and nothing for about:. A document
 // that is not the top frame, or whose key is not trusted, gets no bridge at
 // all, and never holds the token.
 const initBridgeGate = `
-  function encodeOpaque(s, decode) {
+  function encodeOpaque(s, decode, also) {
     var bytes = [], i, j, c, u, out = '';
     for (i = 0; i < s.length; i++) {
       c = s.charCodeAt(i);
@@ -92,7 +93,7 @@ const initBridgeGate = `
       c = bytes[i];
       if (c === -1) {
         out += '%';
-      } else if (c <= 32 || c >= 127 || (decode && (c === 37 || c === 35))) {
+      } else if (c <= 32 || c >= 127 || also.indexOf(String.fromCharCode(c)) >= 0) {
         out += '%' + (c < 16 ? '0' : '') + c.toString(16).toUpperCase();
       } else {
         out += String.fromCharCode(c);
@@ -102,9 +103,15 @@ const initBridgeGate = `
   }
   function canonicalOpaque(href) {
     var colon = href.indexOf(':'), scheme = href.slice(0, colon), rest = href.slice(colon + 1);
-    var comma = scheme === 'data' ? rest.indexOf(',') : -1;
-    if (comma < 0) { return scheme + ':' + encodeOpaque(rest, false); }
-    return scheme + ':' + encodeOpaque(rest.slice(0, comma), false) + ',' + encodeOpaque(rest.slice(comma + 1), true);
+    var cut;
+    if (scheme === 'data') {
+      cut = rest.indexOf(',');
+      if (cut < 0) { return scheme + ':' + encodeOpaque(rest, false, ''); }
+      return scheme + ':' + encodeOpaque(rest.slice(0, cut), false, '') + ',' + encodeOpaque(rest.slice(cut + 1), true, '%#');
+    }
+    cut = rest.indexOf('?');
+    if (cut < 0) { return scheme + ':' + encodeOpaque(rest, false, ''); }
+    return scheme + ':' + encodeOpaque(rest.slice(0, cut), false, '') + '?' + encodeOpaque(rest.slice(cut + 1), false, '"<>');
   }
   if (window.top !== window) { return; }
   var loc = window.location;

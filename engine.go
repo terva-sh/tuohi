@@ -367,24 +367,30 @@ func opaqueKey(scheme, rest string) string {
 // Everything else is kept as written, escapes included: a data: URL's
 // metadata, where %2C is not the comma that ends it, and every other scheme.
 // Only its raw spaces, controls and non-ASCII bytes are encoded, which is how
-// an engine that encodes them spells it.
+// an engine that encodes them spells it, and in another scheme's query, after
+// the first '?', also '"', '<' and '>', which the URL standard's query
+// percent-encode set adds for a URL that is not special.
 func canonicalOpaque(scheme, rest string) string {
-	head, body, hasBody := rest, "", false
 	if scheme == "data" {
-		head, body, hasBody = strings.Cut(rest, ",")
+		head, body, hasBody := strings.Cut(rest, ",")
+		out := encodeOpaque(head, false, "")
+		if hasBody {
+			out += "," + encodeOpaque(body, true, "%#")
+		}
+		return out
 	}
-	out := encodeOpaque(head, false)
-	if hasBody {
-		out += "," + encodeOpaque(body, true)
+	if path, query, hasQuery := strings.Cut(rest, "?"); hasQuery {
+		return encodeOpaque(path, false, "") + "?" + encodeOpaque(query, false, `"<>`)
 	}
-	return out
+	return encodeOpaque(rest, false, "")
 }
 
 // encodeOpaque percent-encodes, in upper-case hex, every byte of s that is a
-// space, a control, or not ASCII. With decode, it first decodes every valid
-// escape, and also encodes '%' and '#': a '%' that starts no valid escape is
-// a literal percent sign in a data: body, so it is written %25.
-func encodeOpaque(s string, decode bool) string {
+// space, a control, not ASCII, or in also. With decode, it first decodes
+// every valid escape; a '%' that starts no valid escape is then a literal
+// percent sign, written %25 when also holds '%'. Without decode, a '%' is
+// kept as written.
+func encodeOpaque(s string, decode bool, also string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -395,7 +401,7 @@ func encodeOpaque(s string, decode bool) string {
 			b.WriteByte(c) // kept as written
 			continue
 		}
-		if c <= ' ' || c >= 0x7F || (decode && (c == '%' || c == '#')) {
+		if c <= ' ' || c >= 0x7F || strings.IndexByte(also, c) >= 0 {
 			fmt.Fprintf(&b, "%%%02X", c)
 			continue
 		}

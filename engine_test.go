@@ -148,6 +148,22 @@ func TestOpaqueKeyAgreesAcrossEngines(t *testing.T) {
 	}
 }
 
+// TestOpaqueKeyEncodesQueryPunctuation checks that another scheme's query is
+// keyed as a browser serializes it: the URL standard's query percent-encode
+// set encodes '"', '<' and '>' there, but not in the path. terva-review
+// finding on PR #17.
+func TestOpaqueKeyEncodesQueryPunctuation(t *testing.T) {
+	want := "mailto:<a>@b.invalid?subject=%3Cx%3E%20%22q%22&t='s'"
+	for _, s := range []string{
+		"mailto:<a>@b.invalid?subject=<x> \"q\"&t='s'",
+		"mailto:<a>@b.invalid?subject=%3Cx%3E%20%22q%22&t='s'",
+	} {
+		if got := originOf(s); got != want {
+			t.Errorf("originOf(%q) = %q, want %q", s, got, want)
+		}
+	}
+}
+
 // TestOpaqueKeyKeepsDataMetadata checks that a data: URL's metadata, before
 // its first raw comma, is never decoded: %2C there is not the comma that ends
 // it, so decoding it moves where the body starts. Nor does decoding a body
