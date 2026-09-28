@@ -333,11 +333,20 @@ jobs:
         run: |
           tag="${{ github.ref_name }}"
           repo="${{ github.repository }}"
+          # A tag with a semver pre-release part, a hyphen before any +build
+          # metadata as in v0.1.0-alpha.1, is published as a pre-release, so
+          # GitHub never shows it as the latest release. A re-run marks an
+          # existing release too, in case it was published as ordinary.
+          prerelease=()
+          if [[ "${tag%%+*}" == *-* ]]; then prerelease=(--prerelease); fi
           if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
             echo "Release $tag already exists – refreshing its assets."
             gh release upload "$tag" --repo "$repo" dist/* --clobber
+            if (( ${#prerelease[@]} )); then
+              gh release edit "$tag" --repo "$repo" --prerelease
+            fi
           else
-            gh release create "$tag" --repo "$repo" \
+            gh release create "$tag" --repo "$repo" "${prerelease[@]}" \
               --title "$tag" --generate-notes --verify-tag dist/*
           fi
 
