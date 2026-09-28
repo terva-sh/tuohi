@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3MWY0QQQ6J07DHDY0CCBN2V
 title: "Stop dropping a data: page's binding call on Windows now and then"
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: high
 due_on: null
@@ -27,12 +27,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T20:57:33Z
-updated_at: 2026-09-28T20:57:33Z
+updated_at: 2026-09-28T21:34:09Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
 updated_by:
-  id: agent:claude-code/c04aed4f
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---

@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3MV9PMXS3CMR71R186MW9BJ
 title: Let a consumer title a view's window
 type: task
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -25,12 +25,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-28T20:29:09Z
+updated_at: 2026-09-28T21:34:09Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
 updated_by:
-  id: agent:claude-code/c04aed4f
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
