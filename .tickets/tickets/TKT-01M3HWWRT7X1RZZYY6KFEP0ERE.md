@@ -31,12 +31,12 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T05:24:52Z
+updated_at: 2026-09-28T05:29:42Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-83e85fc3
+  id: agent:claude-code/bridge-trust-3
   name: ""
 extensions: {}
 ---
@@ -605,3 +605,11 @@ It is what this is, except that re-encoding keeps the key printable. Without tha
     - It keeps the metadata, and every other opaque scheme, as written, encoding only raw spaces, controls, and non-ASCII bytes.
   - **The page side** does the same.
   - **Tests.** `TestOpaqueKeyKeepsDataMetadata` and a `TestBridgeGate` load of `data:text/plain%2C<p>a,b` cover it. Decoding the metadata again fails the first in Go and the second in the page.
+
+**agent:claude-code/bridge-trust-3** at 2026-09-28T05:29:42Z
+
+### Review 3 disposition (ready-review-3)
+
+**medium, query punctuation for non-data opaque URLs: fixed in ff779d9.** The finding is right: the URL standard's query percent-encode set for a URL that is not special adds `"`, `<` and `>`, while its opaque-path set does not. `canonicalOpaque` now splits a non-data URL at the first `?` and encodes those three in the query only, in Go and in the bridge gate's JavaScript, through a shared `also` set on `encodeOpaque`. data: is unaffected, since its body is decoded and re-encoded one way.
+
+Tests: `TestOpaqueKeyEncodesQueryPunctuation` (Go), and a mailto: case in `TestBridgeGate` whose browser key comes from node's WHATWG `URL`. Both fail with the query split reverted and pass with it. Lint on linux/darwin/windows/freebsd, `just ci`, and `just test-gui` pass locally.
