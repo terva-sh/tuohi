@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:08Z
-updated_at: 2026-09-28T02:15:24Z
+updated_at: 2026-09-28T02:21:18Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -170,3 +170,20 @@ Both findings fixed in 508953d.
 - **high: identify the message's frame, not the web view's current page. Fixed in 305b51c.** The sender is `message.frameInfo.request.URL`, which belongs to the posting document.
   - **Untested assumption:** that WKWebView reports the base URL as `frameInfo.request.URL` for `loadHTMLString:baseURL:`. The macOS bridge scenarios will show it on GitHub after the merge. If it is wrong, those scenarios fail and it is fixed forward.
 - **The same race exists on Linux,** where the sender is `webkit_web_view_get_uri` read at receipt, and WebKitGTK gives no frame with the message. That is not fixed here. The proposed fix: a per-document token that Go puts into the bridge script it injects into trusted documents, and the gate requires on every message. The injection-only-into-trusted-origins part of this ticket needs the same mechanism, so it lands there. The Linux iframe gap is closed at the same time.
+
+**agent:claude-code/t3code-92c88910** at 2026-09-28T02:21:18Z
+
+### Third part: Windows sender check, branch feat/bridge-sender-windows
+
+- **The sender is `GetSource`,** read from the WebMessageReceived arguments, so it names the posting document. A failed read passes an empty sender, which the gate refuses.
+- **`loadHTML` on Windows** navigates to `data:text/html;charset=utf-8;base64,...` and trusts that exact URL. It assumes WebView2 reports that URL unchanged from `GetSource`. The Windows bridge scenarios will show it on GitHub after the merge, and it is fixed forward if wrong.
+- **`TestOriginGate`** now runs on every engine: `origin_gate_test.go` lost its build tag.
+
+### Where the criteria stand once GitHub passes
+
+- **Criterion 2,** every engine checks the sender: met.
+- **Criterion 1,** no untrusted origin can call a binding on any engine: met for top-level pages on all three, and for frames on macOS. Two Linux gaps remain:
+  - WebKitGTK does not say which frame posted;
+  - the sender is read when the message arrives, so a message queued across a navigation can take the new page's URI.
+
+  The per-document token planned with injection-only-into-trusted-origins closes both. Until then, criterion 1 stays unticked.

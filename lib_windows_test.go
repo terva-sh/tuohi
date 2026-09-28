@@ -51,6 +51,7 @@ func TestMain(m *testing.M) {
 		resWinErrorUnbind.Store(winErrorUnbindScenario())
 		resWinRichTypes.Store(winRichTypesScenario())
 		resWinEmbed.Store(winEmbedScenario())
+		resOriginGate.Store(originGateScenario())
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
 	os.Exit(m.Run())

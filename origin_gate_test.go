@@ -1,5 +1,3 @@
-//go:build linux || freebsd || netbsd || darwin
-
 package tuohi
 
 import (
@@ -9,9 +7,6 @@ import (
 	"testing"
 	"time"
 )
-
-// The origin gate scenario runs on the engines that name a message's sender.
-// Windows joins when its sender check lands.
 
 var resOriginGate atomic.Value // string
 

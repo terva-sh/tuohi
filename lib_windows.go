@@ -17,6 +17,7 @@
 package tuohi
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -545,6 +546,12 @@ func (i *settings8i) PutIsReputationCheckingRequired(v bool) {
 func (i *settings9i) PutIsNonClientRegionSupportEnabled(v bool) {
 	pure.SyscallN(i.vtbl.PutIsNonClientRegionSupportEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
+
+// GetSource returns the URI of the document that posted the message.
+func (i *messageArgs) GetSource(out *uintptr) uintptr {
+	r, _, _ := pure.SyscallN(i.vtbl.GetSource, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	return r
+}
 func (i *messageArgs) TryGetWebMessageAsString(out *uintptr) uintptr {
 	r, _, _ := pure.SyscallN(i.vtbl.TryGetWebMessageAsStr, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
@@ -692,12 +699,20 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		// Invoke(this, ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args)
 		if b != 0 {
 			var pwstr uintptr
-			if int32(asMessageArgs(b).TryGetWebMessageAsString(&pwstr)) >= 0 && pwstr != 0 {
+			args := asMessageArgs(b)
+			if int32(args.TryGetWebMessageAsString(&pwstr)) >= 0 && pwstr != 0 {
 				msg := wideToString(pwstr)
 				coTaskMemFree(pwstr)
-				// The sender is not checked on Windows yet, so it is
-				// reported as unknown (TKT-01M3HWWRT7X1RZZYY6KFEP0ERE).
-				w.onMessage(msg, "", false)
+				// The sender is the document that posted, as the event
+				// reports it. A failed read names no origin, and the gate
+				// refuses it.
+				sender := ""
+				var psrc uintptr
+				if int32(args.GetSource(&psrc)) >= 0 && psrc != 0 {
+					sender = wideToString(psrc)
+					coTaskMemFree(psrc)
+				}
+				w.onMessage(msg, sender, true)
 			}
 		}
 	case kindNavigationCompleted:
@@ -1242,9 +1257,15 @@ func (w *webview) Navigate(url string) {
 	asWebView2(w.webview2).Navigate(utf16(url))
 }
 
+// loadHTML loads html as a base64 data: URL, used by tests only.
+// NavigateToString would put the page at about:blank, which cannot be
+// trusted (see originOf). A data: URL is keyed by the whole URL, which is its
+// own content, so trusting it trusts exactly this page.
 func (w *webview) loadHTML(html string) {
+	url := "data:text/html;charset=utf-8;base64," + base64.StdEncoding.EncodeToString([]byte(html))
+	w.trustURL(url)
 	if w.webview2 != 0 {
-		asWebView2(w.webview2).NavigateToString(utf16(html))
+		asWebView2(w.webview2).Navigate(utf16(url))
 	}
 }
 
