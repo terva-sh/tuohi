@@ -369,7 +369,7 @@ async function runSelfTest() {
     return 'round-tripped';
   });
 
-  // Autostart round trip through App.Autostart: register, verify, remove.
+  // Autostart round trip through tuohi/autostart: register, verify, remove.
   // Self-cleaning - the demo ends with no registration for this binary - and
   // the pre-existing state (a developer who already enabled it) is restored.
   await step('autostart round trip', async () => {
@@ -477,7 +477,7 @@ async function runSelfTest() {
   await skip('tray Show / Hide', '--selftest runs without a tray host; use ./demo -tray');
   await skip('window State (fixed/min/max)', 'creation-time View.State - use ./demo --framed');
   await skip('run modes (--framed / -http)', 'launch-time flags, not page-testable');
-  await skip('single instance', 'launch-time App.Exec / App.ID');
+  await skip('single instance', 'launch-time; see the tuohi/instance package');
 
   const failed = results.filter((r) => !r.pass).length;
   $('selftestResult').textContent = `${results.length - failed}/${results.length} passed`;

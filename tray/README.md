@@ -29,7 +29,7 @@ err := tray.Run(tray.Config{
 | --- | --- |
 | `Run(cfg Config) error` | Show the tray and own the OS event loop; blocks until `Stop`. Must be called on the main goroutine, locked to the main thread. |
 | `Stop()` | Hide the tray and make `Run` return. Safe from any goroutine; no-op when idle. |
-| `Set(cfg Config) error` | Show the tray WITHOUT owning the event loop (a host such as an appkit `App` or another loop already runs). Call on the UI thread, pair with `Remove`. |
+| `Set(cfg Config) error` | Show the tray WITHOUT owning the event loop (a host such as a tuohi `App`, from `App.Start`, or another loop already runs). Call on the UI thread, pair with `Remove`. |
 | `Remove()` | Hide a `Set` tray, leaving the host loop running. Safe from any goroutine; no-op when idle. |
 | `Bounds() (x, y, w, h int)` | On-screen rectangle of the active icon (Windows via `Shell_NotifyIconGetRect`); zeros elsewhere. |
 | `ErrUnsupported` | Sentinel returned by `Run`/`Set` on a platform with no backend. |
@@ -93,7 +93,7 @@ Check the unsupported case with `errors.Is(err, tray.ErrUnsupported)`.
   `SecondaryActivate` → `OnDoubleClick`, `ContextMenu` → `OnRightClick`.
 
 Notifications are deliberately not part of this package - see
-[`../notify`](../notify/) (`App.Notify`).
+[`../notify`](../notify/).
 
 ## Example
 

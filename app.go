@@ -1,15 +1,18 @@
-// Package appkit is a pure-Go foundation for web-based desktop applications:
+// Package tuohi is a pure-Go foundation for web-based desktop applications:
 // it embeds the platform View (WKWebView on macOS, WebKitGTK on Linux,
-// WebView2 on Windows) behind a single Go API and layers desktop services on
-// top of it - windowing and app windows, drag regions, custom URL schemes,
-// notifications, clipboard, single-instance, opening URLs and native file
-// dialogs - all cgo-free.
+// WebView2 on Windows) behind a single Go API - windowing and app windows,
+// drag regions, custom URL schemes, bindings and events, opening URLs and
+// native file dialogs - all cgo-free.
+//
+// The package is the window. The desktop services live in subpackages that
+// do not import it: tuohi/instance (single instance), tuohi/autostart (launch
+// at login), tuohi/clipboard, tuohi/notify and tuohi/tray. A service that
+// needs the UI thread, such as the tray, is set up in App.Start.
 //
 // Source layout: the package is split into three file families. app*.go
 // holds the application scope - the App type (configuration + runtime
-// context), its app-scope methods (Show, Wait, Copy/Paste,
-// Open/Reveal, Notify) and the per-OS app internals
-// (single-instance, app icon); view*.go holds the view/window
+// context), its app-scope methods (Show, Wait, Open/Reveal, Backend) and the
+// per-OS app internals (app icon, Open/Reveal); view*.go holds the view/window
 // API surface (the define-first View struct and its methods, the geometry +
 // State/Config types, scheme types, App.Show glue, the View Dialog method,
 // drag regions); the binding/events machinery may be split further into
@@ -26,12 +29,9 @@ package tuohi
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
-	"image/png"
 	"io/fs"
 	"net"
 	"net/url"
@@ -45,72 +45,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/atotto/clipboard"
-	"github.com/terva-sh/tuohi/notify"
-	"github.com/terva-sh/tuohi/tray"
-
 	_ "embed"
 )
 
 //go:embed app.png
 
-// _icon is the embedded appkit mark: the PNG bytes of the application icon
+// _icon is the embedded mark: the PNG bytes of the application icon
 // (app.png). It is the DEFAULT process icon, unexported on purpose - when the
-// consumer leaves App.Icon (or the tray's own Icon) unset, appkit applies
-// _icon itself: setAppIcon receives it so every appkit app shows the appkit
-// face unless it brings its own, and the tray glyph is downscaled from it.
+// consumer leaves App.Icon unset, tuohi applies _icon itself: setAppIcon
+// receives it so every tuohi app shows that face unless it brings its own.
 var _icon []byte
-
-// trayGlyphSize is the side length, in pixels, of the tray icon appkit
-// derives from App.Icon when a configured tray leaves its own Icon unset.
-const trayGlyphSize = 32
-
-// resizePNG downscales a square PNG to size×size with a box filter and
-// returns the result as PNG bytes, or nil when pngData is not a decodable
-// image. The box average runs over straight (non-premultiplied) color, so
-// translucent edges keep their hue. It is appkit's shared resizer for icon
-// paths that need a smaller copy of a PNG - the tray glyph derived from
-// App.Icon (or the embedded default) when the tray config sets no icon.
-func resizePNG(pngData []byte, size int) []byte {
-	if size <= 0 {
-		return nil
-	}
-	src, err := png.Decode(bytes.NewReader(pngData))
-	if err != nil {
-		return nil
-	}
-	sb := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, size, size))
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			x0, x1 := x*sb.Dx()/size, (x+1)*sb.Dx()/size
-			y0, y1 := y*sb.Dy()/size, (y+1)*sb.Dy()/size
-			if x1 <= x0 || y1 <= y0 { // size exceeds the source: degenerate box
-				x1, y1 = x0+1, y0+1
-			}
-			var r, g, b, a uint64
-			for yy := y0; yy < y1; yy++ {
-				for xx := x0; xx < x1; xx++ {
-					c := color.NRGBAModel.Convert(src.At(xx, yy)).(color.NRGBA)
-					r += uint64(c.R)
-					g += uint64(c.G)
-					b += uint64(c.B)
-					a += uint64(c.A)
-				}
-			}
-			n := uint64((y1 - y0) * (x1 - x0))
-			if n == 0 {
-				n = 1
-			}
-			dst.SetRGBA(x, y, color.RGBA{R: uint8(r / n), G: uint8(g / n), B: uint8(b / n), A: uint8(a / n)})
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, dst); err != nil {
-		return nil
-	}
-	return buf.Bytes()
-}
 
 // boxDownscale averages a square straight-RGBA image down to size×size with a
 // box filter (each destination pixel is the mean of its source box). Straight
@@ -166,7 +110,7 @@ func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
 // App configures an appkit application and carries its runtime scope.
 //
 // It is the single application-scoped object: the exported fields hold the
-// application settings (content filesystem, tray, icon, ...)
+// application settings (content filesystem, icon, the Start hook, ...)
 // and unexported fields hold the state of the scope (committed settings and
 // the one-time platform initialization). It is conceptually similar to how
 // http.Server holds configuration and context together.
@@ -178,10 +122,12 @@ func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
 // that opens the scope should come from the goroutine that will own the UI
 // (the main goroutine).
 //
-// All app-scoped services are methods on *App (Show, Wait, Copy, Open,
-// Paste, Reveal, Notify, ...); App.Bind is a declarative map instead
-// of a method - see its field doc. This is a deliberate design
-// choice: the App scope is never hidden from the consumer.
+// The app-scoped operations are methods on *App (Show, Wait, Quit, Open,
+// Reveal, Backend); App.Bind is a declarative map instead of a method - see
+// its field doc. This is a deliberate design choice: the App scope is never
+// hidden from the consumer. The desktop services - single instance,
+// autostart, clipboard, notifications and the tray - are not part of App;
+// they live in their own subpackages (see the package doc).
 type App struct {
 	// Debug turns the platform web inspector / developer tools on for every
 	// window of this app (the app-wide default for View.Debug): set it once
@@ -202,9 +148,10 @@ type App struct {
 	// is fixed when each view is created.
 	Events string
 
-	// Name is the application name, used where the OS asks for one - most
-	// visibly as the source shown by desktop notifications (App.Notify), and
-	// as the title of a window that has no other (see View.Title).
+	// Name is the application name, used where the OS asks for one: as the
+	// title of a window that has no other (see View.Title), and under GTK3 on
+	// Wayland as the name of the desktop entry the icon is installed under
+	// (see Icon).
 	Name string
 
 	// Icon is a PNG image for the running application, applied on a
@@ -213,10 +160,7 @@ type App struct {
 	// app scope opens and before the first window exists. When Icon is unset
 	// the embedded appkit mark is used instead (unexported; appkit applies it
 	// itself), so an appkit application always has a process face unless it
-	// brings its own. App.Icon is ALSO the source of the tray glyph when the
-	// app configures a tray (App.Tray) whose own Icon is unset: appkit
-	// downscales App.Icon (or the embedded mark) to a tray-sized PNG at app
-	// init. Unlike the per-window page icon it sets the face of the PROCESS; a
+	// brings its own. Unlike the per-window page icon it sets the face of the PROCESS; a
 	// stable, runtime process icon is intentionally a best-effort feature
 	// because it is hard to keep identical across all platforms. An unset icon
 	// is silently ignored; so are environments that cannot take a runtime icon
@@ -320,40 +264,19 @@ type App struct {
 	// returns only when App.Quit is called.
 	Exit bool
 
-	// Tray optionally puts an icon with a menu in the system tray / menu bar
-	// for the life of the application. When set, the icon appears as App.Wait
-	// starts running the platform UI loop (that loop dispatches the tray's
-	// menu events) and is removed when Wait returns. It is the app-scoped,
-	// declarative form of the tray subpackage's Set/Remove pair; see the tray
-	// package for the full API.
+	// Start, when set, runs on the UI thread when Wait starts, before its
+	// loop dispatches any event. It is where a service that needs the UI
+	// thread is set up, such as a tray icon:
 	//
-	// The Config is read once when the app scope opens - icon (PNG, plus
-	// dark-mode and macOS template variants), tooltip, tray-level click
-	// handlers and the whole menu tree (checkboxes, submenus, separators,
-	// per-item icons). When the config leaves its Icon unset, appkit derives
-	// the tray glyph at app init from App.Icon - falling back to the embedded
-	// appkit mark - downscaled to a tray-sized PNG (see the Icon doc). The
-	// tray is a launcher, not a live dashboard: the menu
-	// stays fixed for its lifetime, so there is no runtime update machinery.
+	//	app.Start = func() error { return tray.Set(cfg) }
 	//
-	// A menu item's OnClick runs on the UI thread; keep it short or hand the
-	// work to a goroutine. A typical use ends the app from the menu:
+	// and tear it down after Wait returns (tray.Remove). An error from
+	// Start ends Wait, which returns it. An application that runs its window
+	// with View.Run instead of Wait never runs Start.
 	//
-	//	Tray: &tray.Config{
-	//		Icon:    iconPNG,
-	//		Tooltip: "my app",
-	//		Items: []tray.Item{
-	//			{Label: "Open", OnClick: openUI},
-	//			{Label: "Quit", OnClick: app.Quit},
-	//		},
-	//	}
-	//
-	// On macOS the tray switches the application to the accessory (menu-bar)
-	// activation policy, so the app's Dock icon disappears while the tray is
-	// up; that is the tray package's behavior for standalone use too. A
-	// configured tray that cannot be created (for example a second tray in
-	// the same process) makes Wait fail with the tray package's error.
-	Tray *tray.Config
+	// Like every App field it is committed when the app scope opens (later
+	// edits have no effect).
+	Start func() error
 
 	// --- internal scope state; see the App doc ---
 	scopeOnce sync.Once
@@ -366,7 +289,7 @@ type App struct {
 type appConfig struct {
 	Name   string
 	Exit   bool
-	Tray   *tray.Config
+	Start  func() error
 	Icon   []byte
 	FS     fs.FS
 	HTTP   bool
@@ -382,7 +305,7 @@ func snapshotConfig(a *App) appConfig {
 	return appConfig{
 		Name:   a.Name,
 		Exit:   a.Exit,
-		Tray:   a.Tray,
+		Start:  a.Start,
 		Icon:   a.Icon,
 		FS:     a.FS,
 		HTTP:   a.HTTP,
@@ -495,16 +418,12 @@ func (a *App) Wait() error {
 		return fmt.Errorf("appkit: wait: %w", err)
 	}
 	a.start(s)
-	// A configured tray shows its icon before the loop runs - Wait runs on the
-	// UI thread, which is where tray.Set must be called - and the loop below
-	// dispatches the tray's menu events. Remove hides the icon when the loop
-	// ends; it leaves the (now-finished) loop alone and is safe to call on
-	// every platform.
-	if s.cfg.Tray != nil {
-		if err := tray.Set(*s.cfg.Tray); err != nil {
-			return fmt.Errorf("appkit: tray: %w", err)
+	// App.Start sets up the services that need the UI thread - Wait runs on
+	// it - before the loop below dispatches their events.
+	if s.cfg.Start != nil {
+		if err := s.cfg.Start(); err != nil {
+			return fmt.Errorf("tuohi: start: %w", err)
 		}
-		defer tray.Remove()
 	}
 	ui.enterLoop()
 	for atomic.LoadInt32(&s.exitFlag) == 0 {
@@ -526,9 +445,9 @@ func (a *App) Quit() {
 }
 
 // start performs the one-time application initialization: the best-effort
-// runtime icon (App.Icon). It runs once - on the first window creation or the first
-// Wait call - which is the single "app initialization" point of the scope;
-// later calls are no-ops. App.Show and Wait both call it, so the order does
+// runtime icon (App.Icon). It runs once - on the first window creation or
+// the first Wait call - which is the single "app initialization" point of the
+// scope; later calls are no-ops. App.Show and Wait both call it, so the order does
 // not matter. Content serving is NOT started here: there is no permanently
 // listening web server. App.FS is served per view - through WebView2's https
 // vhost on Windows, or over a TEMPORARY per-view loopback server (macOS and
@@ -546,20 +465,6 @@ func (a *App) start(s *appScope) {
 			icon = _icon
 		}
 		_ = setAppIcon(icon, s.cfg.Name)
-		// Tray icon default: when the app configures a tray but leaves the
-		// tray's own Icon unset, appkit derives the tray glyph from the same
-		// process icon (App.Icon, falling back to the embedded mark) and
-		// downscales it to trayGlyphSize - the resize that used to be
-		// hand-written in the showcase. The derived icon goes on a COPY of
-		// the config, so the consumer's tray.Config is left untouched, and a
-		// PNG that cannot be decoded simply leaves the tray icon unset.
-		if s.cfg.Tray != nil && len(s.cfg.Tray.Icon) == 0 {
-			if glyph := resizePNG(icon, trayGlyphSize); len(glyph) > 0 {
-				cp := *s.cfg.Tray
-				cp.Icon = glyph
-				s.cfg.Tray = &cp
-			}
-		}
 	})
 }
 
@@ -588,60 +493,6 @@ func (s *appScope) requestExit() {
 		atomic.StoreInt32(&s.exitFlag, 1)
 		appUIWake()
 	})
-}
-
-// Notify displays an OS-level notification with the given title and message,
-// named after the app (App.Name). It delegates to the notify subpackage,
-// which needs no window and no tray icon: each platform binds the
-// notification service the OS ships - NSUserNotificationCenter on macOS, a
-// Shell_NotifyIconW balloon on Windows, org.freedesktop.Notifications on
-// Linux. The App method stays plain (title + message only, no options); for
-// custom icons, urgency or an alert/beep use the notify subpackage's
-// ShowOpts/Alert/Beep directly.
-//
-// It is safe to call from any goroutine once the App scope is open and
-// returns the notify package's ErrUnsupported on platforms without a backend
-// (anything but macOS, Windows and Linux). On macOS it can return
-// ErrUnavailable when the process has no notification center - the deprecated
-// NSUserNotificationCenter needs a bundled .app the user granted Notification
-// permission (see the notify package docs); check with errors.Is.
-func (a *App) Notify(title, message string) error {
-	s, err := a.begin()
-	if err != nil {
-		return err
-	}
-	return notify.Show(s.cfg.Name, title, message)
-}
-
-// Copy puts b onto the system clipboard, replacing whatever was there. It is
-// an App method over github.com/atotto/clipboard (which reads the platform
-// clipboard through pbcopy/pbpaste on macOS, xclip/xsel/wl-copy on Linux and
-// the Win32 API on Windows). Safe to call from any goroutine once the App
-// scope is open.
-//
-// The platform backends are text clipboards, so Copy is binary-safe only
-// opportunistically: arbitrary bytes round-trip where the backend preserves
-// them verbatim (the command-line tools treat the payload as opaque), while
-// Windows maps the payload through its text clipboard and may not preserve
-// non-text bytes. It returns an error when no clipboard backend is available
-// (for example a headless Linux box without xclip/xsel/wl-copy).
-func (a *App) Copy(b []byte) error {
-	if _, err := a.begin(); err != nil {
-		return err
-	}
-	return clipboard.WriteAll(string(b))
-}
-
-// Paste returns the current clipboard content as raw bytes. Text copied from
-// other applications arrives as its UTF-8 encoding. An empty clipboard yields
-// an empty slice with a nil error; an error is returned only when no
-// clipboard backend is available.
-func (a *App) Paste() ([]byte, error) {
-	if _, err := a.begin(); err != nil {
-		return nil, err
-	}
-	s, err := clipboard.ReadAll()
-	return []byte(s), err
 }
 
 // Backend reports which web-engine backend the App scope uses for its views,

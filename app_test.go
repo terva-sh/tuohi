@@ -16,22 +16,22 @@ import (
 	"unsafe"
 
 	"github.com/terva-sh/tuohi/dialog"
-	"github.com/terva-sh/tuohi/tray"
 )
 
-// TestSnapshotConfigCarriesTray verifies that App.Tray is part of the
-// committed settings snapshot: it is a declarative, read-once config that Wait
-// applies around its run loop (tray.Set before the loop, Remove after). Only
-// the snapshot is asserted here - showing the icon needs a live tray backend
-// (status bar / session D-Bus), which unit tests must not touch.
-func TestSnapshotConfigCarriesTray(t *testing.T) {
-	cfg := &tray.Config{Tooltip: "snapshot-test"}
-	got := snapshotConfig(&App{Name: "snapshot-test", Tray: cfg})
-	if got.Tray != cfg {
-		t.Fatalf("snapshot Tray = %v, want the committed config pointer", got.Tray)
+// TestSnapshotConfigCarriesStart verifies that App.Start is part of the
+// committed settings snapshot, which Wait calls before its run loop. Calling
+// it needs a live UI thread; the GUI scenarios cover that.
+func TestSnapshotConfigCarriesStart(t *testing.T) {
+	called := false
+	got := snapshotConfig(&App{Start: func() error { called = true; return nil }})
+	if got.Start == nil {
+		t.Fatal("snapshot Start = nil, want the committed hook")
 	}
-	if snapshotConfig(&App{}).Tray != nil {
-		t.Fatal("snapshot Tray should be nil when App.Tray is unset")
+	if err := got.Start(); err != nil || !called {
+		t.Fatalf("snapshot Start() = %v, called = %v; want the committed hook", err, called)
+	}
+	if snapshotConfig(&App{}).Start != nil {
+		t.Fatal("snapshot Start should be nil when App.Start is unset")
 	}
 }
 

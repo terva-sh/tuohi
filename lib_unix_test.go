@@ -359,12 +359,23 @@ func TestLinuxBackendOverride(t *testing.T) {
 	}
 }
 
-// waitCloseScenario verifies the app-level lifecycle: App.Wait runs the UI
-// loop and returns when the owned window is closed (the engine reports the
-// window close into the App scope).
+// waitCloseScenario verifies the app-level lifecycle: App.Wait runs App.Start
+// on the UI thread before its loop, runs the UI loop and returns when the
+// owned window is closed (the engine reports the window close into the App
+// scope). An error from App.Start ends Wait before the loop runs.
 func waitCloseScenario() string {
+	errStart := errors.New("start failed")
+	failing := &App{Start: func() error { return errStart }}
+	if err := failing.Wait(); !errors.Is(err, errStart) {
+		return fmt.Sprintf("Wait with a failing Start = %v, want %v", err, errStart)
+	}
+
 	// Exit true: Wait ends when the owned window closes (see App.Exit).
-	app := &App{Exit: true}
+	var startOnUI, started bool
+	app := &App{Exit: true, Start: func() error {
+		started, startOnUI = true, onUIThread()
+		return nil
+	}}
 	w := &View{Width: 400, Height: 300}
 	if err := app.Show(w); err != nil {
 		return "view error: " + err.Error()
@@ -385,6 +396,9 @@ func waitCloseScenario() string {
 	})
 	if err := app.Wait(); err != nil {
 		return "wait error: " + err.Error()
+	}
+	if !started || !startOnUI {
+		return fmt.Sprintf("App.Start ran = %v, on the UI thread = %v; want both", started, startOnUI)
 	}
 	return "wait-ok"
 }
