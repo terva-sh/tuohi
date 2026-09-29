@@ -1,6 +1,6 @@
 module github.com/terva-sh/tuohi
 
-go 1.27
+go 1.26.0
 
 require (
 	github.com/atotto/clipboard v0.1.4
