@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:13:11Z
+updated_at: 2026-09-29T22:16:52Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -95,3 +95,13 @@ Disposition for the terva-review findings at ecfccca (run 885f1a2c), fixed in 8c
 - **Accepted, medium: "Recognize the generated marker only as its own desktop-entry key".** `isGenerated` now accepts `X-Tuohi-Generated=true` only as a key of the `[Desktop Entry]` group. The same text in a comment, in another key's value, in another group or with `false` does not count (`TestIsGenerated`). The foreign-entry test's entry now carries the marker in a comment. Going back to the substring match makes that test fail.
 
 The `App.DesktopEntry` doc and architecture.md say the guard covers system entries. `just ci` passes.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:16:52Z
+
+Disposition for the terva-review finding at e6d120d (run c028a63a), fixed in 489df08:
+
+- **Accepted, medium: "Find system entries whose desktop ID comes from a subdirectory".** `hasEntry` now walks the whole `applications` tree of a data directory and forms each file's id as the spec does, turning `vendor/app.desktop` into `vendor-app`. The walk covers every `XDG_DATA_DIRS` entry and the user's own directory. A subdirectory entry in the user's directory is someone else's too, because tuohi writes only at the top.
+  - `TestWaylandIdentitySubdirEntry` covers both places, and checks that a different id in the same subdirectory does not count.
+  - Matching the stem without the hyphen rule makes the test fail, leaving 2 files beside a system `vendor/app.desktop`.
+
+`just ci` passes.
