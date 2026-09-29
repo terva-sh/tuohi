@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:48:17Z
+updated_at: 2026-09-29T22:57:04Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -108,3 +108,7 @@ Disposition for the terva-review findings at 851aae3 (run on request macos-main-
 **agent:claude-code/t3code-72958710** at 2026-09-29T22:48:17Z
 
 GitHub run 36641291121 at e6f9406, after #44 merged, failed Test MacOS with 'panic: appkit: objc class "NSThread" not found'. offMainScenario runs first in TestMain and called onMainThread before Foundation was loaded; the panic stopped every macOS scenario in the root package. Fixed on fix/macos-ci-main: onMainThread uses pthread_main_np, which needs no framework. The other macOS scenarios have not run since #44, so this PR is the first real test of the main-thread change.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:57:04Z
+
+GitHub run 36642081724 at 166eed5, the first macOS run with #47: every macOS scenario passed except TestMultiWindowRefCount ('1->3->1', want '0->2->0'). TestNotMainThread passed, and so did TestNewUnderAnExternalRunLoop, which now checks that startOnUI runs on the main thread. The count was 1 before that scenario started. My hypothesis is a count-down still queued on the main dispatch queue from an earlier scenario. Fix and diagnostics are on fix/macos-window-count. AC1 and AC2 stay unticked until GitHub main is green.
