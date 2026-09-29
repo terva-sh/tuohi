@@ -11,7 +11,7 @@ import (
 	"github.com/terva-sh/tuohi/dialog"
 )
 
-// Custom CSS attribute implemented by appkit for frameless windows:
+// Custom CSS attribute implemented by tuohi for frameless windows:
 //
 //	.titlebar { -app-region: drag; }
 //	.titlebar-button { -app-region: no-drag; }
@@ -516,7 +516,7 @@ const appRegionScriptTmpl = `(function() {
     }
   }
 
-  // Document-start scripts can run before the appkit bridge is in place
+  // Document-start scripts can run before the tuohi bridge is in place
   // (this is exactly what happens on the WebView2/Windows backend on the
   // initial document). Retry quickly until the bridge appears so tracking
   // always arms.
@@ -547,7 +547,7 @@ func createAppRegionScript(resizable, postRegions bool, platform string) string 
 // platform (WebKitGTK and WebView2 treat a registered custom scheme as a
 // secure context; macOS serves the scheme through WKWebView's scheme
 // handler). The consumer never sees the difference: it navigates to the
-// uniform "app://" origin (see App.FS) and appkit serves the file at that
+// uniform "app://" origin (see App.FS) and tuohi serves the file at that
 // path. The types below are the internal request/response contract the
 // scheme backends share.
 
@@ -666,7 +666,7 @@ func (a *App) showFirst(view *View) error {
 	// Declarative bindings: the app-wide App.Bind map first, then the view's
 	// own View.Bind map, each in alphabetical key order; a per-view name
 	// overrides the app-wide one, a nil per-view entry unbinds it (see
-	// applyBinds). The view's map is snapshotted at this first read (RE3):
+	// applyBinds). The view's map is snapshotted at this first read:
 	// the consumer may keep mutating View.Bind after Show, and binding only
 	// ever sees this copy.
 	if err := applyBinds(w, cfg.Bind, cloneBindMap(view.Bind)); err != nil {
@@ -706,7 +706,7 @@ func (a *App) showFirst(view *View) error {
 	return nil
 }
 
-// View describes one window and its embedded web view. It is appkit's
+// View describes one window and its embedded web view. It is tuohi's
 // define-first window object, the same pattern App uses for the application:
 // the exported fields are the configuration of a window that does not exist
 // yet, and App.Show(view) turns it into a live window. Configure a View, hand
@@ -820,13 +820,13 @@ type View struct {
 	// Pair it with Eval to run JavaScript on init: Ready fires only after the
 	// first page load completed, so the DOM and the page's own scripts are in
 	// place and a single Eval reaches them reliably. Injecting script before
-	// the document exists is not reliable across the three engines, so appkit
+	// the document exists is not reliable across the three engines, so tuohi
 	// has no declarative JS/CSS injection API - call Eval from Ready to run
 	// code when the page comes up.
 	Ready func()
 
 	// window is the OPTIONAL native host window to embed into, set before
-	// Show (a GtkWindow* / NSWindow* / HWND); nil lets appkit create and own
+	// Show (a GtkWindow* / NSWindow* / HWND); nil lets tuohi create and own
 	// the window. It is unexported: embedding is an internal capability. The
 	// live native handle is reachable through View.Window(func) - see that
 	// method.
@@ -879,7 +879,7 @@ type View struct {
 	// see the package documentation. Resizing still works from the window
 	// edges unless State is StateFixed.
 	//
-	// Only meaningful for windows appkit owns; an embedded window keeps its
+	// Only meaningful for windows tuohi owns; an embedded window keeps its
 	// host's frame and background.
 	Frame bool
 
@@ -976,7 +976,7 @@ const (
 // the app-wide App.Bind map), applied once by App.Show.
 //
 // Note on window control: geometry (size and position) is deliberately NOT
-// part of the runtime surface. It is a defined non-feature of appkit - the
+// part of the runtime surface. It is a defined non-feature of tuohi - the
 // platforms this library targets cannot agree on resizing or moving an
 // existing window at runtime (Wayland compositors do not allow a client to
 // move its own toplevel, and GTK4 has no move API at all), so a unified
@@ -1053,7 +1053,7 @@ func (v *View) Close() {
 // ignored. It is the supported way to run code on init: call it from the
 // View.Ready callback, once the first page load completed, so the DOM and
 // the page's own scripts are in place. Injecting script before the document
-// exists is not reliable across the three engines, so appkit exposes no
+// exists is not reliable across the three engines, so tuohi exposes no
 // declarative JS/CSS injection API.
 func (v *View) Eval(js string) {
 	v.onUI(func(w engine) { w.Eval(js) })
@@ -1135,7 +1135,7 @@ func (v *View) Unmaximize() {
 // by the App.Bind / View.Bind maps. Engines keep an internal Unbind used by
 // tests to verify binding teardown.
 
-// --- Native file dialogs (an appkit extension) ---
+// --- Native file dialogs (a tuohi extension) ---
 
 // Dialog presents a native, application-modal file panel chosen by
 // opts.Type (open, multi-open, save or directory) and built on the
@@ -1187,7 +1187,7 @@ func schemeMIME(r *response) string {
 	return "application/octet-stream"
 }
 
-// appSchemeName is the custom scheme appkit registers to serve the app's
+// appSchemeName is the custom scheme tuohi registers to serve the app's
 // filesystem - the app-scope content origin consumers navigate to. The page
 // is loaded from e.g. "app://assets/index.html"; the scheme is registered as
 // a secure context (WebKitGTK / WKWebView) or served through a secure https

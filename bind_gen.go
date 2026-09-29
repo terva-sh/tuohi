@@ -222,7 +222,7 @@ const initBridgeTail = `)(token + message);
   // later macrotask: code that awaits the same promise still sees the
   // rejection (the handler is on the original chain and does not swallow
   // it), and genuine errors hit the console / window.onerror instead of
-  // vanishing (RE1).
+  // vanishing.
       if (promise && typeof promise.catch === 'function') {
         promise.catch(function(e) {
           setTimeout(function() { throw e; }, 0);
@@ -259,8 +259,7 @@ const initBridgeTail = `)(token + message);
   // meaningful. Only zero-argument functions get a .then: attaching one to
   // every bound function would make each of them a thenable, so an
   // accidental await window.fn or Promise.resolve(window.fn) would fire a
-  // no-argument Go call that any function requiring arguments would reject
-  // (E2).
+  // no-argument Go call that any function requiring arguments would reject.
       var self = this;
       var fn = _bindFunction(this, name);
       fn.then = function(onFulfilled, onRejected) {
@@ -281,7 +280,7 @@ const initBridgeTail = `)(token + message);
   // (window.name = v) also calls the function with the assigned value. One
   // name is therefore both a function and a writable variable. Assignment
   // drops the returned promise, so _settle rethrows genuine setter errors
-  // on a later task (RE1); awaiting the call form (await window.name(v))
+  // on a later task; awaiting the call form (await window.name(v))
   // still surfaces them normally.
       var at = _holderAt(name);
       var self = this;
@@ -588,10 +587,10 @@ func bridgeGuard(replyKey, body string) string {
 //
 // Entries are emitted in alphabetical name order regardless of how the
 // registry map iterates, so the generated script is deterministic and
-// golden-testable (P2). The installers themselves guard against a missing
+// golden-testable. The installers themselves guard against a missing
 // bridge (a document-start script can run before window.__webview__ exists
 // on some backends), which keeps the ordering of the three script families -
-// bridge, events/init, bind - from ever breaking a binding (R4).
+// bridge, events/init, bind - from ever breaking a binding.
 func createBindScript(entries []binding) string {
 	sorted := append([]binding(nil), entries...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].name < sorted[j].name })
@@ -657,7 +656,7 @@ func bindInstallCall(e binding) string {
 // posts to Go (see internalBindError and handleInternalBindError): binding
 // installs that throw - a live bind under a namespace an earlier batch
 // already sealed, a malformed name, ... - would otherwise be swallowed by
-// the engine's fire-and-forget Eval and silently do nothing (R5). err is
+// the engine's fire-and-forget Eval and silently do nothing. err is
 // the catch variable name the caller's try/catch bound.
 func installErrorJS(err, name string) string {
 	return "w.post(JSON.stringify({method:" + marshalJSON(internalBindError) +
@@ -692,7 +691,7 @@ func liveBindScript(entries []binding) string {
 // liveUnbindJS returns the JS that removes one name from the CURRENT
 // document. Unbinding after the namespace froze throws (the delete hits a
 // frozen holder); the try/catch reports the failure to Go like a failed
-// install, so a live unbind is never a silent no-op (R3/R6).
+// install, so a live unbind is never a silent no-op.
 func liveUnbindJS(name string) string {
 	return "(function(){var w=window.__webview__;if(!w){return;}try{w.onUnbind(" +
 		marshalJSON(name) + ");}catch(err){" + installErrorJS("err", name) + "}})()"

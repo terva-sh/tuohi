@@ -3,7 +3,7 @@
 // Unix View backend (Linux, FreeBSD, NetBSD) in pure Go via purego's
 //
 // This backend dlopen/dlsyms the system GTK and WebKitGTK shared objects
-// directly, so appkit needs no cgo and no bundled native library on Unix.
+// directly, so tuohi needs no cgo and no bundled native library on Unix.
 // It detects the runtime stack: GTK4 + webkitgtk-6.0 when present, else
 // GTK3 + webkit2gtk-4.1 (falling back to -4.0). The TUOHI_BACKEND
 // environment variable pins one of the two stacks when both are installed;
@@ -46,11 +46,11 @@ const (
 	defaultWidth  = 640
 	defaultHeight = 480
 
-	// jscGCRealtimeSignal is the POSIX signal appkit reconfigures
+	// jscGCRealtimeSignal is the POSIX signal tuohi reconfigures
 	// JavaScriptCore's stop-the-world GC machinery onto via
 	// JSConfigureSignalForGC (see ensureInit): real-time signal 34, the first
 	// one glibc leaves for application use (32/33 are NPTL-internal). Unlike
-	// JSC's default SIGUSR1 it carries no pre-installed handler in an appkit
+	// JSC's default SIGUSR1 it carries no pre-installed handler in a tuohi
 	// process, so JSC installs its own without the startup warning.
 	jscGCRealtimeSignal = 34
 )
@@ -321,7 +321,7 @@ func recoverInit(err *error) {
 // --- TUOHI_BACKEND backend selection --------------------------------------
 
 // envBackendGTK4 and envBackendGTK3 are the documented TUOHI_BACKEND values:
-// the two WebKitGTK stacks appkit can use on Unix, named after their
+// the two WebKitGTK stacks tuohi can use on Unix, named after their
 // library family (libwebkitgtk-6.0 vs libwebkit2gtk-4.1). The values match
 // the package names distros use (webkitgtk-6.0 / webkit2gtk-4.1).
 const (
@@ -482,7 +482,7 @@ func initEngine() (err error) {
 	// JavaScriptCore (JSC) suspends threads during its stop-the-world
 	// garbage collections with a POSIX signal, and its default - SIGUSR1,
 	// signal 10 on Linux - already carries the Go runtime's handler in
-	// every appkit process. JSC would therefore print "Overriding
+	// every tuohi process. JSC would therefore print "Overriding
 	// existing handler for signal 10. Set JSC_SIGNAL_FOR_GC if you want
 	// WebKit to use a different signal" as the process's first stderr
 	// line and replace Go's handler. That message is written by WebKit
@@ -2039,7 +2039,7 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		w.Destroy()
 		return nil, err
 	}
-	// Window settings: apply appkit's tuned WebKitSettings right after the
+	// Window settings: apply tuohi's tuned WebKitSettings right after the
 	// web view is created (WebKitSettings changes only take effect on the
 	// next navigation). Page JavaScript is always on (WebKit's native
 	// default). Media streams are native-OFF in WebKitGTK and turned on, so

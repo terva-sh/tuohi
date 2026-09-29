@@ -1223,11 +1223,11 @@ func regReadString(root uintptr, subkey, name string) (string, error) {
 // CreateWebViewEnvironmentWithOptionsInternal export.
 //
 // Trade-off (deliberate): this is the internal/undocumented export that
-// WebView2Loader.dll itself wraps, and calling it directly is what lets appkit
+// WebView2Loader.dll itself wraps, and calling it directly is what lets tuohi
 // bundle ZERO native DLLs. Microsoft documents that it may change or be removed,
 // and that the stable, supported entry point is
 // CreateCoreWebView2EnvironmentWithOptions -- but that one is only exported by
-// WebView2Loader.dll, which would have to be shipped alongside the binary. appkit
+// WebView2Loader.dll, which would have to be shipped alongside the binary. tuohi
 // favors the zero-DLL design; if a future Edge runtime drops this export, the
 // GetProcAddress below fails with a clear error rather than misbehaving.
 func createEnvironment(userDataDir string, envHandler *comHandler) error {
@@ -1256,7 +1256,7 @@ func createEnvironment(userDataDir string, envHandler *comHandler) error {
 	}
 	addr, err := syscall.GetProcAddress(mod, "CreateWebViewEnvironmentWithOptionsInternal")
 	if err != nil {
-		// This internal export is how appkit avoids bundling WebView2Loader.dll; an
+		// This internal export is how tuohi avoids bundling WebView2Loader.dll; an
 		// incompatible/too-new Edge runtime that renamed or removed it lands here.
 		return fmt.Errorf("resolve CreateWebViewEnvironmentWithOptionsInternal (internal WebView2 loader export; installed Edge runtime may be incompatible): %w", err)
 	}
@@ -1328,7 +1328,7 @@ func (w *webview) embed(v *View) error {
 
 	// WebView2 settings: page JavaScript is always enabled (WebView2's native
 	// TRUE; the JS-disable knob was removed), and window.chrome.webview must
-	// stay on - appkit's JS bridge posts through it. appkit's tuned
+	// stay on - tuohi's JS bridge posts through it. tuohi's tuned
 	// divergences from WebView2's native defaults: the status bar is hidden
 	// (custom chrome) and dev tools open only when the view's resolved Debug
 	// flag is set (View.Debug OR App.Debug / TUOHI_DEBUG). Settings apply
@@ -1347,7 +1347,7 @@ func (w *webview) embed(v *View) error {
 		b.PutIsScriptEnabled(true)
 		b.PutIsWebMessageEnabled(true)
 		b.PutAreDefaultScriptDialogsEnabled(true)
-		b.PutIsStatusBarEnabled(false) // appkit hides WebView2's status bar (custom chrome)
+		b.PutIsStatusBarEnabled(false) // tuohi hides WebView2's status bar (custom chrome)
 		b.PutDevTools(devTools)
 		b.PutAreDefaultContextMenusEnabled(true)
 		b.PutAreHostObjectsAllowed(true)
@@ -2545,7 +2545,7 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 }
 
 // hostProc is the subclass proc installed on an embedded (caller-owned) host
-// HWND. It routes only the messages appkit must see (WM_APP dispatch and
+// HWND. It routes only the messages tuohi must see (WM_APP dispatch and
 // WM_SIZE -> controller bounds) and hands everything else to the host's own
 // window proc.
 func hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {

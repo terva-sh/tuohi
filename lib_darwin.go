@@ -1,6 +1,6 @@
 // macOS View backend in pure Go via purego's Objective-C runtime.
 //
-// This backend drives AppKit and WebKit directly, so appkit needs no cgo and
+// This backend drives AppKit and WebKit directly, so tuohi needs no cgo and
 // no bundled native library on macOS.
 
 package tuohi
@@ -217,7 +217,7 @@ func registerClasses() error {
 				// by the framed path - can never be brought back: AppKit's
 				// default reopen handling only creates an untitled document for
 				// document-style apps and otherwise does nothing. Restore the
-				// appkit window (un-minimize + re-show + make key) so a normal
+				// tuohi window (un-minimize + re-show + make key) so a normal
 				// menu-bar/Dock app behaves the way macOS users expect.
 				Cmd: sel("applicationShouldHandleReopen:hasVisibleWindows:"),
 				Fn: func(self objc.ID, _cmd objc.SEL, sender objc.ID, hasVisible bool) bool {
@@ -225,7 +225,7 @@ func registerClasses() error {
 						w.restoreOnReopen()
 						return false // we restored the window; stop AppKit's default
 					}
-					return true // no appkit window to restore; keep the default
+					return true // no tuohi window to restore; keep the default
 				},
 			},
 			{
@@ -356,7 +356,7 @@ func registerClasses() error {
 	// with no title bar (NSWindowStyleMaskBorderless), so a plain borderless
 	// window can NEVER become key - makeKeyAndOrderFront: / Raise would order
 	// it to the front but it stays non-key, and keyboard input never reaches
-	// the web view. Frameless appkit windows (View.Frame false, the
+	// the web view. Frameless tuohi windows (View.Frame false, the
 	// default) therefore allocate from this subclass; framed windows keep the
 	// plain NSWindow, whose titled style already allows keyness. Subclassing
 	// is the only mechanism - there is no window-level or runtime switch for
@@ -839,7 +839,7 @@ var (
 	// tuohiRunsLoop is true while OUR Run() drives [NSApp run]. When the
 	// loop belongs to someone else (e.g. the tray package's Run started it
 	// before the first webview existed), it stays false: closing the last
-	// appkit window must not stop a loop we do not own, and Terminate must
+	// tuohi window must not stop a loop we do not own, and Terminate must
 	// not stop it either.
 	tuohiRunsLoop atomic.Bool
 )
@@ -929,7 +929,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 	// initialised (WKWebView copies its configuration at init, so nothing
 	// can change afterwards). The pushed values mirror WKWebView's native
 	// WKPreferences defaults - javaScriptEnabled YES, fullScreenEnabled NO
-	// (appkit's one tuned divergence: it enables fullscreen so the demo's
+	// (tuohi's one tuned divergence: it enables fullscreen so the demo's
 	// <video> can go fullscreen), deprecated javaEnabled/plugInsEnabled NO -
 	// except developerExtrasEnabled, which tracks the view's resolved Debug
 	// flag (View.Debug OR App.Debug / TUOHI_DEBUG). Every write goes
@@ -958,7 +958,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 			}
 		}
 		push("javaScriptEnabled", "setJavaScript:", num(true))
-		push("fullScreenEnabled", "setFullScreenEnabled:", num(true)) // appkit's tuned default (native NO)
+		push("fullScreenEnabled", "setFullScreenEnabled:", num(true)) // tuohi's tuned default (native NO)
 		push("developerExtrasEnabled", "setDeveloperExtrasEnabled:", num(devTools))
 		push("javaScriptCanOpenWindowsAutomatically", "setJavaScriptCanOpenWindowsAutomatically:", num(true))
 		push("minimumFontSize", "setMinimumFontSize:", numF(0))
@@ -1192,7 +1192,7 @@ func (w *webview) onWindowDestroyed(skipTermination bool) {
 	}
 	// Last owned window gone: stop the loop - but only when Run() drives it.
 	// An external owner's loop (for example the tray package's) outlives every
-	// appkit window.
+	// tuohi window.
 	if decWindowCount() <= 0 && !skipTermination && tuohiRunsLoop.Load() {
 		w.Terminate()
 	}

@@ -927,11 +927,11 @@ func TestViewContentBaseHTTPAndDarwin(t *testing.T) {
 	}
 }
 
-// --- Bind-plan validation (R2 prefix collisions, E4 denylist, R1 reserved
+// --- Bind-plan validation (prefix collisions, the denylist, reserved
 // names) --------------------------------------------------------------
 
 func TestValidateTopLevelRejectsReservedAndDenylisted(t *testing.T) {
-	// E4/R1: top-level names that would clobber appkit's page surface or a
+	// Top-level names that would clobber tuohi's page surface or a
 	// common window global fail at plan time; deeper segments are the
 	// consumer's own namespace and pass.
 	bad := []string{
@@ -965,7 +965,7 @@ func TestValidateTopLevelRejectsReservedAndDenylisted(t *testing.T) {
 }
 
 func TestCheckDottedPrefixes(t *testing.T) {
-	// R2: a leaf and a namespace under it cannot both be bound; unrelated
+	// A leaf and a namespace under it cannot both be bound; unrelated
 	// names and plain overrides are fine.
 	if err := checkDottedPrefixes(map[string]bool{"api": true, "api.id": true}); err == nil {
 		t.Fatal("api + api.id must collide")

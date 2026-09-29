@@ -335,7 +335,7 @@ func writeFileIfChanged(path string, data []byte) (bool, error) {
 	return true, nil
 }
 
-// iconSizes are the standard hicolor sizes appkit installs the application
+// iconSizes are the standard hicolor sizes tuohi installs the application
 // icon at (largest first, each capped by the source size). Icon loaders such
 // as KDE's KIconLoader scan these canonical directories and pick the closest
 // match to the size they need - a 512px-only install would never be found.
@@ -363,7 +363,7 @@ func targetIconSizes(src int) []int {
 // removeOtherIconSizes deletes every previously installed copy of the icon
 // that lives in a hicolor size directory outside the sizes being installed
 // now; with no sizes it deletes every copy. Icon loaders resolve a name to the closest available size, so an
-// outdated copy (written by an earlier appkit version, e.g. the old 256px
+// outdated copy (written by an earlier tuohi version, e.g. the old 256px
 // glyph) would keep being picked over the freshly installed icon.
 func removeOtherIconSizes(dataHome, id string, sizes []int) {
 	keep := make(map[string]bool, len(sizes))

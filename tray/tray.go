@@ -157,7 +157,7 @@ type Item struct {
 }
 
 // Set shows the tray icon and menu WITHOUT owning the process's UI event
-// loop: the host's run loop (an auto-run appkit App or a game, anything) keeps
+// loop: the host's run loop (an auto-run tuohi App or a game, anything) keeps
 // dispatching events, and menu clicks arrive as usual. Call Set from the UI
 // thread, before that loop runs, and pair it with Remove. It returns
 // ErrUnsupported on platforms with no backend and ErrAlreadyRunning if a

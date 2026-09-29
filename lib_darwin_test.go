@@ -741,7 +741,7 @@ func externalLoopScenario() string {
 
 			// Second shape: the whole lifecycle issued ON the UI thread from
 			// inside a run-loop callout - what a tray OnClick does when it
-			// calls appkit synchronously. Run must pump events instead of
+			// calls tuohi synchronously. Run must pump events instead of
 			// block-waiting, or it deadlocks the very loop that would deliver
 			// the close.
 			syncRes := make(chan string, 1)
@@ -772,7 +772,7 @@ func externalLoopScenario() string {
 			verdict += " (webview close stopped the host loop)"
 		}
 		res <- verdict
-		// Stop the host loop; the scenario owns it, appkit must not.
+		// Stop the host loop; the scenario owns it, tuohi must not.
 		dispatchMain(func() {
 			autorelease(func() {
 				app.Send(sel("stop:"), objc.ID(0))

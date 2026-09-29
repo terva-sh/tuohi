@@ -142,7 +142,7 @@ func boxDownscale(src *image.NRGBA, size int) *image.NRGBA {
 // envDebug reports whether TUOHI_DEBUG=1 override-enables the dev tools.
 func envDebug() bool { return os.Getenv("TUOHI_DEBUG") == "1" }
 
-// App configures an appkit application and carries its runtime scope.
+// App configures a tuohi application and carries its runtime scope.
 //
 // It is the single application-scoped object: the exported fields hold the
 // application settings (content filesystem, icon, the Start hook, ...)
@@ -177,7 +177,7 @@ type App struct {
 	// developerExtrasEnabled (macOS).
 	Debug bool
 
-	// Events names the JavaScript global the appkit events bridge installs on
+	// Events names the JavaScript global the tuohi events bridge installs on
 	// every page of this app: window.<Events> with on/off/emit (see
 	// View.On/Off/Emit). Empty (the default) uses the name "events". The name
 	// is fixed when each view is created.
@@ -192,8 +192,8 @@ type App struct {
 	// best-effort basis wherever the platform supports it at runtime (macOS
 	// Dock, Linux GTK3/GTK4 window icons, ...). It is applied once, when the
 	// app scope opens and before the first window exists. When Icon is unset
-	// the embedded appkit mark is used instead (unexported; appkit applies it
-	// itself), so an appkit application always has a process face unless it
+	// the embedded tuohi mark is used instead (unexported; tuohi applies it
+	// itself), so a tuohi application always has a process face unless it
 	// brings its own. Unlike the per-window page icon it sets the face of the PROCESS; a
 	// stable, runtime process icon is intentionally a best-effort feature
 	// because it is hard to keep identical across all platforms. An unset icon
@@ -274,7 +274,7 @@ type App struct {
 	//
 	//	w.Navigate("app://app/index.html")
 	//
-	// - and appkit serves the file at that path in the filesystem on every
+	// - and tuohi serves the file at that path in the filesystem on every
 	// platform. The serving is scheme-first on Windows and Linux: WebView2's
 	// https vhost for the custom "app" scheme (whose responses carry the
 	// isolation headers), the registered custom scheme on Linux (WebKitGTK
@@ -529,7 +529,7 @@ func (a *App) Quit() {
 func (a *App) start(s *appScope) {
 	s.startOnce.Do(func() {
 		// The process icon: App.Icon when the consumer set one, otherwise the
-		// embedded appkit mark (_icon). setAppIcon is best-effort per platform
+		// embedded tuohi mark (_icon). setAppIcon is best-effort per platform
 		// (Dock on macOS, GTK window icons on Linux, no-op on Windows) and its
 		// errors are deliberately ignored - an un-decodable PNG must never
 		// keep the application from starting.
@@ -598,7 +598,7 @@ type binder interface {
 // binderBatch is the OPTIONAL batching surface applyBinds uses when the
 // engine offers it: every declarative binding of one window is prepared,
 // registered and live-installed in ONE pass - a single script rebuild and a
-// single live-install Eval - instead of one full rebuild per name (P1).
+// single live-install Eval - instead of one full rebuild per name.
 // Every real engine implements it; the recording test stubs don't, so
 // applyBinds falls back to per-name Bind calls for them.
 type binderBatch interface {
@@ -653,13 +653,13 @@ func bindEntry(w binder, name string, v any) ([]string, error) {
 // dotted-name rules (validateBindName), the reserved/denylist top-level
 // checks (validateTopLevel) and the dotted-prefix collision check
 // (checkDottedPrefixes) fail loudly HERE - at App.Show - instead of letting
-// two names silently destroy each other on the page (R2/RE2/E4).
+// two names silently destroy each other on the page.
 func applyBinds(w binder, appBinds, viewBinds map[string]any) error {
 	binds, unbinds, err := planBinds(appBinds, viewBinds, eventsGlobalOf(w))
 	if err != nil {
 		return err
 	}
-	// Engine bindings register and install in ONE batch pass (P1); stubs
+	// Engine bindings register and install in ONE batch pass; stubs
 	// without BindBatch fall back to the same per-name calls as before.
 	if len(binds) > 0 {
 		if bw, ok := w.(binderBatch); ok {
@@ -699,7 +699,7 @@ func applyBinds(w binder, appBinds, viewBinds map[string]any) error {
 // requests in deterministic order: app keys, then view keys, alphabetical
 // within each map.
 func planBinds(appBinds, viewBinds map[string]any, eventsGlobal string) (binds []bindRequest, unbinds []string, err error) {
-	// final is the set of names that end up bound (R2's collision domain).
+	// final is the set of names that end up bound, the domain of the prefix-collision check.
 	final := make(map[string]bool, len(appBinds)+len(viewBinds))
 	check := func(name string) error {
 		if err := validateBindName(name); err != nil {
@@ -758,7 +758,7 @@ func eventsGlobalOf(w binder) string {
 
 // windowGlobalDenylist is the small set of top-level window names a binding
 // must not take: replacing these silently breaks the page's own globals (and
-// often appkit's injected scripts) with no error anywhere (E4). The check
+// often tuohi's injected scripts) with no error anywhere. The check
 // only applies to the FIRST name segment - names under a consumer-chosen
 // namespace like "demo.open" are the consumer's own object and are fine. The
 // list is deliberately conservative: the window built-ins every page relies
@@ -774,7 +774,7 @@ var windowGlobalDenylist = map[string]bool{
 	"clearTimeout": true, "clearInterval": true, "getComputedStyle": true, "matchMedia": true,
 }
 
-// validateTopLevel rejects bind names that would clobber appkit's own page
+// validateTopLevel rejects bind names that would clobber tuohi's own page
 // surface or a common window global: the first dot-segment of the name must
 // not equal the events API global of this view (window.<eventsGlobal>), must
 // not be "__webview__" (the bridge instance) and must not start with
@@ -804,7 +804,7 @@ func validateTopLevel(name, eventsGlobal string) error {
 // another ("api" vs "api.id", "app.x" vs "app.x.y"). The page installer
 // creates namespace objects for dotted names, so binding both a leaf and a
 // namespace under it is order-dependent and one of the two silently destroys
-// the other (R2); validating the whole final set up front makes the failure
+// the other; validating the whole final set up front makes the failure
 // loud, deterministic and independent of Go's map order.
 func checkDottedPrefixes(names map[string]bool) error {
 	keys := make([]string, 0, len(names))
@@ -832,7 +832,7 @@ func sortedMapKeys[V any](m map[string]V) []string {
 }
 
 // cloneBindMap returns a defensive copy of a Bind map, taken at the moment
-// App.Show reads it (RE3). The declarative bind maps are shared, unlocked Go
+// App.Show reads it. The declarative bind maps are shared, unlocked Go
 // maps the consumer may keep mutating; binding reads them exactly once, so
 // snapshotting at first read removes the "map read while a goroutine writes
 // it" footgun (the app-wide App.Bind map is snapshotted the same way inside
