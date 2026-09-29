@@ -52,7 +52,7 @@ different directions, the loopback consumer wins.
 | `App.HTTP` loopback server | Kept. It has a Host check and a per-server token, and lives as long as its view. | TKT-01M3J59M4EJRPMKHWBS7K4XD3S |
 | `App.Open` | `file:` is dropped. | TKT-01M3J59M32VGK83J7JKYPKSHJE |
 | Borrowed code | Wails autostart kept and credited, with its quoting rewritten. The WebView2 loader is kept and credited. | TKT-01M3J59M535T9QH2RS1ZY6PSJM |
-| Side effects | The GTK3 Wayland desktop-file writing becomes opt-in. | TKT-01M3HWWRYD7GNZEZA2JCGWGDJS |
+| Side effects | The GTK3 Wayland desktop-file writing is opt-in, through `App.DesktopEntry`. | TKT-01M3HWWRYD7GNZEZA2JCGWGDJS |
 | Hygiene | Review tags, stale docs, and "appkit" strings go with the rename. | TKT-01M3HWWRWX3D9XTA5RTW5AC26R |
 | Support tiers and testing | Tier 1: Linux, macOS, Windows, tested on the real engine. Tier 2: FreeBSD and NetBSD, cross-built only. Everything is tested without cgo, and the Linux GUI scenarios gate pull requests. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
 | Go minimum | 1.26. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
@@ -546,10 +546,12 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
   percent of its 1,130 lines are derived from Wails v3, credited in NOTICE and
   at the code. The SMAppService binding is appkit's own. The review keeps it
   credited rather than rewriting it: MIT with credit costs nothing, and a
-  rewrite would come out much the same. What it does rewrite is the
-  `.desktop` `Exec` quoting. That quoting was copied from Wails, and it
-  neither doubles `%` nor quotes the reserved characters:
-  TKT-01M3J59M535T9QH2RS1ZY6PSJM.
+  rewrite would come out much the same. What it did rewrite is the
+  `.desktop` `Exec` quoting, TKT-01M3J59M535T9QH2RS1ZY6PSJM. The copy from
+  Wails neither doubled `%`, nor quoted the reserved characters, nor applied
+  the string-level escape that doubles a backslash again. Both writers of a
+  desktop entry, autostart and the GTK3 Wayland identity, now quote through
+  `internal/desktopentry`, whose parser reads the value back.
 - **Clipboard** is `tuohi/clipboard`: `Copy` and `Paste` on text. It still
   wraps atotto, and drops it for native calls next: GTK3, GTK4,
   `NSPasteboard`, and Win32. TKT-01M3J59M2BR91XQBDT1TPPM4G5. On Linux, atotto
@@ -565,10 +567,19 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
     which GNOME ships only as an extension. INFERRED.
   - The Linux dialog uses `GtkFileChooserNative`, so it goes through the
     desktop portal where GTK chooses to.
-- **The icon** stays in the root. Under GTK3 on Wayland, starting an
-  application today writes icons and a hidden `.desktop` file into
-  `~/.local/share` and starts `kbuildsycoca`, without being asked. That
-  becomes an explicit opt-in: TKT-01M3HWWRYD7GNZEZA2JCGWGDJS.
+- **The icon** stays in the root. Under GTK3 on Wayland, a window shows its
+  icon only through a desktop entry that matches its app_id, so tuohi can
+  write icons and a hidden `.desktop` file into `~/.local/share` and start
+  `kbuildsycoca`. That used to happen unasked. It is now the opt-in
+  `App.DesktopEntry`, false by default, TKT-01M3HWWRYD7GNZEZA2JCGWGDJS. An
+  entry of that name that tuohi did not write is left alone, whether in
+  `~/.local/share` or in a system directory from `XDG_DATA_DIRS`, where a
+  user entry would shadow a package's. An entry in a subdirectory counts
+  under the id the spec gives it: `applications/vendor/app.desktop` is
+  `vendor-app`. tuohi recognises its own entries by
+  an `X-Tuohi-Generated=true` key in the `[Desktop Entry]` group, not by
+  the text appearing anywhere. `kbuildsycoca` is reaped when it exits, and
+  the files stay after the app does.
 
 ## The FFI layer: upstream purego
 

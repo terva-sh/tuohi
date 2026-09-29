@@ -50,7 +50,7 @@ func iconEnsureInit() error {
 // one NSApplication a process may have, creating it if the program has not got
 // there yet, and the icon set on it survives whoever finishes the launch -
 // including a toolkit (Ebitengine, say) that goes on to build its own windows.
-func setAppIcon(png []byte, _ string) error {
+func setAppIcon(png []byte, _ string, _ bool) error {
 	if len(png) == 0 {
 		return errors.New("appkit: the application icon is empty")
 	}
@@ -89,7 +89,7 @@ func reapplyAppIcon() {
 	if len(lastIcon) == 0 {
 		return
 	}
-	_ = setAppIcon(lastIcon, "")
+	_ = setAppIcon(lastIcon, "", false)
 }
 
 var (

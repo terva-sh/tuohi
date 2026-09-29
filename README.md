@@ -85,7 +85,9 @@ needs that present: WebView2 on Windows (preinstalled on current Windows
   variants), checkboxes, submenus, separators (the `tray/` package, set up
   from `App.Start`), desktop notifications (the `notify/` package), and a
   best-effort runtime application icon (`App.Icon`; a no-op on Windows, which
-  reads the icon from the executable's own resources)
+  reads the icon from the executable's own resources, and shown by a GTK3
+  window on Wayland only when `App.DesktopEntry` lets tuohi install a desktop
+  entry for it)
 - The system clipboard (the `clipboard/` package) and single instance (the
   `instance/` package: one process per application, and a later launch hands
   its arguments to the running process)

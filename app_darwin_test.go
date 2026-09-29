@@ -29,7 +29,7 @@ func samplePNG(t *testing.T) []byte {
 // way to know, since nothing about the call fails when AppKit quietly refuses
 // the bytes.
 func TestAppIconReachesTheApplication(t *testing.T) {
-	if err := setAppIcon(samplePNG(t), ""); err != nil {
+	if err := setAppIcon(samplePNG(t), "", false); err != nil {
 		t.Fatalf("setAppIcon: %v", err)
 	}
 	app := class("NSApplication").Send(sel("sharedApplication"))
@@ -47,10 +47,10 @@ func TestAppIconReachesTheApplication(t *testing.T) {
 // An icon that is not an image must be reported, not silently ignored: a
 // caller passing the wrong bytes deserves to hear about it once.
 func TestAppIconRejectsWhatIsNotAnImage(t *testing.T) {
-	if err := setAppIcon(nil, ""); err == nil {
+	if err := setAppIcon(nil, "", false); err == nil {
 		t.Error("an empty icon was accepted")
 	}
-	if err := setAppIcon([]byte("this is not a png"), ""); err == nil {
+	if err := setAppIcon([]byte("this is not a png"), "", false); err == nil {
 		t.Error("a string was accepted as an image")
 	}
 }

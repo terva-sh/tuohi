@@ -35,7 +35,7 @@ var appWindowIconPNG []byte
 // next. It cannot fail for icon reasons (a PNG that cannot be decoded is
 // simply never applied), so it always stores the bytes and returns nil; the
 // caller runs it before the first window exists.
-func setAppIcon(png []byte, _ string) error {
+func setAppIcon(png []byte, _ string, _ bool) error {
 	if len(png) == 0 {
 		return errors.New("appkit: the application icon is empty")
 	}

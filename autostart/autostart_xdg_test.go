@@ -5,8 +5,11 @@ package autostart
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/terva-sh/tuohi/internal/desktopentry"
 )
 
 // newForTest returns an *Autostart whose XDG config home points at a temp
@@ -100,20 +103,6 @@ func TestEnableOverwritesStaleIdentifier(t *testing.T) {
 	}
 }
 
-func TestQuoteExec(t *testing.T) {
-	cases := map[string]string{
-		"/usr/bin/foo":          "/usr/bin/foo",
-		"/path with spaces/foo": `"/path with spaces/foo"`,
-		`/has"quote`:            `"/has\"quote"`,
-		`/has\back`:             `"/has\\back"`,
-	}
-	for in, want := range cases {
-		if got := quoteExec(in); got != want {
-			t.Errorf("quoteExec(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestDesktopExecPath(t *testing.T) {
 	cases := map[string]string{
 		"Exec=/usr/bin/foo\n":                        "/usr/bin/foo",
@@ -121,10 +110,36 @@ func TestDesktopExecPath(t *testing.T) {
 		`Exec="/path with spaces/foo" --flag` + "\n": "/path with spaces/foo",
 		"[Desktop Entry]\nExec=/x/y\n":               "/x/y",
 		"NoExec=/x\n":                                "",
+		`Exec="/opt/a\\\\b/foo" %u` + "\n":           `/opt/a\b/foo`,
+		`Exec="/opt/50%% off/foo"` + "\n":            "/opt/50% off/foo",
+		`Exec="/unterminated` + "\n":                 "",
 	}
 	for in, want := range cases {
 		if got := desktopExecPath(in); got != want {
 			t.Errorf("desktopExecPath(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestBuildDesktopEntryExec checks that the Exec line of a written entry reads
+// back as exactly the executable and arguments it was built from, however
+// awkward they are.
+func TestBuildDesktopEntryExec(t *testing.T) {
+	exe := `/opt/My App/a\b$c/app`
+	args := []string{"50%", "%u", "$HOME", `"quoted"`, "a;b", "日本語", ""}
+	body := buildDesktopEntry("My App", exe, args)
+	var exec string
+	for _, line := range strings.Split(body, "\n") {
+		if v, ok := strings.CutPrefix(line, "Exec="); ok {
+			exec = v
+		}
+	}
+	got, err := desktopentry.SplitExec(exec)
+	want := append([]string{exe}, args...)
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("Exec=%s reads back as %q, %v; want %q", exec, got, err, want)
+	}
+	if desktopExecPath(body) != exe {
+		t.Fatalf("desktopExecPath = %q, want %q", desktopExecPath(body), exe)
 	}
 }
