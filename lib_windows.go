@@ -52,6 +52,14 @@ func dbg(format string, a ...any) {
 	}
 }
 
+// dbgURL shortens a URL for a debug line: a data: URL can be the whole page.
+func dbgURL(u string) string {
+	if len(u) > 48 {
+		return u[:48] + "..."
+	}
+	return u
+}
+
 // ptr reinterprets a uintptr's bits as an unsafe.Pointer without a direct
 // uintptr->Pointer conversion (keeps go vet happy).
 func ptr(u uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&u)) }
@@ -856,10 +864,12 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 				// refuses it.
 				sender := ""
 				var psrc uintptr
-				if int32(args.GetSource(&psrc)) >= 0 && psrc != 0 {
+				hr := args.GetSource(&psrc)
+				if int32(hr) >= 0 && psrc != 0 {
 					sender = wideToString(psrc)
 					coTaskMemFree(psrc)
 				}
+				dbg("message: source hr=0x%x %q committed=%q", uint32(hr), dbgURL(sender), dbgURL(w.committedURI))
 				// WebView2 names a data: document about:blank here (GitHub
 				// run 36383745514), and so does the view's own get_Source
 				// (run 36465210066). This event carries only the top-level
@@ -896,10 +906,13 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 			args := asContentLoadingArgs(b)
 			id, ok := args.NavigationID()
 			uri, recorded := w.pendingNavs[id]
+			errorPage := args.IsErrorPage()
 			w.committedURI = ""
-			if ok && recorded && !args.IsErrorPage() {
+			if ok && recorded && !errorPage {
 				w.committedURI = uri
 			}
+			dbg("content loading: id=%d ok=%v recorded=%v errorPage=%v pending=%d committed=%q",
+				id, ok, recorded, errorPage, len(w.pendingNavs), dbgURL(w.committedURI))
 			if ok {
 				for pending := range w.pendingNavs {
 					if pending <= id {
@@ -916,6 +929,7 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 			args := asNavigationStartingArgs(b)
 			uri := args.URI()
 			id, ok := args.NavigationID()
+			dbg("navigation starting: id=%d ok=%v %q", id, ok, dbgURL(uri))
 			if action := w.navigationPolicy(uri); action != navProceed {
 				args.Cancel()
 				refuseNavigation(uri, action)

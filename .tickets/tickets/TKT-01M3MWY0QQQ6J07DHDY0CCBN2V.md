@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M3MWY0QQQ6J07DHDY0CCBN2V
 title: "Stop dropping a data: page's binding call on Windows now and then"
 type: bug
-status: ready
-status_reason: null
+status: blocked
+status_reason: "Not reproducible on WebView2 153 (0 of 12,186 runs); the only failure since PR #20 ran on runtime 149. Waiting for a recurrence in GitHub CI, whose WEBVIEW2_DEBUG trace now names the cause."
 priority: high
 due_on: null
 labels:
@@ -27,7 +27,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T20:57:33Z
-updated_at: 2026-09-28T21:34:09Z
+updated_at: 2026-09-29T00:01:56Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -80,3 +80,65 @@ To a consumer, this is a binding call from a data: page that is silently dropped
 - [ ] The cause of the empty sender is found and recorded
 - [ ] A data: page's binding call is not dropped when its message arrives before or around ContentLoading
 - [ ] TestDataURLCanUseBindings passes on 20 consecutive Windows runs
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:16:42Z
+
+### First reading of the failing run
+
+I read the WEBVIEW2_DEBUG trace from GitHub run 36480092776, attempt 1 (job 109123317964). For the data: scenario's view, the handler events arrived in this order:
+
+1. NavigationStarting (kind 6)
+2. ContentLoading (kind 8)
+3. WebMessageReceived (kind 2), dropped
+4. WebMessageReceived (kind 2), dropped
+5. NavigationCompleted (kind 5)
+
+So ContentLoading **did** run before both messages. "A message can precede ContentLoading", the ticket's second hypothesis, is not what happened in this run. The empty sender therefore came from one of these:
+
+- ContentLoading ran without committing a URI: its navigation ID did not match one NavigationStarting recorded, `get_NavigationId` failed, or `get_IsErrorPage` failed or returned true.
+- `get_Source` on the message failed, or returned `""` rather than `about:blank`, so the committed URI was never substituted.
+
+The existing trace logs only the event kinds, so it cannot tell these apart. Commit 3d5cda8 adds debug lines with the navigation IDs, the recorded and error-page flags, the committed URI, and each message's `get_Source` HRESULT and value. It also adds `TUOHI_REPEAT_DATAURL=n`, and a branch-only workflow, `diag-dataurl.yml`, that runs 20 repeats on each of six Windows runners.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:46:20Z
+
+### Not reproducible on the current WebView2 runtime; the one failure ran on an older one
+
+**Diagnostic runs** (branch-only `diag-dataurl.yml`, WEBVIEW2_DEBUG on). Every repeat passed:
+
+| Run | Commit | Size | Failures |
+|---|---|---|---|
+| 36497119600 | 3d5cda8 | 6 runners × 20 repeats, plus the regular scenario | 0 of 126 |
+| 36497396452 | 8d2a4db | 6 runners × 10 fresh launches × 200 repeats, plus 60 regular runs | 0 of 12,060 |
+
+The new trace showed the same shape in every run:
+
+- NavigationStarting names the data: URL.
+- ContentLoading matches its navigation ID (`recorded=true`, `errorPage=false`) and commits the data: URL.
+- Each message reports `about:blank` with HRESULT 0, and is read as the committed URL.
+
+Nothing anomalous appeared: no empty commit, no ID mismatch, no failed `get_Source`, and no message before ContentLoading.
+
+**Windows CI history.** I tallied the last 40 `ci.yml` runs, all attempts, by the runtime `findEmbeddedBrowserDLL` loaded and by outcome:
+
+- Four jobs failed `TestDataURLCanUseBindings`. Three ran on commits before PR #20 (merge 8542142), when the data: sender was known to be broken: 36465210066, 36465995933 and 36466440440.
+- The only failure after PR #20 is 36480092776 attempt 1, the one this ticket was filed for. It is also the only job that loaded WebView2 **149.0.4022.98**, on runner image 20260628.
+- Every other job loaded **153.0.4234.48**, on images 20260828 and 20260922. All 33 successful Windows jobs, and every diagnostic run, used 153.
+
+**Reading.** The flake is tied to the older runtime, or to that older runner image, not to a race that the current runtime exhibits. On 149 the committed URI was empty when both messages arrived, although ContentLoading had fired first. The likely cause is a navigation-ID mismatch, an error-page report, or `get_Source` returning `""` instead of `about:blank` on that version. Which one cannot be settled without a failing trace from 149.
+
+GitHub's hosted runners do not let a job pick an older image. Reproducing on 149 would mean installing the WebView2 Fixed Version runtime 149 on the runner and pointing the loader at it, which `findEmbeddedBrowserDLL` does not support today.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:57:01Z
+
+The owner decided, 2026-09-29, to merge the diagnostics and park this ticket until the flake recurs. The rejected options were reproducing on WebView2 149 through a Fixed Version runtime, which takes loader work and depends on a download that may no longer be offered, and hardening the sender lookup against all three candidate causes without knowing which one it is. The WEBVIEW2_DEBUG trace lines and TUOHI_REPEAT_DATAURL are merged, and the branch-only workflow is removed. GitHub CI runs the Windows tests with WEBVIEW2_DEBUG=1, so a recurrence will log the navigation IDs, the ContentLoading flags, and each message's get_Source result. To resume: find the failing job's 'navigation starting', 'content loading' and 'message: source' lines for the data: view and see which one differs from a passing run, then fix that. Criteria 1 and 2 are unticked, and criterion 3 is open.
+
+**agent:claude-code/t3code-72958710** at 2026-09-28T23:57:01Z
+
+in-progress to blocked: Not reproducible on WebView2 153 (0 of 12,186 runs); the only failure since PR #20 ran on runtime 149. Waiting for a recurrence in GitHub CI, whose WEBVIEW2_DEBUG trace now names the cause.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T00:01:56Z
+
+Review disposition for PR #25 (terva-review on a3ad218). Medium: repeat mode skipped assertions for the other Windows scenarios. Fixed: TUOHI_REPEAT_DATAURL no longer exits TestMain early. The repeats run after the other scenarios and before winCloseViaUIScenario, which must be last because it ends with WM_QUIT. m.Run then asserts every scenario, and the exit status fails when the tests or a repeat do. Checked by go vet and golangci-lint for windows. The Windows run itself is GitHub's.
