@@ -193,8 +193,17 @@ func TestAncestorsChecked(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := uniqueID("ancestors")
+	// os.UserCacheDir reads XDG_CACHE_HOME on Linux and the BSDs, and is
+	// always $HOME/Library/Caches on macOS.
+	setCache := func(base string) {
+		if runtime.GOOS == "darwin" {
+			t.Setenv("HOME", base)
+		} else {
+			t.Setenv("XDG_CACHE_HOME", base)
+		}
+	}
 	for _, base := range []string{cache, link} {
-		t.Setenv("XDG_CACHE_HOME", base)
+		setCache(base)
 		if _, _, err := paths(id); err == nil || !strings.Contains(err.Error(), "written by group or others") {
 			t.Errorf("cache under a 0777 directory (%s): paths = %v, want it refused", base, err)
 		}
@@ -203,7 +212,7 @@ func TestAncestorsChecked(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, base := range []string{cache, link} {
-		t.Setenv("XDG_CACHE_HOME", base)
+		setCache(base)
 		if _, _, err := paths(id); err != nil {
 			t.Errorf("cache under a sticky 1777 directory (%s): %v", base, err)
 		}
