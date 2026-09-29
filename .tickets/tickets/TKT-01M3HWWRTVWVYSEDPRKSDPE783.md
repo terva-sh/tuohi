@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T05:54:51Z
+updated_at: 2026-09-29T05:59:16Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -233,3 +233,16 @@ The round-1 finding was reported resolved. GitHub run 36527308647 on bc29a89 pas
    - The Linux click step now also requests pointer lock and expects `lock=ok`. With pointer lock falling to the default branch, it reports `lock=error`, which shows the default denies.
 
 Checks after the changes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T05:59:16Z
+
+### Review disposition for PR #31, round 3 (terva-review run on b06eae8)
+
+Round 2's two contract findings were recorded as declined, and the unknown-request fix as resolved. GitHub run 36528434607 on b06eae8 passed every job.
+
+1. **Medium: bracket IPv6 hosts when constructing macOS security-origin URLs.** Fixed.
+   - `securityOriginURL` now calls `originURL(scheme, host, port)`, a shared function in `permission.go`. It strips any brackets WebKit gave and brackets any host that contains a colon, so `::1` and `[::1]` both become `http://[::1]:8080/`.
+   - `TestOriginURL` runs on every platform. It checks the URL, and that `permits` then trusts `http://[::1]:8080` but not another port.
+   - Control: without the brackets, the IPv6 cases produce `http://::1:8080/`, and `permits` returns false. These are the failures the finding predicted.
+
+Checks after the fix: `just ci`, and golangci-lint on linux, darwin, windows, freebsd and netbsd.
