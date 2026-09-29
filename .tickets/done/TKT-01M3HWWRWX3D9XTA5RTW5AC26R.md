@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRWX3D9XTA5RTW5AC26R
 title: Finish renaming appkit to tuohi in prose, env vars, and names
 type: chore
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -20,17 +20,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: chore/rename-appkit
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-rename
-  commit: c7c37e9286096c7e4ba7ddb42b16a777c8f7c09f
-  session: null
-  claimed_at: 2026-09-29T23:25:13Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T23:25:13Z
+updated_at: 2026-09-29T23:31:06Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -104,3 +97,16 @@ Done as nine commits by category on `chore/rename-appkit`, each building on its 
 **agent:claude-code/t3code-72958710** at 2026-09-29T23:25:13Z
 
 Verified on the branch merged with main at 5e75130. Outside .tickets, handoffs, NOTICE and docs/provenance.md, git grep -i appkit shows only Apple's AppKit and statements of the fork's history. git grep APPKIT_ has one hit, the README sentence on the rename. just ci passes. just test-gui passes on both WebKitGTK stacks. go vet ./... passes for darwin and windows. The subagent also built and vetted each of the nine commits on its own for linux, darwin and windows.
+
+## Summary
+
+Landed in #52 (merge e8d74b6).
+
+- **Environment variables** are TUOHI_BACKEND and TUOHI_DEBUG, with no aliases; the README notes the rename from the alpha.
+- **Names.** Error prefixes say tuohi:. Page internals are __tuohi*, and so are the internal Objective-C and Win32 class names.
+- **Docs.** The README body describes github.com/terva-sh/tuohi.
+- **Makefile.** Binaries are tuohi_*, and the duplicate build target is fixed.
+- **Comments.** Review labels are removed.
+- **The architecture review's doc fixes** are done.
+- **What still says appkit.** Only NOTICE, docs/provenance.md, Apple's AppKit, and statements of the fork's history.
+- **Verified.** GitHub run 36645372337 is green on every job, including macOS and Windows with the renamed classes.
