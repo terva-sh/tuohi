@@ -127,6 +127,7 @@ func TestMain(m *testing.M) {
 		resReplyTrust.Store(replyTrustScenario())
 		resPermissions.Store(permissionsScenario())
 		resLoopbackLate.Store(loopbackLateScenario())
+		resClipboard.Store(clipboardScenario())
 	}
 	os.Exit(m.Run())
 }

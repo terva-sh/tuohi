@@ -159,8 +159,8 @@ bindings, events, serving (`App.FS`, `App.HTTP`), the runtime icon
 The desktop services live in subpackages on the same cgo-free foundation.
 None of them imports the root, and the root imports none of them except
 `dialog`, so a program that only opens a window links none of their
-dependencies: neither godbus (the Linux tray and notifications) nor
-github.com/atotto/clipboard. Where a platform cannot support something
+dependencies: neither godbus (the Linux tray and notifications) nor the
+clipboard's code. Where a platform cannot support something
 cleanly, the API returns a clear `ErrUnsupported` instead of shipping
 something flaky.
 
@@ -212,6 +212,13 @@ any entry that points at the same executable. The exception is a bundled
 `.app` on macOS 13 and later: it registers itself through SMAppService as
 its own login item, named by its bundle identifier, so `id` and the
 arguments to `Enable` are not used there.
+
+**Clipboard.** On Linux, FreeBSD and NetBSD, `clipboard.Copy` and
+`clipboard.Paste` call the GTK that tuohi's window loaded, so no `xclip`,
+`xsel` or `wl-copy` is needed. They work once a tuohi `App` has shown its
+first window, and until then return `clipboard.ErrNoApp`. On Wayland, and
+on X11 without a clipboard manager, copied text lasts only as long as the
+process. macOS and Windows still use github.com/atotto/clipboard for now.
 
 **Tray.** `App.Start` runs on the UI thread when `Wait` starts, before its
 loop dispatches any event, which is where `tray.Set` must be called. An

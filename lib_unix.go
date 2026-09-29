@@ -25,6 +25,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+
+	"github.com/terva-sh/tuohi/internal/toolkit"
 )
 
 const (
@@ -249,6 +251,11 @@ var (
 	// dialogs in dialog_unix.go) can lazily resolve extra symbols without
 	// re-dlopening or duplicating the soname-selection logic.
 	gtkLib, glibLib uintptr
+
+	// publishToolkit hands the UI thread and the loaded GTK stack to the
+	// desktop services (internal/toolkit) once GTK is initialized, which is
+	// when the first window exists.
+	publishToolkit sync.Once
 )
 
 func openFirst(names ...string) (uintptr, error) {
@@ -2024,6 +2031,9 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		unregisterEngine(w.id)
 		return nil, err
 	}
+	publishToolkit.Do(func() {
+		toolkit.Set(&toolkit.Toolkit{Call: ui.call, GTK4: gtk4, GTK: gtkLib, GLib: glibLib})
+	})
 	err = w.registerSchemes()
 	if err != nil {
 		w.Destroy()
