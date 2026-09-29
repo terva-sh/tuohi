@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRVGMZTXBYJ86FCTH0V8
 title: Harden the single-instance channel against other local users
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -20,17 +20,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/instance-unix
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-inst
-  commit: a54a862501af934e2318ff17b8885d8d6e808bf6
-  session: null
-  claimed_at: 2026-09-29T22:18:41Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:48:17Z
+updated_at: 2026-09-29T23:18:23Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -172,3 +165,23 @@ Windows branch fix/instance-windows, rebased onto main at 2d34a7e after PR #42 m
 **agent:claude-code/t3code-72958710** at 2026-09-29T22:48:17Z
 
 GitHub run 36641291121 at e6f9406: Test Windows passed, which includes the new ./instance/ step with the pipe security, per-user name, owner check, oversized message, stalled sender and Release-while-stalled tests. Test MacOS failed TestAncestorsChecked because os.UserCacheDir ignores XDG_CACHE_HOME on macOS, so the test checked the real cache directory; it passed on Linux as root and as a user. Fixed on fix/macos-ci-main by setting HOME on macOS.
+
+## Summary
+
+Landed in #42 (Unix, merge 2d34a7e) and #46 (Windows, merge 2342b0a), with a macOS test fix in #47.
+
+- **Unix.**
+  - The lock and socket live in XDG_RUNTIME_DIR/tuohi or the user's cache directory. The directory is 0700 and there is no /tmp fallback.
+  - Symlinked or foreign directories are refused, and so are ancestors writable by others.
+  - Once XDG_RUNTIME_DIR holds the directory, a failed check there is an error, never a fallback.
+  - Peers are checked by uid with SO_PEERCRED or LOCAL_PEERCRED.
+  - Messages are capped at 1 MiB, with 5 s to finish.
+  - The lock file is kept on Release.
+  - Message.Dir carries the later launch's working directory.
+- **Windows.**
+  - The pipe has an explicit owner-only descriptor and PIPE_REJECT_REMOTE_CLIENTS.
+  - The pipe name is per user.
+  - Send checks who owns the pipe and connects at identification level.
+  - Busy senders retry.
+  - Reads use overlapped I/O with the same cap and deadline.
+- **Verified.** GitHub runs 36641291121 onward run ./instance/ on Windows, and it has passed in every run since. macOS instance tests have passed since #47.

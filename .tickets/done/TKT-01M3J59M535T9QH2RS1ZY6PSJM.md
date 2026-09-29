@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M535T9QH2RS1ZY6PSJM
 title: Quote desktop-entry Exec lines to the spec
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -18,17 +18,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/desktop-entries
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-desktop
-  commit: ff6e0c9380ada27351b08813c316bbfbf275319e
-  session: null
-  claimed_at: 2026-09-29T21:53:07Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T21:53:07Z
+updated_at: 2026-09-29T23:18:24Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -84,3 +77,12 @@ It landed in `internal/desktopentry` (1c602f8), so both writers of a desktop ent
 - `just ci` and `just test-gui` pass on both stacks. golangci-lint reports 0 issues for linux, darwin, windows, and netbsd.
 
 `validateDesktopExecToken` still refuses control characters in autostart arguments, as a second guard. With the string-level escape in place, a newline could no longer inject a key anyway.
+
+## Summary
+
+Landed in #39 (merge aa5a263).
+
+- internal/desktopentry quotes Exec values to the Desktop Entry spec: it doubles %, quotes reserved characters, backslash-escapes inside quotes, and applies the string-level escape. SplitExec reads the value back.
+- Both writers use it: autostart's XDG backend and the GTK3 Wayland identity.
+- Table and round-trip tests cover every reserved character.
+- NOTICE says the Wails-derived quoting was rewritten.
