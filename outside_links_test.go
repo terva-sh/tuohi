@@ -66,6 +66,9 @@ func outsideLinksScenario() string {
 	steps := []struct{ name, js, url string }{
 		{"link", `var a = document.createElement('a'); a.href = '` + outside + `link'; document.body.appendChild(a); a.click();`, outside + "link"},
 		{"assign", `location.href = '` + outside + `assign';`, outside + "assign"},
+		// A link inside a shadow root: the click reaches window retargeted
+		// to the host.
+		{"shadowlink", `var h = document.createElement('div'); document.body.appendChild(h); var r = h.attachShadow({mode: 'open'}); var s = document.createElement('a'); s.href = '` + outside + `shadow'; s.textContent = 'x'; r.appendChild(s); s.click();`, outside + "shadow"},
 		{"unresolvable", `var b = document.createElement('a'); b.href = '` + unresolvable + `'; document.body.appendChild(b); b.click();`, unresolvable},
 		// A trusted URL that redirects to the unresolvable host: the page
 		// sees only the trusted URL, so only the engine can hand it over.
@@ -130,7 +133,7 @@ func outsideLinksScenario() string {
 func TestOutsideLinksNotRequested(t *testing.T) {
 	got, _ := resOutsideLinks.Load().(string)
 	requireGUI(t, got)
-	want := "link=external assign=external unresolvable=external deadredirect=external requested=0"
+	want := "link=external assign=external shadowlink=external unresolvable=external deadredirect=external requested=0"
 	if got != want {
 		t.Fatalf("outside links:\n got %s\nwant %s", got, want)
 	}

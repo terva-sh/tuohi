@@ -377,8 +377,10 @@ const initBridgeTail = `)(token + message);
 // engine fires it, the Navigation API's navigate event. Each is cancelled and
 // posted as internalOpenExternal; Go applies the navigation policy again
 // before opening anything. A listener runs after the page's own, so a page
-// that handles a click itself keeps it. Anything not caught here, such as a
-// server redirect or a meta refresh, is still decided at its response.
+// that handles a click itself keeps it; the cost is that a page listener
+// that stops the click's propagation without cancelling it hides the click
+// from this one. That, and anything else not caught here, such as a server
+// redirect or a meta refresh, is still decided at its response.
 const initOutsideLinks = `
   (function() {
     var bridge = window.__webview__;
@@ -394,13 +396,23 @@ const initOutsideLinks = `
     function handOff(href) {
       bridge.post(JSON.stringify({method: METHOD, params: [href]}));
     }
+    function linkOf(e) {
+      // A click from inside a shadow root reaches window retargeted to its
+      // host, so the link is found on the event's composed path.
+      var path = typeof e.composedPath === 'function' ? e.composedPath() : [], i, n;
+      for (i = 0; i < path.length; i++) {
+        n = path[i];
+        if (n && (n.localName === 'a' || n.localName === 'area') && n.hasAttribute && n.hasAttribute('href')) { return n; }
+      }
+      return e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
+    }
     function sameWindow(target) {
       target = (target || '').toLowerCase();
       return !target || target === '_self' || target === '_top' || target === '_parent';
     }
     window.addEventListener('click', function(e) {
       if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) { return; }
-      var a = e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
+      var a = linkOf(e);
       if (!a || a.hasAttribute('download') || !sameWindow(a.getAttribute('target'))) { return; }
       var href = outside(a.href);
       if (!href) { return; }

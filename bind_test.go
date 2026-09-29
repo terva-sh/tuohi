@@ -637,6 +637,15 @@ function click(a, extra) {
   listeners.click.forEach(function(fn) { fn(e); });
   return e;
 }
+// A click on a link inside a shadow root: window sees the event retargeted to
+// the host, which is not a link, and only the composed path holds the link.
+function shadowClick(a) {
+  const span = el({}, { localName: 'span' }), host = el({}, { localName: 'my-widget' });
+  const e = ev({ target: { closest: function() { return null; } },
+    composedPath: function() { return [span, a, { nodeType: 11 }, host, { localName: 'body' }, win]; } });
+  listeners.click.forEach(function(fn) { fn(e); });
+  return e;
+}
 function submit(form, extra) {
   const e = ev(Object.assign({ target: form }, extra));
   listeners.submit.forEach(function(fn) { fn(e); });
@@ -660,6 +669,9 @@ const cases = [
   ['page handled it', function() { return click(el({ href: out }, { href: out }), { defaultPrevented: true }); }, null],
   ['mailto', function() { return click(el({ href: 'mailto:a@b.invalid' }, { href: 'mailto:a@b.invalid' })); }, null],
   ['no link', function() { return click(null); }, null],
+  ['outside link in a shadow root', function() { return shadowClick(el({ href: out }, { localName: 'a', href: out })); }, out],
+  ['trusted link in a shadow root', function() { return shadowClick(el({ href: '/x' }, { localName: 'a', href: 'http://127.0.0.1:8080/x' })); }, null],
+  ['anchor without href in a shadow root', function() { return shadowClick(el({}, { localName: 'a' })); }, null],
   ['GET form', function() { return submit(el({ method: 'get' }, { action: 'https://example.com/s', fields: [['q', 'a b']] })); }, 'https://example.com/s?q=a+b'],
   ['POST form', function() { return submit(el({ method: 'post' }, { action: 'https://example.com/s', fields: [] })); }, null],
   ['trusted GET form', function() { return submit(el({}, { action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],

@@ -310,9 +310,12 @@ call a view's Go bindings) carries out:
       before any response, such as a host that does not resolve, which the
       response check never sees.
 
-    What the page does not start visibly, a server redirect or a
-    `<meta http-equiv=refresh>` to a reachable host, is still requested
-    before the response hands it over.
+    Still requested before the response hands it over: what the page does
+    not start visibly, such as a server redirect or a
+    `<meta http-equiv=refresh>` to a reachable host, and a click whose
+    propagation a page listener stops without cancelling it. The intercept
+    listens in the bubble phase, so that a page handling its own clicks
+    keeps them.
   - **WebView2** judges the top-level document in `NavigationStarting` and
     marks every `NewWindowRequested` handled. A navigation cancelled in
     `NavigationStarting` has still reached the server, as its ordinary
