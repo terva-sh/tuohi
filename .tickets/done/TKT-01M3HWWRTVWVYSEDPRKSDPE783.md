@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRTVWVYSEDPRKSDPE783
 title: Deny media and clipboard permissions unless the app allows them
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -21,17 +21,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: feat/permissions
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/perm
-  commit: e66fc6e7ea97cf892b1682dafa12762704efb30e
-  session: null
-  claimed_at: 2026-09-29T05:07:44Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T05:59:16Z
+updated_at: 2026-09-29T06:03:14Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -55,8 +48,8 @@ Make camera, microphone, clipboard, and similar permissions an explicit policy t
 
 ## Acceptance criteria
 
-- [ ] No engine grants camera, microphone, or clipboard access without an explicit application policy
-- [ ] The Linux default is verified by a test rather than assumed
+- [x] No engine grants camera, microphone, or clipboard access without an explicit application policy
+- [x] The Linux default is verified by a test rather than assumed
 
 ## Implementation plan
 
@@ -246,3 +239,35 @@ Round 2's two contract findings were recorded as declined, and the unknown-reque
    - Control: without the brackets, the IPv6 cases produce `http://::1:8080/`, and `permits` returns false. These are the failures the finding predicted.
 
 Checks after the fix: `just ci`, and golangci-lint on linux, darwin, windows, freebsd and netbsd.
+
+## Summary
+
+Landed in PR #31 (5155490).
+
+**API.** `View.Permissions` lists `PermissionCamera`, `PermissionMicrophone` and `PermissionClipboard`. `viewCore.permits` grants a permission only when the view lists it and the page asking is on a trusted origin. Everything else is denied, and no engine shows its own prompt.
+
+**Per engine:**
+- **Linux**
+  - A `permission-request` handler decides every request:
+    - user media, device labels and clipboard reads by the policy;
+    - pointer lock allowed, because no other engine treats it as a permission;
+    - everything else denied, including kinds a newer WebKitGTK adds.
+  - `javascript_can_access_clipboard`, which had let any page and frame read the clipboard with no gesture, is off in every view. A granted page reads per request, on a click.
+- **Windows:** registers the `PermissionRequested` handler that was declared but unused, and denies unknown kinds.
+- **macOS:** decides each media capture for the frame's security origin, with IPv6 hosts bracketed, where it used to grant them all.
+
+**Documented engine limits,** declined in review round 2:
+- WebKitGTK names no frame, so a cross-origin frame the trusted page delegates a listed permission to with `allow=` receives it on Linux.
+- On macOS, a paste the user confirms through the system Paste button is the user's own, and no list stops it.
+
+**Tests,** each with failing controls:
+- `TestPermits` and `TestOriginURL`.
+- `TestPermissions`, a GUI scenario on every engine:
+  - Linux uses mock devices and a real XTest click;
+  - on Windows and macOS, where the runners have no capture devices, the checks go through the clipboard read, notifications, and a decision hook.
+
+The Windows clipboard grant is verified. The Windows and macOS camera and microphone grants are not verified on a real engine, for lack of devices and because TCC would kill the macOS test binary.
+
+Split out as drafts:
+- TKT-01M3NSA8HE52 (APPKIT_DEBUG in release builds);
+- TKT-01M3NSA8JEDJ (macOS element fullscreen).

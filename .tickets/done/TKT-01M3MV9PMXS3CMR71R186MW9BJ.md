@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3MV9PMXS3CMR71R186MW9BJ
 title: Let a consumer title a view's window
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -22,17 +22,10 @@ references:
   - ref: ticket:git-ticket-canvas/TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J
     path: null
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: feat/view-title
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
-  commit: be027be70b7d2b1ef2c3e02ddbe30292db9743ec
-  session: null
-  claimed_at: 2026-09-29T03:47:48Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T04:06:58Z
+updated_at: 2026-09-29T04:10:43Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -64,8 +57,8 @@ git-ticket-canvas, working TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J (Open the loopback can
 
 ## Acceptance criteria
 
-- [ ] A consumer can set a view's window title on all three engines
-- [ ] Whether the title follows the page's document.title is decided and recorded, and an untrusted page cannot rename the window
+- [x] A consumer can set a view's window title on all three engines
+- [x] Whether the title follows the page's document.title is decided and recorded, and an untrusted page cannot rename the window
 
 ## Implementation plan
 
@@ -170,3 +163,26 @@ The round-1 finding was recorded as declined. GitHub run 36519637652 on 17a4206 
    Control: with the navigation replaced by a no-op, the step reports `blank=at http://127.0.0.1:PORT/page` and the test fails.
 
 Checks passed after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
+
+## Summary
+
+Landed in PR #28 (d14d87f). A view's window takes its title from:
+
+1. `View.Title`, or `View.SetTitle` after Show, when it is not empty. `SetTitle("")` hands the window back to the page.
+2. The trusted page's `document.title`.
+3. `App.Name`.
+
+A window the host created takes only a Go title.
+
+`applyTitle` in `engine.go` holds the precedence. Each engine sets the native title: `gtk_window_set_title`, `SetWindowTextW`, or `setTitle:`. New Windows windows no longer have a blank taskbar entry.
+
+The page title reaches Go through the bridge (`initPageTitle`, posting `__tuohiPageTitle`). So a page the view does not trust, including about:blank, has no bridge and cannot rename the window; the window keeps its last title. The script observes only the `<title>` and the child lists of the document, its root and its head.
+
+Tests, each with failing negative controls:
+- `TestApplyTitle` (headless precedence);
+- `TestPageTitleScript` (Node);
+- `TestWindowTitle`, a GUI scenario on every engine. It reads the native title back, and its about:blank step first confirms that the view has left the trusted page.
+
+Known limit: a `<title>` a script inserts under `<body>` after load is not followed until the head's, root's or document's child list changes. That was declined in review round 1 as not worth a whole-document observer.
+
+Not done: a `TitleChanged` or `FormatTitle` hook. It was deliberately left out, to be filed only if a consumer asks for it.

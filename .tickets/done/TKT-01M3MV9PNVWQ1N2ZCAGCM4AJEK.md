@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3MV9PNVWQ1N2ZCAGCM4AJEK
 title: Hand outside links to the browser before requesting them on Linux
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -22,17 +22,10 @@ references:
   - ref: code:lib_unix.go
     path: lib_unix.go
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/linux-outside-links
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
-  commit: 5d9a4882234c7ee023483714d75736f71278de22
-  session: null
-  claimed_at: 2026-09-28T23:57:39Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T03:06:21Z
+updated_at: 2026-09-29T03:10:09Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -72,9 +65,9 @@ TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins call a view's Go bindin
 
 ## Acceptance criteria
 
-- [ ] On Linux, a link to a non-trusted http or https origin is handed to the system browser without the view requesting it
-- [ ] A link to a host that does not resolve still reaches the system browser on every engine
-- [ ] A GUI scenario on each engine covers the unresolvable-host case
+- [x] On Linux, a link to a non-trusted http or https origin is handed to the system browser without the view requesting it
+- [x] A link to a host that does not resolve still reaches the system browser on every engine
+- [x] A GUI scenario on each engine covers the unresolvable-host case
 
 ## Implementation plan
 
@@ -221,3 +214,22 @@ Both round-4 findings were reported resolved. GitHub run 36515299106 on 4f74181 
    Without the base-target check, both frame cases are handed over.
 
 Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+## Summary
+
+Landed in PR #26 (be027be). On Linux and Windows the bridge script now catches outside navigation in the page and hands it to Go before the engine sends any request:
+- link clicks, including links in shadow DOM and SVG links;
+- GET form submits;
+- script navigation through the Navigation API.
+
+It resolves each target against the document's base URL. It leaves alone targets that are not http(s), targets that go to a named frame (including through `<base target>`), clicks the page already cancelled, and events that cannot be cancelled.
+
+Go opens a URL only if the navigation policy classifies it as external. On Linux, a `load-failed` handler also hands over an outside load that failed before it committed, such as a dead redirect or a host that does not resolve.
+
+macOS keeps WKWebView's policy decision. That decision already runs before the request is sent, so macOS does not need the intercept.
+
+The `outside_links` GUI scenario runs on every engine. For each step (link, assign, shadow link, SVG link, unresolvable host, dead redirect) it expects the URL to be handed over and the server to receive zero requests. `TestOutsideLinksScript` covers the intercept in Node, and each of its cases was checked against a control that fails.
+
+Known limits:
+- A page listener that stops a click's propagation without cancelling it bypasses the click intercept. That click falls back to the response-time policy, and this was declined in review round 1.
+- WebView2's NavigationStarting Cancel still lets the request reach the server. That is filed as TKT-01M3NGAJ7S.
