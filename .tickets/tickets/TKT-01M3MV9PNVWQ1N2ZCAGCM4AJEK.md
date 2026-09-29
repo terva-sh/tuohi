@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T03:01:33Z
+updated_at: 2026-09-29T03:06:21Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -203,3 +203,21 @@ Both round-3 findings were reported resolved. GitHub run 36514939276 on 93fb225 
 2. **Medium: do not hand off image-submit forms with changed coordinates.** Fixed. A submit whose submitter is `<input type=image>` is left to the engine's policy, because the click coordinates cannot be reproduced from `FormData`. `TestOutsideLinksScript` gains the case. Without the check, it is handed over.
 
 Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T03:06:21Z
+
+### Review disposition for PR #26, round 5 (terva-review run on 4f74181)
+
+Both round-4 findings were reported resolved. GitHub run 36515299106 on 4f74181 passed every job.
+
+1. **Medium: honor the document's default target before handing off links and forms.** Fixed. When the element has no `target`, `sameWindow` reads the document's `<base target>`, so a frame named there is left alone. The submit listener takes the submitter's `formtarget` only when the submitter has that attribute.
+
+   `TestOutsideLinksScript` gains four cases:
+   - a link under a `<base target>` that names a frame, which is left alone;
+   - a link under `<base target=_top>`, which is handed over;
+   - a link with its own `_self` under a frame base, which is handed over;
+   - a GET form under a frame base, which is left alone.
+
+   Without the base-target check, both frame cases are handed over.
+
+Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
