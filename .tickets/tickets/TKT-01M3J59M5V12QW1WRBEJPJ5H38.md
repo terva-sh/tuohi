@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:28:26Z
+updated_at: 2026-09-29T22:36:33Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -90,3 +90,17 @@ TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to call from any gor
 **agent:claude-code/t3code-72958710** at 2026-09-29T22:28:26Z
 
 Implemented on fix/macos-main-thread. just ci passes, and go vet passes for darwin, linux and windows. The darwin arm64 test binary compiles. The macOS scenario (TestNotMainThread) and the rest of the darwin suite run only on GitHub after the merge, so AC1 and AC2 stay unticked until GitHub main is green with it. AC3 (package docs show the loopback consumer) is done in app.go's package doc.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:36:33Z
+
+Disposition for the terva-review findings at 851aae3 (run on request macos-main-review-1), fixed in 94029c9:
+
+- **Accepted, high: "Do not call AppKit from the thread being rejected".** `uiThreadErr` no longer touches AppKit. It asks `pthread_main_np` (libSystem) whether this is the main thread, and CoreFoundation whether the main run loop is running, through `CFRunLoopCopyCurrentMode(CFRunLoopGetMain())`. CFRunLoop calls are thread-safe, and that run loop is what drains the main dispatch queue the work would be handed to.
+  - `App.Show` (in `showFirst`) and `App.Wait` call the check before `begin`, so a refused call runs no `ensureInit` on the wrong thread.
+  - The external-loop scenario used to poll `isRunning` from its goroutine, which turns true before the run loop is entered. It now also waits for `mainLoopRunning()`.
+- **Accepted, medium: "Start UI-thread services before allowing off-main Wait".** `Wait`'s start step, `a.start` (the icon) and `App.Start`, now runs through a per-engine `startOnUI`.
+  - On macOS it is `ui.call`: in place on the main thread, and otherwise handed to the owner's loop that `uiThreadErr` checked for.
+  - Linux and Windows run it in place, as before.
+  - The external-loop scenario calls `startOnUI` from its goroutine and checks that the function ran on the main thread.
+
+`just ci` passes. `go vet` passes for darwin, linux and windows, and the darwin arm64 test binary compiles. The macOS scenarios run on GitHub after the merge.
