@@ -237,6 +237,11 @@ enforced) settled how:
 - **Off the main thread, `Show` and `Wait` return `ErrNotMainThread`** unless
   a run loop is already running on the main thread to take the work, as the
   tray package's or an embedding host's does.
+  - The check runs before the app scope opens and touches no AppKit: it asks
+    `pthread_main_np` which thread this is, and CoreFoundation whether the
+    main run loop is running.
+  - Under such a loop, `Wait`'s start step, the icon and `App.Start`, is
+    handed to the main thread.
   - A loopback consumer that started its HTTP server on the main goroutine
     and opened the window from another used to get AppKit on a secondary
     thread. It now gets an error that names the rule.

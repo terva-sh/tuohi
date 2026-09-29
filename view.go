@@ -621,6 +621,11 @@ func (a *App) Show(view *View) error {
 // showFirst performs the one-time creation of a View's window and registers
 // it with the App (see App.Show).
 func (a *App) showFirst(view *View) error {
+	// Before the scope opens, so that a refused call does no platform
+	// initialization on the wrong thread.
+	if err := uiThreadErr(); err != nil {
+		return err
+	}
 	s, err := a.begin()
 	if err != nil {
 		return err

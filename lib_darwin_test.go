@@ -661,7 +661,12 @@ func externalLoopScenario() string {
 
 	go func() {
 		verdict := func() string {
-			for i := 0; app.Send(sel("isRunning")) == 0; i++ {
+			// isRunning turns true before [NSApp run] enters the run loop, and
+			// uiThreadErr asks the run loop itself, so wait for both.
+			if err := loadThreadCheck(); err != nil {
+				return "thread check: " + err.Error()
+			}
+			for i := 0; app.Send(sel("isRunning")) == 0 || !mainLoopRunning(); i++ {
 				if i > 500 {
 					return "host loop never started"
 				}
@@ -690,6 +695,13 @@ func externalLoopScenario() string {
 				}
 			case <-time.After(15 * time.Second):
 				return "timeout: New or Run blocked under a running loop (deadlock)"
+			}
+
+			// Wait's start step, called here off the main thread, must run on
+			// the main thread through the host's loop.
+			onMain := false
+			if err := startOnUI(func() { onMain = onMainThread() }); err != nil || !onMain {
+				return fmt.Sprintf("startOnUI: err=%v on main=%v", err, onMain)
 			}
 
 			// Second shape: the whole lifecycle issued ON the UI thread from

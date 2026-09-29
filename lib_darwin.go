@@ -732,15 +732,69 @@ func onUIThread() bool {
 
 // uiThreadErr reports ErrNotMainThread when the caller is off the main thread
 // and no run loop is running there to hand UI work to. App.Show and App.Wait
-// check it.
+// check it before the app scope opens, so it must not touch AppKit, which
+// the thread it rejects may not use, nor depend on ensureInit. It asks
+// libSystem which thread this is, and CoreFoundation, whose run-loop calls
+// are thread-safe, whether the main thread's run loop is running: that loop
+// is what drains the main dispatch queue the UI work is handed to.
 func uiThreadErr() error {
-	if onMainThread() {
-		return nil
+	if err := loadThreadCheck(); err != nil {
+		return err
 	}
-	if class("NSApplication").Send(sel("sharedApplication")).Send(sel("isRunning")) != 0 {
+	if pthreadMainNP() != 0 || mainLoopRunning() {
 		return nil
 	}
 	return ErrNotMainThread
+}
+
+var (
+	threadCheckOnce          sync.Once
+	threadCheckErr           error
+	pthreadMainNP            func() int32
+	cfRunLoopGetMain         func() uintptr
+	cfRunLoopCopyCurrentMode func(rl uintptr) uintptr
+	cfRelease                func(cf uintptr)
+)
+
+// loadThreadCheck binds the libSystem and CoreFoundation calls uiThreadErr
+// uses. Both libraries are part of every macOS process.
+func loadThreadCheck() error {
+	threadCheckOnce.Do(func() {
+		sys, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_GLOBAL|purego.RTLD_LAZY)
+		if err != nil {
+			threadCheckErr = fmt.Errorf("webview: dlopen libSystem: %w", err)
+			return
+		}
+		cf, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_GLOBAL|purego.RTLD_LAZY)
+		if err != nil {
+			threadCheckErr = fmt.Errorf("webview: dlopen CoreFoundation: %w", err)
+			return
+		}
+		purego.RegisterLibFunc(&pthreadMainNP, sys, "pthread_main_np")
+		purego.RegisterLibFunc(&cfRunLoopGetMain, cf, "CFRunLoopGetMain")
+		purego.RegisterLibFunc(&cfRunLoopCopyCurrentMode, cf, "CFRunLoopCopyCurrentMode")
+		purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
+	})
+	return threadCheckErr
+}
+
+// mainLoopRunning reports whether the main thread's run loop is running:
+// CFRunLoopCopyCurrentMode returns the mode it runs in, and NULL when it is
+// not running.
+func mainLoopRunning() bool {
+	mode := cfRunLoopCopyCurrentMode(cfRunLoopGetMain())
+	if mode == 0 {
+		return false
+	}
+	cfRelease(mode)
+	return true
+}
+
+// startOnUI runs Wait's start step on the main thread: in place when Wait is
+// there, and otherwise handed to the run loop another owner runs there, which
+// uiThreadErr has checked for.
+func startOnUI(f func()) error {
+	return ui.call(f)
 }
 
 // postUI is the dispatcher's post hook. The main dispatch queue always takes

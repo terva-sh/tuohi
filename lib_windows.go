@@ -3027,6 +3027,13 @@ func uiThreadID() uint32 {
 // to the thread that created it (see ErrNotMainThread).
 func uiThreadErr() error { return nil }
 
+// startOnUI runs Wait's start step in place, on the goroutine that calls
+// Wait, which is the UI thread when the program follows the package doc.
+func startOnUI(f func()) error {
+	f()
+	return nil
+}
+
 func appUIWait() {
 	uiThreadID()
 	var m msgStruct

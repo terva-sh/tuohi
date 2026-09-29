@@ -456,20 +456,30 @@ func (a *App) begin() (*appScope, error) {
 // Wait and call View.Run on its window instead; the two models must not be
 // mixed.
 func (a *App) Wait() error {
+	// Before the scope opens, so that a refused call does no platform
+	// initialization on the wrong thread.
+	if err := uiThreadErr(); err != nil {
+		return err
+	}
 	s, err := a.begin()
 	if err != nil {
 		return fmt.Errorf("appkit: wait: %w", err)
 	}
-	if err := uiThreadErr(); err != nil {
-		return err
-	}
-	a.start(s)
-	// App.Start sets up the services that need the UI thread - Wait runs on
-	// it - before the loop below dispatches their events.
-	if s.cfg.Start != nil {
-		if err := s.cfg.Start(); err != nil {
-			return fmt.Errorf("tuohi: start: %w", err)
+	// The icon and App.Start set up what needs the UI thread before the loop
+	// below dispatches its events. Wait normally runs on that thread; on
+	// macOS under a loop another owner runs, it may not, and startOnUI hands
+	// the work to the main thread.
+	var startErr error
+	if err := startOnUI(func() {
+		a.start(s)
+		if s.cfg.Start != nil {
+			startErr = s.cfg.Start()
 		}
+	}); err != nil {
+		return fmt.Errorf("tuohi: start: %w", err)
+	}
+	if startErr != nil {
+		return fmt.Errorf("tuohi: start: %w", startErr)
 	}
 	ui.enterLoop()
 	for atomic.LoadInt32(&s.exitFlag) == 0 {
