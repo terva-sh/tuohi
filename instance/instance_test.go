@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -85,6 +86,21 @@ func TestSendWithoutInstance(t *testing.T) {
 	id := uniqueID("noinstance")
 	if err := Send(id, []string{"x"}); err == nil {
 		t.Fatal("Send with no running instance should fail")
+	}
+}
+
+// TestSendRefusesOversized: Send reports a message the running instance would
+// drop for its size, rather than sending it and appearing to succeed.
+func TestSendRefusesOversized(t *testing.T) {
+	id := uniqueID("oversized-send")
+	lock, err := Acquire(id, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	defer func() { _ = lock.Release() }()
+	err = Send(id, []string{strings.Repeat("x", maxMessage)})
+	if err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("Send of an oversized message = %v, want the size limit error", err)
 	}
 }
 
