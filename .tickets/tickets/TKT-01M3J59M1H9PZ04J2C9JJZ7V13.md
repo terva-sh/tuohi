@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T21:44:35Z
+updated_at: 2026-09-29T21:52:11Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -112,3 +112,15 @@ The move itself was done by a subagent under a written brief, then reviewed and 
 - golangci-lint reports 0 issues for linux, darwin, windows, netbsd, and freebsd.
 - **Criterion 1.** A program that imports only `github.com/terva-sh/tuohi` and shows one View was checked with `GOOS=$os go list -deps . | grep -E 'godbus|atotto|terva-sh'`. For linux, darwin, and windows, it lists only `tuohi` and `tuohi/dialog`. Against the base commit, the same program listed atotto on all three, and godbus on Linux.
 - macOS and Windows code only builds, vets, and lints here. It moved rather than changed, apart from SMAppService. GitHub CI tests it after the merge.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:52:11Z
+
+### terva-review disposition, PR #38, first round (243e45d)
+
+**Accepted: "Honor the supplied autostart ID for bundled macOS apps" (medium).** For a bundled .app on macOS 13 or later, Enable takes the SMAppService path. That registers the app as its own login item under its bundle identifier and never uses the id, while the new docs promised the id exactly. The behaviour predates the split: App.Autostart did the same.
+
+It was fixed in the docs, not the code (e33a035). The package doc, New, and the README now name the exception, including that a login item starts without Enable's arguments.
+
+Rejected alternatives:
+- Falling back to a LaunchAgent whenever the id differs from the bundle identifier. A login item is the registration macOS expects from a bundled app.
+- Refusing the call in that case. Enable would then fail for a correct app over a naming mismatch.
