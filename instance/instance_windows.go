@@ -170,12 +170,8 @@ func servePipe(h uintptr, onMessage func(Message), stop chan struct{}) {
 	}
 }
 
-func send(id string, args []string) error {
+func send(id string, data []byte) error {
 	err := ensureInit()
-	if err != nil {
-		return err
-	}
-	data, err := json.Marshal(Message{Args: args})
 	if err != nil {
 		return err
 	}

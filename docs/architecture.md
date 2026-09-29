@@ -515,15 +515,31 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
   built for `unix`. The package is the primitive: the consumer decides what a
   later launch does, so the `--new-instance` flag and the quiet `os.Exit(0)`
   went with `App.Exec`, and the README shows the pattern. A forwarded message
-  is untrusted input. TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 (Harden the
-  single-instance channel against other local users) already lists the
-  hardening: no `/tmp` fallback, a 0700 directory, peer credentials, a size
-  cap, and a pipe security descriptor. The review adds four defects:
-  - `release` unlinks the lock file, which can give two primaries whether it
-    unlinks before or after unlocking, so the lock file must stay;
-  - Windows drops a launch that arrives while the pipe is busy;
-  - the working directory is not forwarded;
-  - the Unix read has no deadline.
+  is untrusted input, and carries the later launch's working directory as
+  `Message.Dir` so that relative paths resolve where the user typed them.
+  TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 (Harden the single-instance channel against
+  other local users) closed the channel to other users on Unix:
+  - the lock file and socket live in `XDG_RUNTIME_DIR/tuohi` when
+    `XDG_RUNTIME_DIR` is private to the user, and in `tuohi` under the user's
+    cache directory otherwise, never in `/tmp`. The directory is created
+    0700, and one that is a symbolic link, belongs to another user, or is
+    open to group or others is refused. So is one below a directory that
+    another non-root user owns, or that others can write to without the
+    sticky bit, because they could swap it after the check. Once
+    `XDG_RUNTIME_DIR` holds the directory, a failed check there is an error
+    rather than a move to the cache directory, where a second instance could
+    become primary;
+  - the running instance closes a connection from another user, read with
+    `SO_PEERCRED` on Linux and `LOCAL_PEERCRED` on macOS and FreeBSD. NetBSD
+    relies on the directory alone, since `golang.org/x/sys` has no call for
+    its `LOCAL_PEEREID`;
+  - a message is capped at 1 MiB and must arrive within 5 seconds;
+  - `Release` never removes the lock file, because removing it, before or
+    after unlocking, can give two primaries.
+
+  On Windows the pipe still has default security, drops a launch that
+  arrives while the pipe is busy, and reads any failure to create the pipe
+  as "already running"; the same ticket covers them.
 - **Autostart** is `tuohi/autostart`: `New(id)`, where the id is the name
   the registration is stored under, used as given. The fallbacks to a slug of
   `App.Name` or of the executable went with `App.Autostart()`. About 75 to 80
