@@ -60,6 +60,7 @@ func TestMain(m *testing.M) {
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
+		resTitle.Store(titleScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
 			repeatStatus = repeatDataURL(n)
 		}
@@ -445,4 +446,11 @@ func repeatDataURL(n int) int {
 		return 1
 	}
 	return 0
+}
+
+// windowTitle reads the native window's title, on the UI thread.
+func windowTitle(e engine) string {
+	buf := make([]uint16, 512)
+	n := getWindowTextW(e.(*webview).window, &buf[0], int32(len(buf)))
+	return string(utf16Decode(buf[:n]))
 }

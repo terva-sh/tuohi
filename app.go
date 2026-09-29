@@ -228,7 +228,8 @@ type App struct {
 	Exec func(args []string)
 
 	// Name is the application name, used where the OS asks for one - most
-	// visibly as the source shown by desktop notifications (App.Notify).
+	// visibly as the source shown by desktop notifications (App.Notify), and
+	// as the title of a window that has no other (see View.Title).
 	Name string
 
 	// Icon is a PNG image for the running application, applied on a

@@ -1341,6 +1341,18 @@ func (w *webview) Unmaximize() {
 	})
 }
 
+// setTitle sets the window's title (see applyTitle), on the main thread. A
+// borderless window draws no title bar, but the title still names it in the
+// Window menu, Mission Control and accessibility tools.
+func (w *webview) setTitle(title string) {
+	if w.window == 0 {
+		return
+	}
+	autorelease(func() {
+		w.window.Send(sel("setTitle:"), nsstr(title))
+	})
+}
+
 // doUnmaximizeFrameless restores a borderless window to the frame it had
 // before Maximize put it into the visible frame.
 func (w *webview) doUnmaximizeFrameless() {

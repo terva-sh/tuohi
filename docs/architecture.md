@@ -345,6 +345,38 @@ One defect sits in the macOS entry point regardless of the design. It sends
 process. That comes from reading the code. Nobody has run it yet.
 TKT-01M3J59M3SQBSXV2KVZEFBNBAV fixes it.
 
+## The window title: Go first, then the trusted page, then `App.Name`
+
+TKT-01M3MV9PMXS3CMR71R186MW9BJ (Let a consumer title a view's window) settled
+this on 2026-09-29. `applyTitle` in `engine.go` takes a window's title from
+three sources, in order:
+
+1. the Go title, `View.Title` or `View.SetTitle`, when it is not empty;
+2. the trusted page's `document.title`;
+3. `App.Name`.
+
+`SetTitle("")` hands the window back to the page. A window that the host
+created and tuohi embeds into takes only a Go title. The page and `App.Name`
+never rename a window tuohi does not own.
+
+The page's title reaches Go through the bridge, not through each engine's own
+title notification. `initPageTitle` sends it as `__tuohiPageTitle`, first at
+document start and again whenever it changes. So the rule is the same on every
+engine, and an untrusted page, which has no bridge, cannot rename the window.
+
+The engines' own notifications lost on cost:
+
+- WebKitGTK's `notify::title` was cheap.
+- WebView2's `DocumentTitleChanged` needs a new COM handler object.
+- WKWebView's title can only be followed through KVO.
+- Each would also need its own trust check before renaming the window.
+
+The script watches only the `<title>` and the child lists above it, never the
+whole document, so a busy page pays nothing for it. Each engine sets the title
+natively: `gtk_window_set_title`, `SetWindowTextW`, or `setTitle:`. Once
+tuohi manages the title, a new Windows window no longer has a blank taskbar
+entry.
+
 ## Permissions are denied unless the app grants them
 
 Each engine loosens something different, and none asks the application:

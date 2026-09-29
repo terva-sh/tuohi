@@ -473,6 +473,58 @@ const initOutsideLinks = `
   })();
 `
 
+// initPageTitle, appended to the bridge on every engine, reports the page's
+// document.title to Go as internalPageTitle, which the window follows while
+// the application has set no title of its own (see applyTitle). It runs only
+// in a document the bridge was installed in, a trusted top-level one, so a
+// page the view does not trust cannot rename the window.
+//
+// The first report is sent at document start, where the title is still
+// empty, so each document starts from App.Name rather than the previous
+// page's title. The next is sent at DOMContentLoaded. From then on, two
+// observers watch as little of the document as they can, because an observer
+// on the whole subtree would make the engine record every change a busy page
+// makes to its DOM: one watches the text of the page's <title>, and the other
+// watches the child lists of the document, its root and its head, so that a
+// <title> added, removed or replaced, including by assigning document.title,
+// is found again. Only a title that differs from the last one reported is
+// sent. A <title> a script adds outside <head> after DOMContentLoaded is not
+// seen until one of those child lists next changes.
+const initPageTitle = `
+  (function() {
+    var bridge = window.__webview__, last = null, watched = null;
+    if (typeof document === 'undefined' || typeof MutationObserver !== 'function' ||
+        typeof document.addEventListener !== 'function') { return; }
+    function report() {
+      var title = String(document.title || '');
+      if (title === last) { return; }
+      last = title;
+      bridge.post(JSON.stringify({method: METHOD, params: [title]}));
+    }
+    var text = new MutationObserver(report), shape = new MutationObserver(watch);
+    function watch() {
+      // document.title reads the first HTML <title> in the document.
+      var t = document.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'title')[0] || null;
+      shape.disconnect();
+      shape.observe(document, {childList: true});
+      if (document.documentElement) { shape.observe(document.documentElement, {childList: true}); }
+      if (document.head) { shape.observe(document.head, {childList: true}); }
+      if (t !== watched) {
+        text.disconnect();
+        watched = t;
+        if (t) { text.observe(t, {childList: true, characterData: true, subtree: true}); }
+      }
+      report();
+    }
+    report();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', watch);
+    } else {
+      watch();
+    }
+  })();
+`
+
 // createInitScript returns the document-start bridge. It exposes
 // window.__webview__ with Promise-based call()/onReply(), the binding
 // installers onBind() (Go functions, awaitable as getters), onBindSetter()
@@ -498,6 +550,7 @@ func createInitScript(postFn, token string, origins []string, outsideLinks bool)
 	if outsideLinks {
 		script += strings.Replace(initOutsideLinks, "METHOD", marshalJSON(internalOpenExternal), 1)
 	}
+	script += strings.Replace(initPageTitle, "METHOD", marshalJSON(internalPageTitle), 1)
 	return script + "})()"
 }
 

@@ -108,6 +108,7 @@ func TestMain(m *testing.M) {
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
+		resTitle.Store(titleScenario())
 	}
 	os.Exit(m.Run())
 }
@@ -377,4 +378,9 @@ func TestWaitReturnsAfterLastWindowCloses(t *testing.T) {
 	if got != "wait-ok" {
 		t.Fatalf("wait/close scenario = %q, want %q", got, "wait-ok")
 	}
+}
+
+// windowTitle reads the native window's title, on the UI thread.
+func windowTitle(e engine) string {
+	return cstr(gtkWindowGetTitle(e.(*webview).window))
 }
