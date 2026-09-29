@@ -97,13 +97,15 @@ var (
 	gtkWidgetGrabFocus        func(widget uintptr)
 	gtkWindowPresent          func(window uintptr)
 	gtkWindowClose            func(window uintptr)
-	gtkWindowMaximize         func(window uintptr)           // GTK3 + GTK4
-	gtkWindowUnmaximize       func(window uintptr)           // GTK3 + GTK4
-	gtkWindowIconify          func(window uintptr)           // GTK3 only (Minimize)
-	gtkWindowDeiconify        func(window uintptr)           // GTK3 only (Unminimize)
-	gtkWindowMinimize         func(window uintptr)           // GTK4 only (Minimize)
-	gtkWindowUnminimize       func(window uintptr)           // GTK4 only (Unminimize)
-	gtkWindowMove             func(window uintptr, x, y int) // GTK3/X11 only (see applyGeometry)
+	gtkWindowMaximize         func(window uintptr)               // GTK3 + GTK4
+	gtkWindowUnmaximize       func(window uintptr)               // GTK3 + GTK4
+	gtkWindowSetTitle         func(window uintptr, title string) // GTK3 + GTK4
+	gtkWindowGetTitle         func(window uintptr) uintptr       // GTK3 + GTK4
+	gtkWindowIconify          func(window uintptr)               // GTK3 only (Minimize)
+	gtkWindowDeiconify        func(window uintptr)               // GTK3 only (Unminimize)
+	gtkWindowMinimize         func(window uintptr)               // GTK4 only (Minimize)
+	gtkWindowUnminimize       func(window uintptr)               // GTK4 only (Unminimize)
+	gtkWindowMove             func(window uintptr, x, y int)     // GTK3/X11 only (see applyGeometry)
 
 	// gdk device helpers for gdk_toplevel_begin_move/resize on GTK4 (the GTK3
 	// gtk_window_begin_move/resize_drag entry points take no device).
@@ -523,6 +525,8 @@ func ensureInit() error {
 		pure.RegisterLibFunc(&gtkWindowClose, gtk, "gtk_window_close")
 		pure.RegisterLibFunc(&gtkWindowMaximize, gtk, "gtk_window_maximize")
 		pure.RegisterLibFunc(&gtkWindowUnmaximize, gtk, "gtk_window_unmaximize")
+		pure.RegisterLibFunc(&gtkWindowSetTitle, gtk, "gtk_window_set_title")
+		pure.RegisterLibFunc(&gtkWindowGetTitle, gtk, "gtk_window_get_title")
 
 		pure.RegisterLibFunc(&webkitWebViewNew, webkit, "webkit_web_view_new")
 		pure.RegisterLibFunc(&webkitWebViewGetUserContentManager, webkit, "webkit_web_view_get_user_content_manager")
@@ -1755,6 +1759,14 @@ func (w *webview) Unmaximize() {
 		return
 	}
 	dispatchMain(func() { gtkWindowUnmaximize(w.window) })
+}
+
+// setTitle sets the window's title (see applyTitle), on the UI thread.
+func (w *webview) setTitle(title string) {
+	if w.window == 0 {
+		return
+	}
+	gtkWindowSetTitle(w.window, title)
 }
 
 // updateBindings changes the binding table and rebuilds the user scripts

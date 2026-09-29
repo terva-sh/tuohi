@@ -53,6 +53,10 @@ type engine interface {
 	Unminimize()
 	Unmaximize()
 
+	// setTitle sets the native window's title. It runs on the UI thread,
+	// and only applyTitle calls it.
+	setTitle(title string)
+
 	Bind(name string, vals ...any) error
 	BindBatch(batch []bindRequest) error
 	Unbind(name string) error
@@ -123,6 +127,18 @@ type viewCore struct {
 	// origin the application itself navigated the view to, plus View.Origins.
 	// Guarded by mu.
 	origins map[string]bool
+
+	// The window title's sources, in the order applyTitle takes them: the
+	// Go title (View.Title, SetTitle), the trusted page's document.title,
+	// and App.Name. hostWindow marks a window the host created, which takes
+	// only the Go title. titleShown is the title last set on the window, ""
+	// for the untitled window every engine creates. All of them are read
+	// and written on the UI thread only.
+	titleGo      string
+	titlePage    string
+	titleDefault string
+	hostWindow   bool
+	titleShown   string
 
 	// token is the view's bridge secret, bridgeTokenLen hex characters, made
 	// by the first bridgeScriptLocked. The bridge script keeps it only in a
@@ -775,6 +791,15 @@ func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
 		}
 		return
 	}
+	if m.Method == internalPageTitle {
+		// The trusted page's document.title (see initPageTitle).
+		var args []string
+		if json.Unmarshal(m.Params, &args) == nil && len(args) == 1 {
+			w.titlePage = args[0]
+			applyTitle(w)
+		}
+		return
+	}
 	if w.handleInternal(m.Method, m.Params) {
 		return
 	}
@@ -788,6 +813,27 @@ func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
 		status, result := callAndMarshal(b.fn, m.ID, string(m.Params))
 		w.resolve(m.ID, status, result)
 	})
+}
+
+// applyTitle sets the window's title from its sources, on the UI thread: the
+// Go title when there is one, otherwise the trusted page's document.title,
+// otherwise App.Name. A window the host created takes only a Go title, and is
+// never blanked. The native title is set only when it changes, so a page that
+// reports the same title again costs nothing.
+func applyTitle(w engine) {
+	c := w.core()
+	title := c.titleGo
+	if title == "" && !c.hostWindow {
+		title = c.titlePage
+		if title == "" {
+			title = c.titleDefault
+		}
+	}
+	if title == c.titleShown || (title == "" && c.hostWindow) {
+		return
+	}
+	c.titleShown = title
+	w.setTitle(title)
 }
 
 // resolve delivers a binding call's result to the page, on the UI thread.

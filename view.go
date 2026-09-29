@@ -44,6 +44,7 @@ const (
 	internalWindowToggleMaximize = "__appkitWindowToggleMaximize" // page -> native: double-click on a drag box toggles maximize (all platforms)
 	internalBindError            = "__appkitBindError"            // page -> native: a live bind/unbind install failed ({name, error})
 	internalOpenExternal         = "__appkitOpenExternal"         // page -> native: hand a navigation leaving the trusted origins to the system (Linux, Windows)
+	internalPageTitle            = "__tuohiPageTitle"             // page -> native: the trusted page's document.title (all platforms)
 )
 
 // appRegion is one draggable (or explicitly non-draggable) box in device
@@ -678,12 +679,18 @@ func (a *App) showFirst(view *View) error {
 	// the UI thread, when the first page load after Show finishes (see the
 	// View.Ready doc).
 	w.core().onReady = view.Ready
+	// The title sources: the view's own Title, and, for a window tuohi
+	// created, App.Name until the page gives one (see applyTitle).
+	w.core().titleGo = view.Title
+	w.core().titleDefault = cfg.Name
+	w.core().hostWindow = view.window != nil
 	a.registerView(view, w)
 	// Publish the engine, so the View's methods delegate to the window (and
 	// can be called right after Show).
 	view.mu.Lock()
 	view.w, view.app = w, a
 	view.mu.Unlock()
+	view.onUIWith(w, applyTitle)
 	// Load the window's first page: the declarative URL. With an empty URL
 	// no navigation happens (a blank window) and Ready stays pending until
 	// a later Navigate completes.
@@ -765,6 +772,18 @@ type View struct {
 	// browser opens it. A redirect to another scheme or host, such as http
 	// to https, or 127.0.0.1 to localhost, counts as another origin.
 	Origins []string
+
+	// Title is the window's title. It names the window in its title bar,
+	// the taskbar or Dock, the window switcher, and accessibility tools, so
+	// it matters for a frameless window too. SetTitle changes it after Show.
+	//
+	// When Title is empty the window follows the page instead: it takes the
+	// document.title of the page it shows, and App.Name while that page has
+	// none. Only a page on a trusted origin (see Origins) can set it, so a
+	// page the view does not trust, such as about:blank, leaves the title
+	// as it was. A window embedded from the host's own takes only a
+	// non-empty Title; the page and App.Name leave it alone.
+	Title string
 
 	// Ready, when non-nil, is called exactly once, on the UI thread, the
 	// first time a page finishes loading after Show (the initial Navigate to URL
@@ -1065,6 +1084,17 @@ func (v *View) Minimize() {
 // minimized. Safe to call from any goroutine.
 func (v *View) Unminimize() {
 	v.onUI(engine.Unminimize)
+}
+
+// SetTitle sets the window's title, as View.Title does at Show. An empty
+// title hands the window back to the page: it follows the page's
+// document.title again, or App.Name while the page has none. Safe to call
+// from any goroutine.
+func (v *View) SetTitle(title string) {
+	v.onUI(func(w engine) {
+		w.core().titleGo = title
+		applyTitle(w)
+	})
 }
 
 // Unmaximize restores a maximized window to its previous normal size (the

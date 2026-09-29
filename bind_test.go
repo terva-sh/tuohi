@@ -733,3 +733,106 @@ process.exit(failed ? 1 : 0);
 		t.Fatalf("outside links: %v\n%s", err, out)
 	}
 }
+
+// TestPageTitleScript runs the bridge's page-title reporter (initPageTitle)
+// in Node against a stub document and MutationObserver. It checks what is
+// posted as the title changes, that a <title> added after load is followed
+// and a removed one is not, that nothing observes the whole document subtree,
+// and that a page on an untrusted origin posts nothing
+// (TKT-01M3MV9PMXS3CMR71R186MW9BJ).
+func TestPageTitleScript(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	token := strings.Repeat("ab", bridgeTokenLen/2)
+	bridge := createInitScript("function(m) { posted.push(m); }", token, []string{"http://127.0.0.1:8080"}, false)
+	harness := `
+const bridge = ` + marshalJSON(bridge) + `;
+const token = ` + marshalJSON(token) + `;
+const method = ` + marshalJSON(internalPageTitle) + `;
+// A stub DOM just deep enough for initPageTitle: nodes with children, text
+// in a title's children, and a MutationObserver fired by hand.
+function node(name) { return { localName: name, children: [], text: '' }; }
+function load(host) {
+  const posted = [], observers = [], listeners = {};
+  const root = node('html'), head = node('head');
+  root.children.push(head);
+  const doc = { readyState: 'loading', documentElement: root, head: head,
+    addEventListener: function(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+    getElementsByTagNameNS: function(ns, name) {
+      return ns === 'http://www.w3.org/1999/xhtml' && name === 'title' ? head.children.filter(function(c) { return c.localName === 'title'; }) : [];
+    },
+    get title() { const t = doc.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'title')[0]; return t ? t.text.trim() : ''; } };
+  function MutationObserver(cb) {
+    const self = { disconnect: function() { for (let i = observers.length - 1; i >= 0; i--) { if (observers[i].self === self) observers.splice(i, 1); } },
+      observe: function(target, opts) { observers.push({ self: self, cb: cb, target: target, opts: opts }); } };
+    return self;
+  }
+  const win = { crypto: { getRandomValues: function(a) { return a; } },
+    location: { protocol: 'http:', host: host, href: 'http://' + host + '/page' } };
+  win.top = win;
+  new Function('window', 'posted', 'document', 'MutationObserver', bridge)(win, posted, doc, MutationObserver);
+  return {
+    posted: posted, doc: doc, head: head, observers: observers,
+    // mutate changes the DOM and fires the observers watching target.
+    mutate: function(target, change) {
+      change();
+      observers.filter(function(o) { return o.target === target; }).forEach(function(o) { o.cb([], o.self); });
+    },
+    ready: function() { doc.readyState = 'interactive'; (listeners.DOMContentLoaded || []).forEach(function(fn) { fn(); }); },
+    titles: function() {
+      return posted.map(function(p) {
+        if (p.slice(0, token.length) !== token) return 'untokened';
+        const m = JSON.parse(p.slice(token.length));
+        return m.method === method ? m.params[0] : 'method ' + m.method;
+      });
+    },
+  };
+}
+let failed = false;
+function expect(name, got, want) {
+  if (JSON.stringify(got) !== JSON.stringify(want)) {
+    console.error(name + ': got ' + JSON.stringify(got) + ', want ' + JSON.stringify(want));
+    failed = true;
+  }
+}
+const p = load('127.0.0.1:8080');
+expect('document start', p.titles(), ['']);
+const first = node('title');
+first.text = 'Store A';
+p.head.children.push(first);
+p.ready();
+expect('DOMContentLoaded', p.titles(), ['', 'Store A']);
+p.mutate(first, function() { first.text = 'Store B'; });
+expect('title text changed', p.titles().slice(2), ['Store B']);
+p.mutate(first, function() { first.text = ' Store B '; });
+expect('same title again', p.titles().slice(3), []);
+p.mutate(p.head, function() { p.head.children.splice(p.head.children.indexOf(first), 1); });
+expect('title removed', p.titles().slice(3), ['']);
+p.mutate(first, function() { first.text = 'Stale'; });
+expect('removed title changed', p.titles().slice(4), []);
+const second = node('title');
+second.text = 'Store C';
+p.mutate(p.head, function() { p.head.children.push(second); });
+p.mutate(second, function() { second.text = 'Store D'; });
+expect('title added, then changed', p.titles().slice(4), ['Store C', 'Store D']);
+const wide = p.observers.filter(function(o) { return o.target === p.doc && o.opts.subtree; });
+expect('observers on the whole document subtree', wide.length, 0);
+const u = load('127.0.0.1:9999');
+const t = node('title');
+t.text = 'Evil';
+u.head.children.push(t);
+u.ready();
+u.mutate(t, function() { t.text = 'Evil 2'; });
+expect('untrusted origin', u.titles(), []);
+process.exit(failed ? 1 : 0);
+`
+	file := filepath.Join(t.TempDir(), "title.js")
+	if err := os.WriteFile(file, []byte(harness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, file).CombinedOutput(); err != nil {
+		t.Fatalf("page title: %v\n%s", err, out)
+	}
+}
