@@ -51,7 +51,9 @@ func (v *View) Off(name string) {
 // data becomes one argument delivered to the handlers (Go handlers
 // receive it as raw JSON, JS handlers as a decoded value). It is safe to
 // call from any goroutine; the JS-side listeners are notified on the UI
-// thread. Emit returns an error only if a value in data cannot be
+// thread. The page receives the event only while it is a trusted one (see
+// View.Origins): a page on any other origin, and about:blank, receives
+// nothing. Emit returns an error only if a value in data cannot be
 // JSON-encoded, in which case nothing is published.
 func (v *View) Emit(name string, data ...any) error {
 	w := v.live()
@@ -82,6 +84,10 @@ type eventsHost interface {
 type events struct {
 	w      eventsHost
 	global string // page-side JS global the events API is installed at (window.<global>)
+
+	// guard wraps the script Emit evaluates so that only a trusted document
+	// receives the event (viewCore.bridgeOnly); nil in tests with no bridge.
+	guard func(body string) string
 
 	mu     sync.RWMutex
 	subs   map[string][]eventSub
@@ -130,6 +136,7 @@ func (w *webview) installEvents() error {
 	if err != nil {
 		return err
 	}
+	e.guard = w.bridgeOnly
 	w.events = e
 	return nil
 }
@@ -203,6 +210,11 @@ func (e *events) Emit(name string, data ...any) error {
 	// listeners, so this does not bounce back to Go.
 	payload := "[" + strings.Join(parts, ",") + "]"
 	js := "(function(){var g=window." + e.global + ";if(g&&g._dispatch){g._dispatch(" + marshalJSON(name) + "," + payload + ");}})()"
+	if e.guard != nil {
+		// The events API is installed in every document, trusted or not,
+		// so the bridge's reply key decides who receives.
+		js = e.guard(js + ";")
+	}
 	e.w.Dispatch(func() { e.w.Eval(js) })
 	return nil
 }

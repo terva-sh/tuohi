@@ -64,6 +64,7 @@ func TestMain(m *testing.M) {
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
+		resReplyTrust.Store(replyTrustScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())

@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3JYQWZB01CPZ938Y8C24PXX
 title: Deliver binding replies and events only to trusted documents
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -18,10 +18,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: fix/reply-trust
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
+  commit: d14d87fe3b7bc14d11c7167d71c0a83d7cd33054
+  session: null
+  claimed_at: 2026-09-29T04:53:53Z
+  expires_at: null
 archive: null
 created_at: 2026-09-28T02:50:41Z
-updated_at: 2026-09-28T21:34:09Z
+updated_at: 2026-09-29T04:53:53Z
 created_by:
   id: agent:claude-code/t3code-83e85fc3
   name: ""
@@ -57,3 +64,55 @@ The call side is closed by TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted orig
 
 - [ ] A page on an untrusted origin that defines its own window.__webview__ receives no binding result and no event
 - [ ] The trusted page's calls and events still work across its own reloads
+
+## Implementation plan
+
+### Approach: one per-view reply key, checked by every script Go evaluates to hand the page something
+
+The view makes a second secret alongside the bridge token: the reply key, 32 random bytes in hex. The bridge sets it on `window.__webview__` as `__key`, a property that cannot be changed or removed, and only in trusted top-level documents, because the gate runs first.
+
+`bridgeGuard(key, body)` wraps each script Go evaluates to deliver something:
+- a binding's result (`resolve`);
+- an event (`Emit`, through `events.guard`);
+- a live bind or unbind (`BindBatch`, `Unbind`).
+
+The wrapper is `(function(){'use strict';var w=window.__webview__;if(!w||w.__key!==KEY){return;}BODY})()`.
+
+An untrusted document never holds the key:
+- **A getter learns nothing.** A getter it defines for `__key` is called, but the comparison is made by tuohi's script with `!==`, so no coercion or callback reveals the value.
+- **The source stays hidden.** The wrapper is strict, so a sloppy page function cannot reach its source through `caller`.
+
+### Found while reading
+
+- **Events reach every document.** The events API is installed by a document-start script that is not gated, so `window.events` exists in every document. Before this change, `Emit` delivered to an untrusted page's listeners even if that page defined nothing.
+- **The key check covers it.** The guard checks the bridge's key before calling `window.<events>._dispatch`, so events go to trusted documents only.
+
+### Alternatives considered
+
+- **A per-document id (the ticket's first direction).** Rejected. Go would have to learn each new document's id, from a message it posts, before it could emit to that document. Events emitted between a reload and that message would be lost, which works against the second acceptance criterion. Replies to a call made by a previous document of the same trusted origin are already harmless: `onReply` ignores an unknown id.
+- **Reusing the bridge token as the check.** Rejected. The key has to be readable by the scripts Go evaluates, so it is readable by the trusted page's own scripts. Were it the token, a leak would let anyone who got it post as the bridge. As a separate key, a leak only lets a later untrusted page receive.
+- **Refusing Eval while the URI is untrusted.** Rejected, as the ticket predicted: it races with navigation, as the old Linux sender check did.
+- **Encrypting what is sent,** so that the key never leaves the bridge's closure. Rejected: WebCrypto is asynchronous, which would reorder replies and events, and a synchronous cipher in the bridge is a lot of code for the case where a trusted page leaks its own key.
+
+### Not guarded
+
+- `View.Eval` is the consumer's own script, and stays unguarded.
+- The Linux `onAppRegionState` Eval carries only a resizable flag, no data.
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T04:53:53Z
+
+### Implementation and tests (fix/reply-trust)
+
+- **`TestBridgeGuardScript` (Node).** It runs the real bridge and events API in a trusted stub document and in an untrusted one. The untrusted document defines a fake `window.__webview__` and a sloppy getter for `__key` that reads `getKey.caller`. The trusted document receives the event, and a pending call settles through the guarded reply. The untrusted document receives nothing, its getter is called twice, and it learns no key. An unguarded control delivers to it. Three controls each fail:
+  - removing the key check;
+  - dropping `'use strict'`, which leaks the key through `caller`;
+  - a bridge without the key.
+
+  The first version of the caller probe used method-syntax getters, which have no legacy `caller`, so the strict-mode control passed. It now uses a plain `function`.
+- **`TestRepliesOnlyToTrusted` (GUI, every engine).** A trusted page starts a binding call that Go holds open, and the view leaves for about:blank, confirmed by `pageURL` and by the bridge falling silent. The blank page defines a fake bridge and an events listener. Go releases the call, emits an event, and sends one unguarded reply as a control. The blank page then carries what it received to a trusted `/report` page in the fragment, where a call and an event must work again.
+
+  Want: `blank=control call=5 event=after`. With the guard disabled on GTK4, it got `blank=event secret-event,control,reply "secret-result"`.
+
+Checks passed: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.

@@ -109,6 +109,7 @@ func TestMain(m *testing.M) {
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
+		resReplyTrust.Store(replyTrustScenario())
 	}
 	os.Exit(m.Run())
 }
