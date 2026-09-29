@@ -592,8 +592,10 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
   On macOS it uses the general `NSPasteboard` through `objc`, on the main
   thread, with AppKit's `NSPasteboardTypeString` looked up from the loaded
   framework. On Windows it uses user32's clipboard with `CF_UNICODETEXT`,
-  which needs no window, so the Windows clipboard works in any program and
-  does not use the hook. `github.com/atotto/clipboard` is gone from the
+  which needs no tuohi window, so the Windows clipboard works in any program
+  and does not use the hook. Copy opens it with a message-only window of its
+  own, created for the call and destroyed after, because emptying a
+  clipboard opened without an owner makes `SetClipboardData` fail. `github.com/atotto/clipboard` is gone from the
   module: TKT-01M3J59M2BR91XQBDT1TPPM4G5.
 - **Notify, tray, and dialog** were already subpackages and stay as they are.
   The root no longer imports notify or tray. The tray is set up in

@@ -1,10 +1,16 @@
 // The Windows clipboard: user32's clipboard functions with the text as
-// CF_UNICODETEXT in kernel32 global memory. It needs no window and no loop,
-// so unlike GTK and macOS it works in any program, from any goroutine. The
-// clipboard is opened without an owner window, which is enough for text
-// rendered at once. Each operation keeps its goroutine on one OS thread,
-// because the thread that opens the clipboard must be the one that closes
-// it.
+// CF_UNICODETEXT in kernel32 global memory. It needs no tuohi window and no
+// loop, so unlike GTK and macOS it works in any program, from any goroutine.
+// Each operation keeps its goroutine on one OS thread, because the thread
+// that opens the clipboard must be the one that closes it.
+//
+// Copy opens the clipboard with an owner: a message-only window it creates
+// for the call and destroys once the text is set. Microsoft documents that
+// EmptyClipboard on a clipboard opened without an owner leaves it ownerless,
+// and that SetClipboardData then fails. The text is rendered at once, so it
+// stays on the clipboard after its owner window is gone, and no window is
+// left behind for other processes to send clipboard messages to. Paste only
+// reads, and opens the clipboard without an owner.
 //
 // CF_UNICODETEXT is NUL-terminated UTF-16, so text is cut at its first NUL,
 // which Copy already does on every platform.
@@ -34,6 +40,8 @@ var (
 	user32   = windows.NewLazySystemDLL("user32.dll")
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
+	procCreateWindowExW            = user32.NewProc("CreateWindowExW")
+	procDestroyWindow              = user32.NewProc("DestroyWindow")
 	procOpenClipboard              = user32.NewProc("OpenClipboard")
 	procCloseClipboard             = user32.NewProc("CloseClipboard")
 	procEmptyClipboard             = user32.NewProc("EmptyClipboard")
@@ -47,12 +55,30 @@ var (
 	procGlobalSize                 = kernel32.NewProc("GlobalSize")
 )
 
-// openClipboard opens the clipboard for the calling thread, retrying while
-// another process holds it.
-func openClipboard() error {
+// hwndMessage is HWND_MESSAGE, the parent that makes a window message-only.
+const hwndMessage = ^uintptr(2) // (HWND)-3
+
+// staticClass is the predefined window class the owner window uses; it needs
+// no registration.
+var staticClass = windows.StringToUTF16Ptr("STATIC")
+
+// ownerWindow creates the message-only window Copy opens the clipboard with.
+// The caller destroys it.
+func ownerWindow() (uintptr, error) {
+	hwnd, _, err := procCreateWindowExW.Call(0, uintptr(unsafe.Pointer(staticClass)), 0, 0,
+		0, 0, 0, 0, hwndMessage, 0, 0, 0)
+	if hwnd == 0 {
+		return 0, fmt.Errorf("clipboard: CreateWindowEx: %w", err)
+	}
+	return hwnd, nil
+}
+
+// openClipboard opens the clipboard for the calling thread with owner as its
+// owner window, 0 for none, retrying while another process holds it.
+func openClipboard(owner uintptr) error {
 	deadline := time.Now().Add(openTimeout)
 	for {
-		r, _, err := procOpenClipboard.Call(0)
+		r, _, err := procOpenClipboard.Call(owner)
 		if r != 0 {
 			return nil
 		}
@@ -68,15 +94,8 @@ func copyText(text string) error {
 	if err != nil {
 		return fmt.Errorf("clipboard: %w", err)
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	if err := openClipboard(); err != nil {
-		return err
-	}
-	defer func() { _, _, _ = procCloseClipboard.Call() }()
-	if r, _, err := procEmptyClipboard.Call(); r == 0 {
-		return fmt.Errorf("clipboard: EmptyClipboard: %w", err)
-	}
+	// The block is ready before the clipboard is touched, so a failure to
+	// allocate it leaves what the clipboard held.
 	h, _, err := procGlobalAlloc.Call(gmemMoveable, uintptr(len(data))*2)
 	if h == 0 {
 		return fmt.Errorf("clipboard: GlobalAlloc: %w", err)
@@ -88,6 +107,25 @@ func copyText(text string) error {
 	}
 	copy(unsafe.Slice((*uint16)(ptr(p)), len(data)), data) // #nosec G103 -- the locked global block
 	_, _, _ = procGlobalUnlock.Call(h)
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	owner, err := ownerWindow()
+	if err != nil {
+		_, _, _ = procGlobalFree.Call(h)
+		return err
+	}
+	// Deferred first, so it runs after CloseClipboard below.
+	defer func() { _, _, _ = procDestroyWindow.Call(owner) }()
+	if err := openClipboard(owner); err != nil {
+		_, _, _ = procGlobalFree.Call(h)
+		return err
+	}
+	defer func() { _, _, _ = procCloseClipboard.Call() }()
+	if r, _, err := procEmptyClipboard.Call(); r == 0 {
+		_, _, _ = procGlobalFree.Call(h)
+		return fmt.Errorf("clipboard: EmptyClipboard: %w", err)
+	}
 	// On success the system owns the block; on failure it is still ours.
 	if r, _, err := procSetClipboardData.Call(cfUnicodeText, h); r == 0 {
 		_, _, _ = procGlobalFree.Call(h)
@@ -99,7 +137,7 @@ func copyText(text string) error {
 func paste() (string, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if err := openClipboard(); err != nil {
+	if err := openClipboard(0); err != nil {
 		return "", err
 	}
 	defer func() { _, _, _ = procCloseClipboard.Call() }()

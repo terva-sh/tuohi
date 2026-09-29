@@ -26,7 +26,8 @@
 //   - GTK 4 reads the clipboard asynchronously, so Paste waits on a round
 //     trip through the UI thread, which keeps running its loop meanwhile.
 //
-// Windows needs no window: the clipboard works in any program. When another
+// Windows needs no tuohi window: the clipboard works in any program, and Copy
+// opens it with a hidden window of its own for the call. When another
 // process holds the clipboard open, Copy and Paste retry for up to a second.
 // Other platforms return ErrUnsupported.
 //

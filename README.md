@@ -219,7 +219,7 @@ loaded, so no `xclip`, `xsel` or `wl-copy` is needed, and on macOS
 `NSPasteboard`. There they work once a tuohi `App` has shown its first
 window, and until then return `clipboard.ErrNoApp`. On Wayland, and on X11
 without a clipboard manager, copied text lasts only as long as the process.
-On Windows they use the Win32 clipboard, which needs no window.
+On Windows they use the Win32 clipboard, which needs no tuohi window.
 
 **Tray.** `App.Start` runs on the UI thread when `Wait` starts, before its
 loop dispatches any event, which is where `tray.Set` must be called. An
