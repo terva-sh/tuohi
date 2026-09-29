@@ -260,7 +260,8 @@ to bundle, but that runtime must be present:
   tested after the merge.
 - **Tier 2: FreeBSD and NetBSD.** They must cross-build on every change, and
   nothing runs them.
-- **Go 1.26 or newer.**
+- **Go 1.26 or newer,** except linux/s390x, which needs Go 1.27: purego
+  reaches it without cgo only from 1.27 on.
 - **glibc on Linux.** Even with `CGO_ENABLED=0`, a binary that reaches purego
   asks for glibc's loader, `/lib64/ld-linux-x86-64.so.2` on amd64, so it runs
   on glibc desktops. On musl, such as Alpine, it needs `gcompat`.
@@ -280,6 +281,8 @@ tuohi binds the OS web engine through [purego](https://github.com/ebitengine/pur
 | Windows | amd64, arm64*, 386                                                               |
 | Darwin  | amd64, arm64*                                                                    |
 
+> linux/s390x needs Go 1.27 or newer; every other target builds with Go 1.26.
+>
 > Architectures marked with a `*` have only been tested to compile, not to run. If somebody has
 > a machine of that architecture and can verify the runtime, please open an issue.
 
