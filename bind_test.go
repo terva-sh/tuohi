@@ -625,7 +625,9 @@ win.top = win;
 function StubFormData(form) {
   return { forEach: function(fn) { form.fields.forEach(function(p) { fn(p[1], p[0]); }); } };
 }
-const doc = { baseURI: 'http://127.0.0.1:8080/page' };
+const doc = { baseURI: 'http://127.0.0.1:8080/page', baseTarget: null,
+  querySelector: function(sel) { return sel === 'base[target]' && doc.baseTarget !== null ? el({ target: doc.baseTarget }, {}) : null; } };
+function withBaseTarget(t, run) { doc.baseTarget = t; try { return run(); } finally { doc.baseTarget = null; } }
 new Function('window', 'posted', 'FormData', 'document', bridge)(win, posted, StubFormData, doc);
 function el(attrs, props) {
   return Object.assign({ getAttribute: function(n) { return n in attrs ? attrs[n] : null; },
@@ -691,6 +693,10 @@ const cases = [
   ['POST form', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] })); }, null],
   ['GET form, POST submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'post' }, { formMethod: 'post' }) }); }, null],
   ['POST form, GET submitter', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'get' }, { formMethod: 'get', formAction: 'https://example.com/s' }) }); }, 'https://example.com/s'],
+  ['link under <base target> naming a frame', function() { return withBaseTarget('preview', function() { return click(el({ href: out }, { href: out })); }); }, null],
+  ['link under <base target=_top>', function() { return withBaseTarget('_top', function() { return click(el({ href: out }, { href: out })); }); }, out],
+  ['link with its own _self under <base target> naming a frame', function() { return withBaseTarget('preview', function() { return click(el({ href: out, target: '_self' }, { href: out })); }); }, out],
+  ['GET form under <base target> naming a frame', function() { return withBaseTarget('preview', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] })); }); }, null],
   ['GET form, image submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({}, { type: 'image' }) }); }, null],
   ['submit not cancelable', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { cancelable: false }); }, null],
   ['trusted GET form', function() { return submit(el({}, { method: 'get', action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],

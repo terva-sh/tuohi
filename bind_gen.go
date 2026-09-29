@@ -416,6 +416,12 @@ const initOutsideLinks = `
       return (a.href && a.href.baseVal) || a.getAttribute('href') || a.getAttribute('xlink:href');
     }
     function sameWindow(target) {
+      // With no target of its own, a link or form takes the document's
+      // <base target>, which may name a frame.
+      if (target === null || target === undefined) {
+        var b = typeof document !== 'undefined' && document.querySelector ? document.querySelector('base[target]') : null;
+        target = b ? b.getAttribute('target') : '';
+      }
       target = (target || '').toLowerCase();
       return !target || target === '_self' || target === '_top' || target === '_parent';
     }
@@ -435,7 +441,8 @@ const initOutsideLinks = `
       // missing value is get, and the submitter's formmethod wins.
       var method = submitter && submitter.hasAttribute && submitter.hasAttribute('formmethod') ?
         submitter.formMethod : form.method;
-      var target = (submitter && submitter.getAttribute('formtarget')) || form.getAttribute('target');
+      var target = submitter && submitter.hasAttribute && submitter.hasAttribute('formtarget') ?
+        submitter.getAttribute('formtarget') : form.getAttribute('target');
       // An image button adds the click's coordinates, which FormData does
       // not carry, so the engine's own policy decides that submission.
       if (submitter && submitter.type === 'image') { return; }
