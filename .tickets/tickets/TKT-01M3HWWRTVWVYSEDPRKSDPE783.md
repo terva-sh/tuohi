@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T05:28:41Z
+updated_at: 2026-09-29T05:40:48Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -193,3 +193,21 @@ So the camera and microphone grant cannot be seen there.
 - **Linux** is unchanged: both stacks pass, including the camera grant with mock devices.
 
 **Still unverified on a real engine:** the Windows camera and microphone grant, and the macOS grant. They share `permits`, which `TestPermits` covers, and the per-engine kind mapping.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T05:40:48Z
+
+### Review disposition for PR #31, round 1 (terva-review run on def76da)
+
+GitHub run 36526386848 on def76da passed every job.
+
+1. **High: Linux clipboard permission exposes the clipboard to untrusted frames.** Fixed.
+   - **Change:** `javascript_can_access_clipboard` now stays off in every view. It covers the whole view, so it could never honour the trusted-origin rule.
+   - **What was measured:** on both stacks, a real XTest click followed by `navigator.clipboard.readText()` raises a `WebKitClipboardPermissionRequest`, and `permissionRequest` already decides it through `permits`. The clicked read returned `"clicked"` for a view that lists the clipboard, and `NotAllowedError` for one that does not.
+   - **Meaning:** `PermissionClipboard` is now a per-request read on every engine. No view can paste without a gesture.
+   - **Frames:** a frame reaches the request only when the trusted page delegates `clipboard-read` to it with `allow=`, as with the camera.
+
+   The permissions scenario now clicks through XTest on Linux. `libxtst6` is added to the GitHub Linux jobs and to the Debian list in AGENTS.md. On Linux the scenario expects `paste=false` in every view, with `clickread=ok` only in the clipboard view. Controls on GTK4, each of which fails:
+   - turning the setting back on for the clipboard view (`paste=true`);
+   - never granting the clipboard request (`clickread=denied`).
+
+Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
