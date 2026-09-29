@@ -202,7 +202,10 @@ defer lock.Release()
 `id`, which must be 1-200 characters from `A-Za-z0-9._-`. It no longer falls
 back to a name derived from `App.Name` or the executable. `Enable` replaces
 an entry an older build registered under another name, because it removes
-any entry that points at the same executable.
+any entry that points at the same executable. The exception is a bundled
+`.app` on macOS 13 and later: it registers itself through SMAppService as
+its own login item, named by its bundle identifier, so `id` and the
+arguments to `Enable` are not used there.
 
 **Tray.** `App.Start` runs on the UI thread when `Wait` starts, before its
 loop dispatches any event, which is where `tray.Set` must be called. An

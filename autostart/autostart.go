@@ -21,6 +21,13 @@
 // must be 1 to 200 characters from A-Za-z0-9._-, so a reverse-DNS name such
 // as "com.example.app" works everywhere.
 //
+// One exception: a bundled .app on macOS 13 and later registers itself
+// through SMAppService as its own login item, which macOS names by the
+// bundle identifier. There the id is not used, Path reports the bundle
+// identifier, and the app starts at login without the arguments given to
+// Enable, as a login item does. Match the id to the bundle identifier if the
+// two should agree when the app runs unbundled.
+//
 // The implementation is derived from Wails v3's autostart support; see NOTICE.
 package autostart
 
@@ -75,7 +82,8 @@ type backend interface {
 }
 
 // New returns the autostart controller for the application identified by id,
-// the name a registration is stored under. id must be 1-200 characters from
+// the name a registration is stored under, except for a bundled .app on
+// macOS 13 and later (see the package doc). id must be 1-200 characters from
 // A-Za-z0-9._- ; Enable returns an error for any other id.
 func New(id string) *Autostart {
 	return &Autostart{id: id, impl: newBackend()}
