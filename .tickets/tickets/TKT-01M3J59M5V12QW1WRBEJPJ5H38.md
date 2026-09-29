@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:36:33Z
+updated_at: 2026-09-29T22:48:17Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -104,3 +104,7 @@ Disposition for the terva-review findings at 851aae3 (run on request macos-main-
   - The external-loop scenario calls `startOnUI` from its goroutine and checks that the function ran on the main thread.
 
 `just ci` passes. `go vet` passes for darwin, linux and windows, and the darwin arm64 test binary compiles. The macOS scenarios run on GitHub after the merge.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:48:17Z
+
+GitHub run 36641291121 at e6f9406, after #44 merged, failed Test MacOS with 'panic: appkit: objc class "NSThread" not found'. offMainScenario runs first in TestMain and called onMainThread before Foundation was loaded; the panic stopped every macOS scenario in the root package. Fixed on fix/macos-ci-main: onMainThread uses pthread_main_np, which needs no framework. The other macOS scenarios have not run since #44, so this PR is the first real test of the main-thread change.

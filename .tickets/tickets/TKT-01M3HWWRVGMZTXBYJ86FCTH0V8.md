@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:37:36Z
+updated_at: 2026-09-29T22:48:17Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -68,7 +68,7 @@ Another local user could squat on the names in a shared `/tmp`. That is inferred
 
 - [x] The Unix socket lives only in a 0700 per-user directory, with no /tmp fallback
 - [x] The primary instance checks the connecting peer's user and caps message size
-- [ ] The Windows pipe has an explicit per-user security descriptor
+- [x] The Windows pipe has an explicit per-user security descriptor
 - [x] The documentation says forwarded arguments are untrusted input
 
 ## Implementation plan
@@ -168,3 +168,7 @@ The package doc and architecture.md say both. `just ci` passes, and `go vet ./in
 **agent:claude-code/t3code-72958710** at 2026-09-29T22:37:36Z
 
 Windows branch fix/instance-windows, rebased onto main at 2d34a7e after PR #42 merged. just ci passes. go vet ./instance/ passes, and the instance test binary compiles for windows amd64 and arm64. Nothing here can run it: the new Windows tests (pipe security, per-user pipe name, owner check, oversized message, stalled sender, Release while a sender stalls) run on GitHub after the merge, in the new 'Run single-instance tests' step. AC3 stays unticked until GitHub main is green with them. I checked the write deadline's dependency: os.NewFile detects overlapped handles through windows.IsNonblock in Go 1.26, go.mod's minimum, not only in 1.27.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:48:17Z
+
+GitHub run 36641291121 at e6f9406: Test Windows passed, which includes the new ./instance/ step with the pipe security, per-user name, owner check, oversized message, stalled sender and Release-while-stalled tests. Test MacOS failed TestAncestorsChecked because os.UserCacheDir ignores XDG_CACHE_HOME on macOS, so the test checked the real cache directory; it passed on Linux as root and as a user. Fixed on fix/macos-ci-main by setting HOME on macOS.
