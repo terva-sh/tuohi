@@ -48,9 +48,13 @@ func TestMain(m *testing.M) {
 		runtime.LockOSThread()
 		// First, while no run loop has ever run.
 		resOffMain.Store(offMainScenario())
+		logWindows("offMainScenario")
 		resBridge.Store(bridgeScenario())
+		logWindows("bridgeScenario")
 		resErrorUnbind.Store(errorUnbindScenario())
+		logWindows("errorUnbindScenario")
 		resRichTypes.Store(richTypesScenario())
+		logWindows("richTypesScenario")
 		resMultiWindow.Store(multiWindowScenario())
 		resEmbed.Store(embedScenario())
 		resOpenPanel.Store(openPanelCompletionScenario())
@@ -133,6 +137,30 @@ func TestNotMainThread(t *testing.T) {
 	}
 }
 
+// logWindows prints the live window count after a scenario, so a run whose
+// count does not return to zero shows which scenario left it.
+func logWindows(after string) {
+	fmt.Fprintf(os.Stderr, "tuohi test: windows after %s: %d\n", after, atomic.LoadInt32(&windowCount))
+}
+
+// drainMainQueue runs the main thread's event loop for d, so blocks queued on
+// the main dispatch queue run. It must be called on the main thread with no
+// loop running.
+func drainMainQueue(d time.Duration) {
+	app := class("NSApplication").Send(sel("sharedApplication"))
+	until := time.Now().Add(d)
+	for time.Now().Before(until) {
+		autorelease(func() {
+			deadline := class("NSDate").Send(sel("dateWithTimeIntervalSinceNow:"), 0.02)
+			ev := app.Send(sel("nextEventMatchingMask:untilDate:inMode:dequeue:"),
+				nsEventMaskAny, deadline, nsstr("kCFRunLoopDefaultMode"), true)
+			if ev != 0 {
+				app.Send(sel("sendEvent:"), ev)
+			}
+		})
+	}
+}
+
 // openPanelCompletionScenario exercises the WKUIDelegate file-chooser
 // completion path (invokeOpenPanelCompletion / NSInvocation "v@?@") without
 // presenting the modal panel, by invoking it with a Go block and a cancelled
@@ -161,6 +189,12 @@ func openPanelCompletionScenario() string {
 // multiWindowScenario verifies window ref-count bookkeeping across two engines
 // and that full Destroy returns the count to its baseline (no run loop needed).
 func multiWindowScenario() string {
+	// A window the OS closed is counted down by a block on the main queue
+	// (onWindowWillClose), which runs only when a loop drains the queue. The
+	// scenarios before this one stop their loops, so let a pending count-down
+	// run before taking the baseline.
+	drainMainQueue(200 * time.Millisecond)
+	logWindows("drain")
 	start := atomic.LoadInt32(&windowCount)
 	w1 := &View{}
 	if err := testApp().Show(w1); err != nil {
