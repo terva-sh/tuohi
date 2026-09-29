@@ -209,7 +209,19 @@ func TestAncestorsChecked(t *testing.T) {
 			t.Errorf("cache under a sticky 1777 directory (%s): %v", base, err)
 		}
 	}
-	if err := checkAncestor(home, os.Getuid()+1); err == nil {
+	// A directory of a third user, neither us nor root. As root, which CI
+	// runs as, make one with chown; as anyone else, name another uid.
+	theirs, uid := home, os.Getuid()+1
+	if os.Getuid() == 0 {
+		theirs, uid = filepath.Join(home, "theirs"), 0
+		if err := os.Mkdir(theirs, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chown(theirs, 4242, 4242); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := checkAncestor(theirs, uid); err == nil {
 		t.Error("checkAncestor accepted a directory of another, non-root uid")
 	}
 }
