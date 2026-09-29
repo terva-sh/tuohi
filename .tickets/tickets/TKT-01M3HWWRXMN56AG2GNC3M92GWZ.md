@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:52:24Z
+updated_at: 2026-09-29T21:55:04Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -147,3 +147,13 @@ Forgejo's Docker runner may confine user namespaces differently from rootless po
 **Declined: "Disable cgo in the Forgejo GUI job" (medium).** The finding says that job environments are separate, so the check job's `CGO_ENABLED=0` does not reach the gui job. That setting is not the check job's. It sits in the workflow-level `env:` block of `.forgejo/workflows/ci.yml`, above `jobs:`, and Actions applies a workflow-level env to every job. The gui job therefore runs with `CGO_ENABLED=0` already. Repeating it on the job would only answer a misreading.
 
 The gui job passed on the real runner in 2m38s, on both stacks.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:55:04Z
+
+### terva-review disposition, PR #37, second round (fc4bab4)
+
+The first-round finding shows as declined.
+
+**Declined: "Remove old assets when rerunning a release" (medium).** The finding: rerunning the release job for a tag released under the old workflow leaves that release's demo binaries attached. That is true, and it is deliberate. The only such release is v0.1.0-alpha.1, a GitHub pre-release with 19 assets.
+
+Deleting assets from a published release is an outward-facing change, and a CI rerun should not make it silently. The no-binaries decision governs releases cut from now on. Whether alpha.1 keeps its binaries is left for the owner to decide and do by hand, for example with `gh release delete-asset`.
