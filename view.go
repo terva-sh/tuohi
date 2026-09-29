@@ -34,17 +34,17 @@ import (
 
 // Internal script-message methods. They never collide with user Bind names:
 // the bind-name validation (validateTopLevel) rejects top-level binding
-// names that start with "__appkit" or equal "__webview__", so these message
+// names that start with "__tuohi" or equal "__webview__", so these message
 // methods stay reachable no matter what a page binds.
 const (
-	internalAppRegions           = "__appkitAppRegions"           // page -> native: drag/no-drag boxes (device px)
-	internalWindowDrag           = "__appkitWindowDrag"           // page -> native: start a window move (macOS/Linux)
-	internalWindowResize         = "__appkitWindowResize"         // page -> native: start an edge resize (Linux)
-	internalWindowCursor         = "__appkitWindowCursor"         // page -> native: force the edge/corner resize cursor (macOS)
-	internalWindowToggleMaximize = "__appkitWindowToggleMaximize" // page -> native: double-click on a drag box toggles maximize (all platforms)
-	internalBindError            = "__appkitBindError"            // page -> native: a live bind/unbind install failed ({name, error})
-	internalOpenExternal         = "__appkitOpenExternal"         // page -> native: hand a navigation leaving the trusted origins to the system (Linux, Windows)
-	internalPageTitle            = "__tuohiPageTitle"             // page -> native: the trusted page's document.title (all platforms)
+	internalAppRegions           = "__tuohiAppRegions"           // page -> native: drag/no-drag boxes (device px)
+	internalWindowDrag           = "__tuohiWindowDrag"           // page -> native: start a window move (macOS/Linux)
+	internalWindowResize         = "__tuohiWindowResize"         // page -> native: start an edge resize (Linux)
+	internalWindowCursor         = "__tuohiWindowCursor"         // page -> native: force the edge/corner resize cursor (macOS)
+	internalWindowToggleMaximize = "__tuohiWindowToggleMaximize" // page -> native: double-click on a drag box toggles maximize (all platforms)
+	internalBindError            = "__tuohiBindError"            // page -> native: a live bind/unbind install failed ({name, error})
+	internalOpenExternal         = "__tuohiOpenExternal"         // page -> native: hand a navigation leaving the trusted origins to the system (Linux, Windows)
+	internalPageTitle            = "__tuohiPageTitle"            // page -> native: the trusted page's document.title (all platforms)
 )
 
 // appRegion is one draggable (or explicitly non-draggable) box in device
@@ -375,7 +375,7 @@ const appRegionScriptTmpl = `(function() {
     lastEdge = edge;
     if (!cursorStyle && document.head) {
       cursorStyle = document.createElement('style');
-      cursorStyle.id = '__appkit_appregion_cursor';
+      cursorStyle.id = '__tuohi_appregion_cursor';
       document.head.appendChild(cursorStyle);
     }
     if (cursorStyle) {

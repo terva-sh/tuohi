@@ -2376,7 +2376,7 @@ type webview struct {
 	fixed bool
 
 	// regions is the page's latest drag/no-drag box set (device px, client
-	// coordinates), reported via the __appkitAppRegions message. Written on
+	// coordinates), reported via the __tuohiAppRegions message. Written on
 	// the UI thread by handleInternal; read on the UI thread by the hit-test path.
 	regions appRegionSet
 

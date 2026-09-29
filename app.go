@@ -778,7 +778,7 @@ var windowGlobalDenylist = map[string]bool{
 // surface or a common window global: the first dot-segment of the name must
 // not equal the events API global of this view (window.<eventsGlobal>), must
 // not be "__webview__" (the bridge instance) and must not start with
-// "__appkit" (every internal message method and the events binding live
+// "__tuohi" (every internal message method and the events binding live
 // there, see the internal* constants), and must not be a denylisted window
 // built-in (windowGlobalDenylist). Deeper segments are not restricted: they
 // live under the consumer's own namespace objects.
@@ -787,7 +787,7 @@ func validateTopLevel(name, eventsGlobal string) error {
 	if i := strings.IndexByte(name, '.'); i >= 0 {
 		top = name[:i]
 	}
-	if top == "__webview__" || strings.HasPrefix(top, "__appkit") {
+	if top == "__webview__" || strings.HasPrefix(top, "__tuohi") {
 		return fmt.Errorf("tuohi: binding name %q is reserved for tuohi's internal page API", name)
 	}
 	if top == eventsGlobal {

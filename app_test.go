@@ -937,8 +937,8 @@ func TestValidateTopLevelRejectsReservedAndDenylisted(t *testing.T) {
 	bad := []string{
 		"close", "open", "name", "fetch", "document", "location", // windowGlobalDenylist
 		"__webview__",           // the bridge instance
-		"__appkit_event__",      // the events binding
-		"__appkitWindowDrag",    // an internal message method
+		"__tuohi_event__",       // the events binding
+		"__tuohiWindowDrag",     // an internal message method
 		"events",                // the default events global
 		"close.thing", "name.x", // top segment is what counts
 	}
@@ -1001,7 +1001,7 @@ func TestApplyBindsRejectsInvalidPlans(t *testing.T) {
 	}{
 		{"prefix collision across maps", map[string]any{"api": func() {}}, map[string]any{"api.id": func() {}}},
 		{"prefix collision within one map", nil, map[string]any{"demo": func() {}, "demo.theme": func() {}}},
-		{"reserved name", nil, map[string]any{"__appkit_event__": func() {}}},
+		{"reserved name", nil, map[string]any{"__tuohi_event__": func() {}}},
 		{"denylisted top level", nil, map[string]any{"name": func() {}}},
 		{"events global", nil, map[string]any{"events": func() {}}},
 		{"bad segments", nil, map[string]any{"a..b": func() {}}},

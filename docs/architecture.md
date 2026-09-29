@@ -305,7 +305,7 @@ call a view's Go bindings) carries out:
     replaced it because it does the same job on all three engines with one
     mechanism.
 - **One gate for everything a page can send.** The events binding
-  (`__appkit_event__`) and the internal window messages go through the same
+  (`__tuohi_event__`) and the internal window messages go through the same
   gate as ordinary bindings: drag, resize, toggle maximize, app regions, and
   bind errors. Today a page can maximise any window, because `toggleMaximize`
   has no `frameless` guard on Unix or Windows. On Windows it can also turn the
@@ -354,7 +354,7 @@ call a view's Go bindings) carries out:
     - The bridge, in a trusted document only, catches a plain link click, a
       GET form, and the Navigation API's `navigate` event that would leave
       the trusted origins. It cancels each one and posts
-      `__appkitOpenExternal`, and Go applies the policy again before opening
+      `__tuohiOpenExternal`, and Go applies the policy again before opening
       anything (`initOutsideLinks`, `webview.openOutside`). The Navigation
       API alone was not enough: on the GTK4 stack it does not fire for a
       link click.

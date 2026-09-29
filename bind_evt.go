@@ -101,7 +101,7 @@ type eventSub struct {
 
 // eventsBindName is the Go function the injected JS calls to forward a
 // JS-side emit into Go. It must match the name referenced in eventsInitScript.
-const eventsBindName = "__appkit_event__"
+const eventsBindName = "__tuohi_event__"
 
 // installEvents wires the events bridge onto w and returns its per-view
 // state: the document-start script (eventsInitScript(global)) and the
@@ -294,8 +294,8 @@ func eventsInitScript(global string) string {
   function emit(name) {
     var args = Array.prototype.slice.call(arguments, 1);
     fire(name, args);
-    if (typeof window.__appkit_event__ === 'function') {
-      var promise = window.__appkit_event__(name, args);
+    if (typeof window.__tuohi_event__ === 'function') {
+      var promise = window.__tuohi_event__(name, args);
       if (promise && typeof promise.catch === 'function') { promise.catch(function() {}); }
     }
   }

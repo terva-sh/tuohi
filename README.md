@@ -504,7 +504,7 @@ Binding names are checked when the window is created, and a bad one fails
 have non-empty, whitespace-free segments (`"api.call"` is fine; `"a..b"`,
 `".x"` and `"x.y z"` are not); a top-level name must not be one of the
 common `window.*` built-ins (`close`, `open`, `name`, `fetch`, `document`,
-…), appkit's own internals (`__webview__`, anything starting `__appkit`) or
+…), tuohi's own internals (`__webview__`, anything starting `__tuohi`) or
 the page's events global (`window.events` by default, whatever `App.Events`
 renames it to); and a leaf and its namespace cannot both be bound (`"api"`
 together with `"api.id"` is refused, because one would silently destroy the
