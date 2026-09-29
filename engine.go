@@ -115,12 +115,12 @@ type viewCore struct {
 
 	// contentBase is the loopback-server origin this view's app:// URLs
 	// resolve to, or "" when they are served through the platform's native
-	// scheme. It is the base of the window's temporary per-view loopback
-	// server (App.HTTP, and always on macOS).
+	// scheme. It is the base of the window's per-view loopback server
+	// (App.HTTP, and always on macOS), including the token segment the first
+	// navigation carries (see loopbackServer).
 	contentBase string
-	// transient is that temporary loopback server, nil when the window is
-	// scheme-served. releaseLoopback stops it when the window is destroyed,
-	// and it also stops itself after loopbackIdleTimeout without a request.
+	// transient is that loopback server, nil when the window is
+	// scheme-served. releaseLoopback stops it when the window is destroyed.
 	transient *loopbackServer
 
 	// origins is the set of origins whose pages may use the bridge: every

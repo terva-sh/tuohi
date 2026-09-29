@@ -29,6 +29,9 @@ package tuohi
 
 import (
 	"bufio"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
@@ -246,21 +249,30 @@ type App struct {
 	// cannot attach the headers to scheme responses, so a scheme-served Linux
 	// page is not crossOriginIsolated - SharedArrayBuffer still works through
 	// the JSC_useSharedArrayBuffer option). macOS always serves over a
-	// temporary loopback http://localhost server (WKWebView cannot make a
+	// per-view loopback http://localhost server (WKWebView cannot make a
 	// custom scheme a secure context, and a long-standing WebKit bug keeps
 	// SharedArrayBuffer off plain WKWebView pages); App.HTTP opts Linux and
 	// Windows into that same loopback origin. SharedArrayBuffer is available
 	// on every platform. A path without a file answers "not found". A nil FS serves
 	// no content - the window shows whatever the consumer navigates it to
 	// itself.
+	//
+	// What FS holds is readable by the views it is served to, not private to
+	// the process. The loopback server answers only its own view (see HTTP),
+	// but another process running as the same user can read FS anyway, from
+	// the binary or from memory; keep secrets out of it.
 	FS fs.FS
 
-	// HTTP serves the app's content over a TEMPORARY loopback http://localhost
+	// HTTP serves the app's content over a per-view loopback http://localhost
 	// server instead of the platform's custom "app" scheme. On Linux and
 	// Windows it is an opt-in fallback - the native scheme serves them (see
 	// the FS doc), so only HTTP-opted windows load their app:// content from
-	// the temporary loopback origin; the server is torn down again once the
-	// first page load finishes. macOS always serves over the loopback origin
+	// the loopback origin. Each such view has a server of its own, listening
+	// on 127.0.0.1 only, from the view's creation until it is destroyed. The
+	// server answers only requests that name its own origin and carry its
+	// per-server token, which the view's first navigation turns into a
+	// cookie, so neither a web page reaching the port by DNS rebinding nor
+	// another user's process gets anything from it. macOS always serves over the loopback origin
 	// (WKWebView cannot make a custom scheme a secure context and cannot
 	// provide SharedArrayBuffer on plain pages - a long-standing WebKit
 	// bug). Either
@@ -342,7 +354,7 @@ type appScope struct {
 	// exitOnce/exitFlag end the Wait run loop (App.Quit, or the last window
 	// closing when App.Exit is set). No app-scope web server exists: the
 	// loopback servers (macOS always, Linux and Windows under App.HTTP) are
-	// per-view, temporary, and owned by the engine (see viewContentBase).
+	// per-view and owned by the engine (see viewContentBase).
 	startOnce sync.Once
 	windows   int32
 	exitOnce  sync.Once
@@ -465,9 +477,10 @@ func (a *App) Quit() {
 // scope; later calls are no-ops. App.Show and Wait both call it, so the order does
 // not matter. Content serving is NOT started here: there is no permanently
 // listening web server. App.FS is served per view - through WebView2's https
-// vhost on Windows, or over a TEMPORARY per-view loopback server (macOS and
-// Linux always; Windows when App.HTTP opts in), started at window creation
-// and stopped once the window has been loaded (see viewContentBase).
+// vhost on Windows, the custom scheme on Linux, or a per-view loopback
+// server (macOS always; Linux and Windows when App.HTTP opts in), started at
+// window creation and stopped when the window is destroyed (see
+// viewContentBase).
 func (a *App) start(s *appScope) {
 	s.startOnce.Do(func() {
 		// The process icon: App.Icon when the consumer set one, otherwise the
@@ -925,8 +938,8 @@ func mimeTypeFor(name string) string {
 
 // rewriteAppURL maps a uniform app:// URL onto a loopback server's base -
 // same path, same query and fragment - and passes any other URL through
-// unchanged. base is the http://localhost:<port> origin of a view's
-// temporary loopback server; an empty base leaves app:// URLs untouched
+// unchanged. base is the base URL of a view's loopback server,
+// http://localhost:<port>/.tuohi/<token> (see loopbackServer); an empty base leaves app:// URLs untouched
 // (served through the native scheme).
 func rewriteAppURL(base, raw string) string {
 	if base == "" || !strings.HasPrefix(raw, appSchemeName+"://") {
@@ -947,18 +960,16 @@ func rewriteAppURL(base, raw string) string {
 }
 
 // viewContentBase resolves the serving origin a NEW view's app:// URLs map
-// onto (see App.FS / App.HTTP). Loopback servers are always TEMPORARY -
-// there is no permanently listening web server - so a view is either served
-// through the engine's custom "app" scheme or, while its first page loads,
-// over its own temporary loopback server. forceLoopback makes the view use
+// onto (see App.FS / App.HTTP). There is no app-wide web server: a view is
+// either served through the engine's custom "app" scheme or over its own
+// loopback server, which lives as long as the view. forceLoopback makes the view use
 // the loopback origin unconditionally (macOS always does - WKWebView cannot
 // make a custom scheme a secure context, and a long-standing WebKit bug
 // keeps SharedArrayBuffer off plain WKWebView pages); without it, Linux and
 // Windows use the loopback origin only when App.HTTP opts in (their native
 // scheme serving is enough otherwise - the https vhost on Windows, the
-// registered custom scheme on Linux). The caller owns the server and
-// MUST stop it (stopLoopback) once the view's first load has finished - or
-// when the view closes before any load.
+// registered custom scheme on Linux). The caller owns the server and MUST
+// stop it (stopLoopback) when the view is destroyed.
 //
 // The loopback responses carry the cross-origin-isolation headers (COOP/COEP
 // + CORP), so every served page is a secure, cross-origin-isolated context
@@ -981,7 +992,7 @@ func viewContentBase(v *View, forceLoopback bool) (base string, transient *loopb
 	return srv.base, srv, nil
 }
 
-// startViewServer starts the temporary loopback server that serves App.FS to
+// startViewServer starts the loopback server that serves App.FS to
 // ONE view (see viewContentBase / App.HTTP). It returns nil when App.FS is nil.
 func (s *appScope) startViewServer() (*loopbackServer, error) {
 	if s.cfg.FS == nil {
@@ -994,9 +1005,8 @@ func (s *appScope) startViewServer() (*loopbackServer, error) {
 	return srv, nil
 }
 
-// stopLoopback shuts a temporary per-view loopback server down. It is a
-// no-op for a nil server and safe to call more than once (fireReady and
-// Destroy both stop it).
+// stopLoopback shuts a per-view loopback server down, when its view is
+// destroyed. It is a no-op for a nil server and safe to call more than once.
 func stopLoopback(srv *loopbackServer) {
 	if srv == nil {
 		return
@@ -1004,50 +1014,63 @@ func stopLoopback(srv *loopbackServer) {
 	_ = srv.Close()
 }
 
-// loopbackServer is a temporary per-view loopback HTTP server created by
-// listenLoopbackHTTP. It serves ONE view's content while that view's first
-// page loads, lives until the load finished (or the view closed), and is
-// owned by the engine. Every response carries the cross-origin-isolation
-// headers (COOP/COEP + CORP, see writeResponse), so the http://localhost
-// origin is a secure, cross-origin-isolated context with SharedArrayBuffer
-// available.
+// loopbackServer is a per-view loopback HTTP server created by
+// listenLoopbackHTTP. It serves ONE view's content for the life of that view
+// and is owned by the engine, which closes it when the view is destroyed.
+// Every response carries the cross-origin-isolation headers (COOP/COEP +
+// CORP, see writeResponse), so the http://localhost origin is a secure,
+// cross-origin-isolated context with SharedArrayBuffer available.
+//
+// Only the view may read from it. A request must name the server's own
+// origin in its Host header, which a web page reaching the port through DNS
+// rebinding cannot, and must carry the server's token. The view's first
+// navigation carries it in the path of base; the server answers that with a
+// redirect to the same path without it and a cookie holding the token,
+// which every later request of the page then sends. A request with neither
+// is refused, so another user's process that finds the port gets nothing. A
+// process running as the same user can still read App.FS: it can read the
+// binary and the view's memory too, so the token does not try to stop it.
 type loopbackServer struct {
-	ln   net.Listener
-	base string // base URL of the served origin, e.g. "http://localhost:41234"
+	ln    net.Listener
+	base  string // base URL the view navigates under, e.g. "http://localhost:41234/.tuohi/<token>"
+	port  string // the bound port, which the Host header must name
+	token string // the per-server secret; see tokenPrefix and cookieName
 
 	mu     sync.Mutex
 	conns  map[net.Conn]struct{}
 	closed bool
-	timer  *time.Timer // idle timeout: closes the server when no request arrives
 }
 
-// loopbackIdleTimeout is how long a temporary per-view loopback server stays
-// up without serving a request. The page's initial load (HTML + CSS + JS and
-// any other subresource) keeps issuing requests, each resetting the timer;
-// once the page is fully loaded no further requests arrive, the timeout runs
-// out and the server shuts itself down. 3 seconds covers a page's whole load
-// (even late stylesheet fetches) while still tearing the server down quickly
-// after the load settles.
-const loopbackIdleTimeout = 3 * time.Second
+// tokenPrefix starts the path segment that carries a server's token in the
+// view's first navigation: /.tuohi/<token>/<path>.
+const tokenPrefix = "/.tuohi/"
+
+// cookieName is the cookie that carries the token after the first
+// navigation. Cookies are shared by every port of a host, so each server
+// names its own after its port.
+func (s *loopbackServer) cookieName() string { return "tuohi-" + s.port }
 
 // listenLoopbackHTTP binds a LOOPBACK TCP listener and serves serve on it.
-// It is the constructor of every (temporary, per-view) loopback server.
-// Servers always bind the loopback default "127.0.0.1:0" - a free loopback
-// port; there is no permanently listening or exposed web server.
+// It is the constructor of every per-view loopback server. Servers always
+// bind the loopback default "127.0.0.1:0" - a free loopback port; there is
+// no permanently listening or exposed web server.
 //
-// A temporary server shuts itself down after loopbackIdleTimeout without a
-// request (each request resets the timer), so it serves exactly the page's
-// initial load and then goes away - no engine-side "page loaded" signal is
-// involved. Call loopbackServer.Close to tear it down sooner.
+// A server lives until Close, which the engine calls when its view is
+// destroyed: the page's origin is this server, so a lazy import, a route
+// change or a fetch long after the first load must still reach it.
 //
-// It returns the running server plus the base URL pages navigate to - always
+// It returns the running server plus the base URL the view navigates under:
 // the http://localhost form of the bound port, because that origin is a
-// secure context in the embedded web view. "localhost" resolves to the
-// loopback address actually bound, so the advertised URL always reaches this
-// server.
+// secure context in the embedded web view, followed by the token segment
+// (see loopbackServer). "localhost" resolves to the loopback address
+// actually bound, so the advertised URL always reaches this server.
 func listenLoopbackHTTP(serve serveFunc) (*loopbackServer, string, error) {
 	if serve == nil {
 		return nil, "", errors.New("loopback server: nil resolver")
+	}
+	var secret [32]byte
+	if _, err := rand.Read(secret[:]); err != nil {
+		return nil, "", fmt.Errorf("loopback server: token: %w", err)
 	}
 	ln, err := loopbackListen("")
 	if err != nil {
@@ -1060,31 +1083,17 @@ func listenLoopbackHTTP(serve serveFunc) (*loopbackServer, string, error) {
 	}
 	s := &loopbackServer{
 		ln:    ln,
-		base:  fmt.Sprintf("http://localhost:%d", tcpAddr.Port),
+		port:  strconv.Itoa(tcpAddr.Port),
+		token: base64.RawURLEncoding.EncodeToString(secret[:]),
 		conns: make(map[net.Conn]struct{}),
 	}
-	s.mu.Lock()
-	s.timer = time.AfterFunc(loopbackIdleTimeout, func() { _ = s.Close() })
-	s.mu.Unlock()
+	s.base = "http://localhost:" + s.port + strings.TrimSuffix(tokenPrefix, "/") + "/" + s.token
 	go s.serve(serve)
 	return s, s.base, nil
 }
 
-// keepAlive resets the idle timeout because a request arrived: while the
-// page is still loading it keeps fetching (each request re-arms the timer),
-// and once the load settles no request arrives, the timer fires and Close
-// shuts the server down. Guarded by s.mu so it never races Close's stop.
-func (s *loopbackServer) keepAlive() {
-	s.mu.Lock()
-	if s.timer != nil {
-		s.timer.Reset(loopbackIdleTimeout)
-	}
-	s.mu.Unlock()
-}
-
-// isClosed reports whether the server has been shut down (an idle timeout or
-// an explicit Close). Engines use it to notice that a temporary server has
-// expired and drop their per-view rewrite base.
+// isClosed reports whether the server has been shut down. Engines use it to
+// notice that a view's server is gone and drop their per-view rewrite base.
 func (s *loopbackServer) isClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1093,8 +1102,8 @@ func (s *loopbackServer) isClosed() bool {
 
 // loopbackListen binds a loopback TCP listener on a free loopback port
 // (127.0.0.1:0). Only loopback is accepted - the served resolver is the app's
-// own UI, and loopback servers are deliberately temporary and never exposed -
-// so any other address is refused with an error.
+// own UI, and loopback servers are never exposed - so any other address is
+// refused with an error.
 func loopbackListen(addr string) (net.Listener, error) {
 	if addr == "" {
 		addr = "127.0.0.1:0"
@@ -1114,10 +1123,9 @@ func loopbackListen(addr string) (net.Listener, error) {
 	return ln, nil
 }
 
-// Close stops the server: the idle timer is stopped, the listener closes (no
-// new connections) and every in-flight connection is shut down. It is a
-// no-op once the server is closed and safe to call more than once (later
-// calls return nil).
+// Close stops the server: the listener closes (no new connections) and every
+// in-flight connection is shut down. It is a no-op once the server is closed
+// and safe to call more than once (later calls return nil).
 func (s *loopbackServer) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1125,10 +1133,6 @@ func (s *loopbackServer) Close() error {
 		return nil
 	}
 	s.closed = true
-	if s.timer != nil {
-		s.timer.Stop()
-		s.timer = nil
-	}
 	err := s.ln.Close()
 	for c := range s.conns {
 		_ = c.Close()
@@ -1162,11 +1166,10 @@ func (s *loopbackServer) serve(serve serveFunc) {
 // serveConn reads one request from conn and writes the response. Connections
 // are answered once and closed (Connection: close), which keeps the
 // hand-rolled parsing trivially correct: there is no keep-alive bookkeeping
-// to get wrong. Every request also re-arms the idle timeout (keepAlive): the
-// server lives as long as the page keeps fetching, and shuts itself down
-// once no request has arrived for loopbackIdleTimeout.
+// to get wrong. A request that does not name this server in its Host header,
+// or carries neither the token nor its cookie, is refused (see
+// loopbackServer).
 func (s *loopbackServer) serveConn(conn net.Conn, serve serveFunc) {
-	s.keepAlive()
 	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	br := bufio.NewReader(conn)
 	line, err := br.ReadString('\n')
@@ -1183,6 +1186,7 @@ func (s *loopbackServer) serveConn(conn net.Conn, serve serveFunc) {
 	// body is read: GET/HEAD never has one, and the server answers then
 	// closes.
 	var host string
+	var cookies []string
 	headerBytes := 0
 	for {
 		if headerBytes > maxHeaderBytes {
@@ -1200,8 +1204,11 @@ func (s *loopbackServer) serveConn(conn net.Conn, serve serveFunc) {
 		}
 		if name, value, ok := strings.Cut(trimmed, ":"); ok {
 			name = strings.ToLower(strings.TrimSpace(name))
-			if name == "host" && host == "" {
+			switch {
+			case name == "host" && host == "":
 				host = strings.TrimSpace(value)
+			case name == "cookie":
+				cookies = append(cookies, value)
 			}
 		}
 	}
@@ -1209,8 +1216,24 @@ func (s *loopbackServer) serveConn(conn net.Conn, serve serveFunc) {
 		s.writeStatus(conn, 405)
 		return
 	}
-	if host == "" {
-		host = "localhost"
+	if !s.ownHost(host) {
+		s.writeStatus(conn, 421)
+		return
+	}
+	if rest, ok := strings.CutPrefix(target, tokenPrefix); ok {
+		// The view's navigation: swap the token in the path for the cookie,
+		// and send the page to its path without it.
+		token, after, _ := strings.Cut(rest, "/")
+		if !s.validToken(token) {
+			s.writeStatus(conn, 403)
+			return
+		}
+		s.writeRedirect(conn, "/"+after)
+		return
+	}
+	if !s.hasCookie(cookies) {
+		s.writeStatus(conn, 403)
+		return
 	}
 	// The resolver sees the full URL of the origin it is served from.
 	reqURL := "http://" + host + target
@@ -1222,6 +1245,50 @@ func (s *loopbackServer) serveConn(conn net.Conn, serve serveFunc) {
 	// A HEAD response carries the same headers as GET - including the real
 	// Content-Length of the body the GET would send - but no body bytes.
 	s.writeResponse(conn, 200, schemeMIME(resp), resp.Body, method == "HEAD")
+}
+
+// ownHost reports whether a Host header names this server's origin: localhost
+// or 127.0.0.1 with its port. A page that reached the port through DNS
+// rebinding sends its own host name instead.
+func (s *loopbackServer) ownHost(host string) bool {
+	return strings.EqualFold(host, "localhost:"+s.port) || host == "127.0.0.1:"+s.port
+}
+
+// validToken compares a token in constant time.
+func (s *loopbackServer) validToken(token string) bool {
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
+}
+
+// hasCookie reports whether any Cookie header carries this server's token.
+func (s *loopbackServer) hasCookie(headers []string) bool {
+	for _, h := range headers {
+		for _, c := range strings.Split(h, ";") {
+			name, value, ok := strings.Cut(strings.TrimSpace(c), "=")
+			if ok && name == s.cookieName() && s.validToken(value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// writeRedirect answers the view's token-bearing navigation: a redirect to
+// location, the same path and query without the token, with the cookie that
+// carries the token from then on. HttpOnly keeps it from the page's script.
+// SameSite=Lax keeps it from every request another site's page starts except
+// a top-level navigation, which loads the app into the view and shows the
+// other page nothing. Strict would withhold it from the redirected request
+// itself when the view comes to the app from another site's page, as a view
+// that starts on a remote URL does.
+func (s *loopbackServer) writeRedirect(conn net.Conn, location string) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "HTTP/1.1 %d %s\r\n", 302, statusText(302))
+	fmt.Fprintf(&b, "Location: %s\r\n", location)
+	fmt.Fprintf(&b, "Set-Cookie: %s=%s; Path=/; HttpOnly; SameSite=Lax\r\n", s.cookieName(), s.token)
+	b.WriteString("Cache-Control: no-store\r\n")
+	b.WriteString("Content-Length: 0\r\n")
+	b.WriteString("Connection: close\r\n\r\n")
+	_, _ = conn.Write([]byte(b.String()))
 }
 
 // maxHeaderBytes bounds the request-line + header block a client may send;
@@ -1274,12 +1341,18 @@ func statusText(status int) string {
 	switch status {
 	case 200:
 		return "OK"
+	case 302:
+		return "Found"
 	case 400:
 		return "Bad Request"
+	case 403:
+		return "Forbidden"
 	case 404:
 		return "Not Found"
 	case 405:
 		return "Method Not Allowed"
+	case 421:
+		return "Misdirected Request"
 	default:
 		return "Status " + strconv.Itoa(status)
 	}

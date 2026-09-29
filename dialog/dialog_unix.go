@@ -21,6 +21,7 @@ package dialog
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"unsafe"
 
@@ -124,6 +125,14 @@ func openGTK() (uintptr, error) {
 
 func ensureInit() error {
 	initOnce.Do(func() {
+		// purego.RegisterLibFunc panics on a missing symbol, and a panic
+		// inside sync.Once counts as done, so a caller that recovered would
+		// go on with nil function variables. Return it as the error instead.
+		defer func() {
+			if r := recover(); r != nil {
+				initErr = fmt.Errorf("dialog: GTK initialization failed: %v", r)
+			}
+		}()
 		gtkLib, err := openGTK()
 		if err != nil {
 			initErr = err

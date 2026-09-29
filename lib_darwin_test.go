@@ -66,6 +66,7 @@ func TestMain(m *testing.M) {
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
 		resPermissions.Store(permissionsScenario())
+		resLoopbackLate.Store(loopbackLateScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
@@ -73,12 +74,17 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// requireGUI skips a GUI assertion when its scenario did not run (e.g. -short).
+// requireGUI skips a GUI assertion when its scenario did not run (e.g.
+// -short), or fails it when TUOHI_REQUIRE_GUI=1, which GitHub CI sets.
 func requireGUI(t *testing.T, got string) {
 	t.Helper()
-	if got == "" {
-		t.Skip("GUI scenarios skipped (-short)")
+	if got != "" {
+		return
 	}
+	if os.Getenv("TUOHI_REQUIRE_GUI") == "1" {
+		t.Fatal("GUI scenario did not run, and TUOHI_REQUIRE_GUI=1")
+	}
+	t.Skip("GUI scenarios skipped (-short)")
 }
 
 // openPanelCompletionScenario exercises the WKUIDelegate file-chooser

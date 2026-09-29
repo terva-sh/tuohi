@@ -1562,8 +1562,8 @@ func (w *webview) toggleMaximize() {
 }
 
 // resolveURL maps the uniform app:// origin onto this view's serving origin:
-// this window's temporary loopback-server base configured at creation (while
-// its initial page loads under App.HTTP), or - no server up - the URL
+// this window's loopback-server base configured at creation under
+// App.HTTP, or - no server up - the URL
 // unchanged, so the scheme rewrite below maps app:// onto the per-scheme
 // https vhost. Every other URL passes through untouched.
 func (w *webview) resolveURL(url string) string {
@@ -1580,8 +1580,8 @@ func (w *webview) resolveURL(url string) string {
 
 func (w *webview) Navigate(url string) {
 	// First resolve the uniform app:// origin onto this view's serving
-	// origin: this window's temporary loopback server's http://localhost base
-	// while its initial page loads under App.HTTP, or - no server up - pass
+	// origin: this window's loopback server's http://localhost base under
+	// App.HTTP, or - no server up - pass
 	// through to the scheme rewrite below, which maps app:// onto the
 	// per-scheme https vhost.
 	url = w.resolveURL(url)
@@ -1604,21 +1604,22 @@ func (w *webview) trust(urls ...string) {
 	}
 }
 
-// loadHTML loads html from a temporary loopback server, used by tests only.
+// loadHTML loads html from a loopback server of its own, used by tests only.
 // NavigateToString would put the page at about:blank, which cannot be
 // trusted (see originOf). A data: URL did not work either: its bridge calls
 // never reached the gate as a trusted sender on WebView2. A loopback page has
-// an ordinary http origin, and Navigate trusts it. The server stops itself
-// after loopbackIdleTimeout without a request.
+// an ordinary http origin, and Navigate trusts it. The server lives until the
+// next loadHTML or until the window is destroyed.
 func (w *webview) loadHTML(html string) {
 	body := []byte(html)
-	_, base, err := listenLoopbackHTTP(func(*request) *response {
+	srv, base, err := listenLoopbackHTTP(func(*request) *response {
 		return &response{Body: body, MIME: "text/html; charset=utf-8"}
 	})
 	if err != nil {
 		log.Printf("appkit: loadHTML: %v", err)
 		return
 	}
+	stopLoopback(w.htmlServer.Swap(srv))
 	w.Navigate(base + "/")
 }
 
@@ -2343,6 +2344,10 @@ type webview struct {
 	scriptDone  bool
 	lastScript  string
 
+	// htmlServer is the loopback server of the test-only loadHTML, stopped
+	// by the next loadHTML or by Destroy.
+	htmlServer atomic.Pointer[loopbackServer]
+
 	// The URIs of the navigations NavigationStarting let proceed and whose
 	// documents have not committed, by navigation ID, and the URI of the one
 	// whose document last committed: the document the view shows, read as a
@@ -2424,10 +2429,10 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		ownsWindow:  v.window == nil,
 		frameless:   !v.Frame,
 		fixed:       !v.Frame && v.State == StateFixed,
-		bindings:    map[string]binding{},
 		dispatchMap: map[uintptr]func(){},
-		serve:       serve,
 	}
+	w.bindings = map[string]binding{}
+	w.serve = serve
 	w.id = registerEngine(w)
 	w.hinst = getModuleHandleW(0)
 
@@ -2500,9 +2505,9 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		// runtime move/resize API.
 		w.applyGeometry(v)
 	}
-	// Per-view serving origin: start a window's temporary loopback server
-	// under App.HTTP - stopped again by releaseLoopback once the window's
-	// first load has finished (see viewContentBase); otherwise the window's
+	// Per-view serving origin: start a window's loopback server under
+	// App.HTTP - stopped by releaseLoopback when the window is destroyed
+	// (see viewContentBase); otherwise the window's
 	// content is served on the app scheme's https vhost
 	// (serveSchemeWindows). A start failure tears the freshly created window
 	// down.
@@ -2859,10 +2864,9 @@ func (w *webview) applySize(width, height int, state State) {
 // fails, so WM_DESTROY never fires, the owned-window count is never dropped
 // and a later WM_CLOSE stops posting WM_QUIT - Run() would then block forever.
 func (w *webview) Destroy() {
-	// A window closed before its first load finished (blank window, early
-	// close) still owns a temporary loopback server: stop it here - the
-	// load-finished path (fireReady) never ran.
+	// The window's loopback server, if it has one, lives until here.
 	w.releaseLoopback()
+	stopLoopback(w.htmlServer.Swap(nil))
 	// Off the UI thread the teardown is always marshalled, never run in
 	// place: the controller and environment belong to the UI thread. Dispatch
 	// posts to this view's window, or to the UI thread's dispatch window once

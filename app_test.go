@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -623,16 +624,20 @@ func TestSortedMapKeys(t *testing.T) {
 
 // --- per-view loopback serving (App.FS / App.HTTP / darwin) ----------------
 
-// loopbackRawGet performs one raw HTTP request against addr and returns the
-// status line, the parsed headers and the body.
-func loopbackRawGet(t *testing.T, addr, target string) (status string, headers map[string]string, body string) {
+// loopbackRawGet performs one raw HTTP request against addr, with the given
+// header lines, and returns the status line, the parsed headers and the body.
+func loopbackRawGet(t *testing.T, addr, target string, header ...string) (status string, headers map[string]string, body string) {
 	t.Helper()
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatalf("dial %s: %v", addr, err)
 	}
 	defer func() { _ = conn.Close() }()
-	if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: localhost\r\n\r\n", target); err != nil {
+	req := "GET " + target + " HTTP/1.1\r\n"
+	for _, h := range header {
+		req += h + "\r\n"
+	}
+	if _, err := fmt.Fprint(conn, req+"\r\n"); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 	br := bufio.NewReader(conn)
@@ -671,6 +676,14 @@ func loopbackRawGet(t *testing.T, addr, target string) (status string, headers m
 	return strings.TrimRight(statusLine, "\r\n"), headers, string(rest)
 }
 
+// loopbackGet requests target from srv as the view does after its first
+// navigation: naming the server's origin and carrying its cookie.
+func loopbackGet(t *testing.T, srv *loopbackServer, target string) (status string, headers map[string]string, body string) {
+	t.Helper()
+	return loopbackRawGet(t, srv.ln.Addr().String(), target,
+		"Host: localhost:"+srv.port, "Cookie: other=1; "+srv.cookieName()+"="+srv.token)
+}
+
 func mustLoopbackServe(t *testing.T, h serveFunc) *loopbackServer {
 	t.Helper()
 	srv, _, err := listenLoopbackHTTP(h)
@@ -686,12 +699,12 @@ func TestLoopbackServesBodyAndMIME(t *testing.T) {
 		if r.Method != "GET" {
 			t.Errorf("method = %q, want GET", r.Method)
 		}
-		if !strings.HasPrefix(r.URL, "http://localhost/") {
+		if !strings.HasPrefix(r.URL, "http://localhost:") {
 			t.Errorf("URL = %q, want an http://localhost origin", r.URL)
 		}
 		return &response{Body: []byte(testHTML), MIME: "text/html; charset=utf-8"}
 	})
-	status, headers, body := loopbackRawGet(t, srv.ln.Addr().String(), "/index.html")
+	status, headers, body := loopbackGet(t, srv, "/index.html")
 	if !strings.HasPrefix(status, "HTTP/1.1 200") {
 		t.Fatalf("status = %q, want 200", status)
 	}
@@ -723,14 +736,13 @@ func TestLoopbackServesAppFSAndNotFound(t *testing.T) {
 		t.Fatalf("listenLoopbackHTTP: %v", err)
 	}
 	t.Cleanup(func() { _ = srv.Close() })
-	if !strings.HasPrefix(base, "http://localhost:") {
-		t.Fatalf("base = %q, want http://localhost:<port>", base)
+	if want := "http://localhost:" + srv.port + "/.tuohi/" + srv.token; base != want {
+		t.Fatalf("base = %q, want %q", base, want)
 	}
-	addr := srv.ln.Addr().String()
-	if status, _, body := loopbackRawGet(t, addr, "/app.css"); !strings.HasPrefix(status, "HTTP/1.1 200") || body != testCSSBody {
+	if status, _, body := loopbackGet(t, srv, "/app.css"); !strings.HasPrefix(status, "HTTP/1.1 200") || body != testCSSBody {
 		t.Fatalf("GET /app.css = %q %q, want 200 body{}", status, body)
 	}
-	if status, _, _ := loopbackRawGet(t, addr, "/missing.html"); !strings.HasPrefix(status, "HTTP/1.1 404") {
+	if status, _, _ := loopbackGet(t, srv, "/missing.html"); !strings.HasPrefix(status, "HTTP/1.1 404") {
 		t.Fatalf("missing file = %q, want 404", status)
 	}
 }
@@ -750,21 +762,95 @@ func TestLoopbackCloseIdempotent(t *testing.T) {
 	}
 }
 
-func TestLoopbackIdleTimeout(t *testing.T) {
+// TestLoopbackGuard checks what the server refuses and what it lets through:
+// the token in the path is swapped for a cookie by a redirect, only the
+// server's own origin is answered, and nothing is served, or given a cookie,
+// without the token.
+func TestLoopbackGuard(t *testing.T) {
+	var served atomic.Int32
+	srv := mustLoopbackServe(t, func(r *request) *response {
+		served.Add(1)
+		return &response{Body: []byte("secret"), MIME: "text/plain"}
+	})
+	addr := srv.ln.Addr().String()
+	host := "Host: localhost:" + srv.port
+	cookie := "Cookie: " + srv.cookieName() + "=" + srv.token
+
+	// The first navigation: a redirect to the same path and query without
+	// the token, setting the cookie.
+	status, headers, _ := loopbackRawGet(t, addr, "/.tuohi/"+srv.token+"/a/index.html?x=1", host)
+	if !strings.HasPrefix(status, "HTTP/1.1 302") {
+		t.Fatalf("token navigation = %q, want 302", status)
+	}
+	if got := headers["location"]; got != "/a/index.html?x=1" {
+		t.Errorf("Location = %q, want /a/index.html?x=1", got)
+	}
+	wantCookie := srv.cookieName() + "=" + srv.token + "; Path=/; HttpOnly; SameSite=Lax"
+	if got := headers["set-cookie"]; got != wantCookie {
+		t.Errorf("Set-Cookie = %q, want %q", got, wantCookie)
+	}
+	if status, headers, _ := loopbackRawGet(t, addr, "/.tuohi/"+srv.token, host); !strings.HasPrefix(status, "HTTP/1.1 302") || headers["location"] != "/" {
+		t.Errorf("bare token navigation = %q to %q, want 302 to /", status, headers["location"])
+	}
+
+	// Both spellings of the origin are the server's own, and the port must
+	// match.
+	for _, h := range []string{host, "Host: LOCALHOST:" + srv.port, "Host: 127.0.0.1:" + srv.port} {
+		if status, _, body := loopbackRawGet(t, addr, "/data.txt", h, cookie); !strings.HasPrefix(status, "HTTP/1.1 200") || body != "secret" {
+			t.Errorf("%s with the cookie = %q %q, want 200", h, status, body)
+		}
+	}
+
+	refused := []struct {
+		name, target string
+		header       []string
+		want         string
+	}{
+		{"no cookie", "/data.txt", []string{host}, "403"},
+		{"wrong cookie", "/data.txt", []string{host, "Cookie: " + srv.cookieName() + "=" + srv.token[1:] + "x"}, "403"},
+		{"cookie of another port", "/data.txt", []string{host, "Cookie: tuohi-1=" + srv.token}, "403"},
+		{"wrong token", "/.tuohi/" + srv.token[1:] + "x/index.html", []string{host}, "403"},
+		{"empty token", "/.tuohi//index.html", []string{host}, "403"},
+		{"rebound host", "/data.txt", []string{"Host: attacker.example:" + srv.port, cookie}, "421"},
+		{"rebound host with token", "/.tuohi/" + srv.token + "/", []string{"Host: attacker.example:" + srv.port}, "421"},
+		{"other port", "/data.txt", []string{"Host: localhost:1", cookie}, "421"},
+		{"no port", "/data.txt", []string{"Host: localhost", cookie}, "421"},
+		{"no host", "/data.txt", []string{cookie}, "421"},
+	}
+	before := served.Load()
+	for _, tc := range refused {
+		status, headers, body := loopbackRawGet(t, addr, tc.target, tc.header...)
+		if !strings.HasPrefix(status, "HTTP/1.1 "+tc.want) {
+			t.Errorf("%s: status = %q, want %s", tc.name, status, tc.want)
+		}
+		if headers["set-cookie"] != "" || strings.Contains(body, "secret") {
+			t.Errorf("%s: answered with a cookie or the content: %q %q", tc.name, headers["set-cookie"], body)
+		}
+	}
+	if n := served.Load() - before; n != 0 {
+		t.Errorf("the resolver ran %d times for refused requests", n)
+	}
+}
+
+// TestLoopbackTokenPerServer checks that each server has a token of its own.
+func TestLoopbackTokenPerServer(t *testing.T) {
+	a := mustLoopbackServe(t, func(r *request) *response { return nil })
+	b := mustLoopbackServe(t, func(r *request) *response { return nil })
+	if a.token == b.token || len(a.token) < 43 {
+		t.Fatalf("tokens %q and %q: want two distinct 256-bit tokens", a.token, b.token)
+	}
+}
+
+// TestLoopbackOutlivesIdle checks that a server keeps serving after longer
+// without a request than the idle timeout it used to have.
+func TestLoopbackOutlivesIdle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing test; skipped under -short")
 	}
-	srv, _, err := listenLoopbackHTTP(func(r *request) *response { return nil })
-	if err != nil {
-		t.Fatalf("listenLoopbackHTTP: %v", err)
-	}
-	defer func() { _ = srv.Close() }()
-	deadline := time.Now().Add(2 * loopbackIdleTimeout)
-	for !srv.isClosed() {
-		if time.Now().After(deadline) {
-			t.Fatalf("server still open after %v idle; idle timeout not firing", 2*loopbackIdleTimeout)
-		}
-		time.Sleep(50 * time.Millisecond)
+	srv := mustLoopbackServe(t, func(r *request) *response { return &response{Body: []byte("x")} })
+	time.Sleep(4 * time.Second)
+	if status, _, _ := loopbackGet(t, srv, "/"); !strings.HasPrefix(status, "HTTP/1.1 200") {
+		t.Fatalf("after 4 s idle = %q, want 200", status)
 	}
 }
 
@@ -808,7 +894,7 @@ func TestViewContentBaseSchemeMode(t *testing.T) {
 }
 
 func TestViewContentBaseHTTPAndDarwin(t *testing.T) {
-	// App.HTTP opts a Windows/Linux view into the temporary loopback server,
+	// App.HTTP opts a Windows/Linux view into the per-view loopback server,
 	// and a darwin view gets one even with App.HTTP off (macOS always serves
 	// its app content over the loopback origin).
 	setScope(t, &appScope{cfg: appConfig{FS: fsys(map[string]string{"ping": "pong"})}})
@@ -822,7 +908,7 @@ func TestViewContentBaseHTTPAndDarwin(t *testing.T) {
 		t.Fatalf("viewContentBase (App.HTTP): %v", err)
 	}
 	if transient == nil || !strings.HasPrefix(base, "http://localhost:") {
-		t.Fatal("App.HTTP view: want a temporary loopback server")
+		t.Fatal("App.HTTP view: want a per-view loopback server")
 	}
 	stopLoopback(transient)
 	setScope(t, &appScope{cfg: appConfig{FS: fsys(map[string]string{"ping": "pong"})}})
@@ -831,7 +917,7 @@ func TestViewContentBaseHTTPAndDarwin(t *testing.T) {
 		t.Fatalf("viewContentBase (darwin): %v", err)
 	}
 	if transient == nil || !strings.HasPrefix(base, "http://localhost:") {
-		t.Fatal("darwin view: want a temporary loopback server even without App.HTTP")
+		t.Fatal("darwin view: want a per-view loopback server even without App.HTTP")
 	}
 	stopLoopback(transient)
 	setScope(t, &appScope{})

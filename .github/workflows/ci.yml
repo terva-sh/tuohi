@@ -2,10 +2,10 @@
 # macOS and Windows engines are tested, on GitHub's hosted runners, since
 # nothing internal can run them. Internal pull requests are gated by
 # .forgejo/workflows/ci.yml; docs/pr-reviews.md has both. Changes from
-# appkit's copy: no Coveralls upload, and the demo binaries are named tuohi-demo.
-# Everything CI runs from this one file: the lint/Tier-1 platform matrix that
-# validates every push and pull request, the demo build, and the release the
-# first two gate.
+# appkit's copy: no Coveralls upload, everything builds and tests without cgo,
+# and a release carries no binaries. Everything CI runs from this one file: the
+# lint/Tier-1 platform matrix that validates every push and pull request, the
+# demo build, and the release the first two gate.
 #
 # The release is a job here rather than a separate workflow on purpose. Jobs in
 # one run are ordered by `needs:`, so `release` cannot start unless the tests
@@ -19,10 +19,10 @@
 #   workflow_dispatch  -> as above; the release fires when the dispatched ref
 #                         is a vX.Y.Z tag
 #
-# `demo` runs unconditionally so a target that stopped compiling is caught on
-# the pull request that broke it rather than on the tag. Those binaries are
-# only uploaded - and so only stored - for a tag, the only thing that consumes
-# them.
+# tuohi is a library, so a release publishes its tag and generated notes, and
+# no binaries: consumers build from source through the Go module proxy. The
+# demo still builds for every target on every run, so a target that stopped
+# compiling is caught on the pull request that broke it.
 #
 # Every build here - the demo matrix, the `go build ./...` checks, the test
 # binaries, and the go invocations inside `make` and golangci-lint - shares the
@@ -60,8 +60,14 @@ permissions:
 # second flag (`go: parsing $GOFLAGS: unknown flag -buildid`). Note too that
 # repeating `-ldflags=` does not accumulate - the last one wins - so the three
 # linker flags have to travel together in one quoted field.
+#
+# CGO_ENABLED=0 is how consumers build tuohi, so every build and test here
+# runs that way. With cgo on, purego links runtime/cgo and exercises a
+# different path from the one that ships; that is also why no job runs the
+# race detector, which needs cgo.
 env:
   GOFLAGS: -trimpath "-ldflags=-s -w -buildid="
+  CGO_ENABLED: "0"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -99,10 +105,10 @@ jobs:
             GOOS=$os make check-imports
           done
 
-      # Coverage over the headless-safe tests (the GUI scenarios skip here, as
-      # this runner has no display).
-      - name: Run Unit tests and coverage
-        run: go test -race -covermode atomic -coverprofile=covprofile ./...
+      # The headless-safe tests (the GUI scenarios skip here, as this runner
+      # has no display).
+      - name: Run unit tests
+        run: go test ./...
 
       # Tier 2 (FreeBSD/NetBSD): cgo-disabled cross-builds and lint. FreeBSD
       # needs purego's fakecgo compiled with -std (see README "Supported
@@ -159,13 +165,16 @@ jobs:
       # Second test run: actually exercise GUI functionality under Xvfb.
       # Use a shorter timeout to catch hangs (e.g., gtk_init blocking on D-Bus).
       # Several env vars disable GPU-accelerated rendering to avoid driver issues.
+      # TUOHI_REQUIRE_GUI=1 fails a scenario that would skip, so the job cannot
+      # pass by testing nothing, and -v names every test and whether it ran.
       - name: GUI tests under Xvfb
         timeout-minutes: 6
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
           WEBKIT_DISABLE_COMPOSITING_MODE: '1'
-        run: xvfb-run -a go test -count=1 -timeout 150s ./...
+          TUOHI_REQUIRE_GUI: '1'
+        run: xvfb-run -a go test -count=1 -timeout 150s -v ./...
 
   # ---------------------------------------------------------------------------
   # MacOS – native WebKit
@@ -181,7 +190,11 @@ jobs:
 
       - run: go build ./...
       - run: go vet ./...
-      - run: go test ./...
+      # -v names every test and whether it ran, and TUOHI_REQUIRE_GUI=1 fails
+      # a GUI scenario that would skip.
+      - run: go test -v ./...
+        env:
+          TUOHI_REQUIRE_GUI: '1'
 
   # ---------------------------------------------------------------------------
   # Windows – WebView2
@@ -208,8 +221,11 @@ jobs:
       # guarantees the step cannot outlive its budget.
       - name: Run WebView2 tests
         timeout-minutes: 5
+        # The hosted runner ships the WebView2 Runtime, so a GUI scenario that
+        # would skip for want of it fails instead.
         env:
           WEBVIEW2_DEBUG: '1'
+          TUOHI_REQUIRE_GUI: '1'
         shell: pwsh
         run: |
           # Pre-compile the test binary – the build can be slow on Windows,
@@ -238,10 +254,10 @@ jobs:
   #
   # `demo` cross-builds the demo app for the targets the README ships, on every
   # run. `release` - only on a vX.Y.Z tag, and only once every test job AND the
-  # build have succeeded - attaches those binaries to a GitHub release with
-  # notes GitHub generates from the commits since the previous tag. Consumer
-  # installs of the library itself are unaffected either way: they resolve
-  # through the Go module proxy against the same tag.
+  # build have succeeded - publishes a GitHub release for the tag with notes
+  # GitHub generates from the commits since the previous tag, and no binaries.
+  # Consumers install the library through the Go module proxy against the same
+  # tag.
   # ---------------------------------------------------------------------------
   build:
     name: Build (${{ matrix.target }})
@@ -264,7 +280,9 @@ jobs:
           - { target: linux_loong64, goos: linux, goarch: loong64 }
           - { target: linux_ppc64le, goos: linux, goarch: ppc64le }
           - { target: linux_riscv64, goos: linux, goarch: riscv64 }
-          - { target: linux_s390x, goos: linux, goarch: s390x }
+          # purego reaches s390x without cgo only from Go 1.27 on, so this
+          # leg builds with 1.27 rather than go.mod's minimum.
+          - { target: linux_s390x, goos: linux, goarch: s390x, go: '1.27' }
           - { target: darwin_amd64, goos: darwin, goarch: amd64 }
           - { target: darwin_arm64, goos: darwin, goarch: arm64 }
           - { target: windows_amd64, goos: windows, goarch: amd64 }
@@ -278,33 +296,22 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # go.mod's minimum, unless the leg names a newer Go.
+          go-version: ${{ matrix.go }}
+          go-version-file: ${{ !matrix.go && 'go.mod' || '' }}
 
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          mkdir -p dist
-          out="dist/tuohi-demo_${{ matrix.target }}"
-          if [ "$GOOS" = windows ]; then out="$out.exe"; fi
-          # CGO_ENABLED=0 is the README's no-cgo promise: a released binary
-          # carries no C toolchain dependency. -trimpath and the linker flags
-          # come from the workflow-level GOFLAGS above, shared by every build.
-          # GOARM only applies to GOARCH=arm and is ignored elsewhere.
-          # FreeBSD needs purego's fakecgo compiled with -std when cgo is off.
+          # CGO_ENABLED=0 and -trimpath and the linker flags come from the
+          # workflow-level env above, shared by every build. GOARM only applies
+          # to GOARCH=arm and is ignored elsewhere. FreeBSD needs purego's
+          # fakecgo compiled with -std when cgo is off.
           flags=""
           if [ "$GOOS" = freebsd ]; then flags="-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std"; fi
-          CGO_ENABLED=0 GOARM="${{ matrix.goarm }}" go build $flags -o "$out" ./demo
-
-      # Only a tag consumes the binaries, and nineteen of them on every run is
-      # real artifact storage - so a non-release run builds but does not upload.
-      - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          name: ${{ matrix.target }}
-          path: dist/*
-          if-no-files-found: error
+          GOARM="${{ matrix.goarm }}" go build $flags -o /dev/null ./demo
 
   release:
     name: Release ${{ github.ref_name }}
@@ -313,7 +320,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: read # download-artifact
     steps:
       # The tag is the only input, so validate it before anything is published.
       - name: Validate semver tag
@@ -323,14 +329,8 @@ jobs:
             exit 1
           fi
 
-      # Every demo leg's artifact, flattened into one directory.
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      # Idempotent: a re-run refreshes the assets of an existing release
-      # instead of failing on the name collision.
+      # Idempotent: a re-run leaves an existing release in place instead of
+      # failing on the name collision.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -344,24 +344,11 @@ jobs:
           prerelease=()
           if [[ "${tag%%+*}" == *-* ]]; then prerelease=(--prerelease); fi
           if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-            echo "Release $tag already exists – refreshing its assets."
-            gh release upload "$tag" --repo "$repo" dist/* --clobber
+            echo "Release $tag already exists."
             if (( ${#prerelease[@]} )); then
               gh release edit "$tag" --repo "$repo" --prerelease
             fi
           else
             gh release create "$tag" --repo "$repo" "${prerelease[@]}" \
-              --title "$tag" --generate-notes --verify-tag dist/*
+              --title "$tag" --generate-notes --verify-tag
           fi
-
-      - name: Summarise the release
-        run: |
-          {
-            echo "### Released \`${{ github.ref_name }}\`"
-            echo
-            echo "| asset | size |"
-            echo "| --- | --- |"
-            for f in dist/*; do
-              printf '| `%s` | %s |\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"

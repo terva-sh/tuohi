@@ -190,16 +190,18 @@ licensing or attribution.
 
 ### Commands
 
-`just` lists the recipes. `just ci` runs what Forgejo CI runs: vet, gofmt, the
-import check, the embedded-JavaScript check, the headless tests, the cross
-builds, and `git ticket check`.
+`just` lists the recipes. `just ci` runs what Forgejo CI's `check` job runs:
+vet, gofmt, the import check, the embedded-JavaScript check, the headless
+tests, the cross builds, and `git ticket check`. Its `gui` job runs the steps
+of `just test-gui`. Both build and test with Go 1.26 language rules, the
+minimum `go.mod` declares, so do not use a newer language feature.
 
 The GUI scenarios need a display, a session bus, and a working WebKitGTK.
 `just test-gui` runs them under `xvfb-run` and `dbus-run-session` on both
 WebKitGTK stacks. Without `dbus-run-session` a headless GTK4 run waits out a
-25-second D-Bus timeout for every portal query. See the open tickets before
-trusting a green run: the harness's own availability probe has a bug that
-skips these scenarios wherever bubblewrap is installed.
+25-second D-Bus timeout for every portal query. `TUOHI_REQUIRE_GUI=1`, which
+the recipe and both CIs set, fails a scenario that would skip, so a green run
+means the scenarios ran.
 
 On Debian 13 the GUI tests need `libwebkit2gtk-4.1-0`, `libwebkitgtk-6.0-4`,
 `xvfb`, `dbus`, and `libxtst6`, which the permissions scenario clicks with.
@@ -211,7 +213,9 @@ is compiled against them.
 Work lands through pull requests on the internal Forgejo (`origin`), following
 [docs/pr-reviews.md](docs/pr-reviews.md). `github.com/terva-sh/tuohi` is the
 public mirror. `just sync-github` keeps the two `main` branches equal and
-never force-pushes.
+never force-pushes. Pull-request branches are never pushed to the mirror: the
+owner keeps work in progress off it, so macOS and Windows are tested there
+after the merge, and new code for them lands in small pull requests.
 
 ### Handoffs
 
