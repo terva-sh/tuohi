@@ -47,6 +47,7 @@ func requireGUI(t *testing.T, got string) {
 func TestMain(m *testing.M) {
 	flag.Parse()
 	runtime.LockOSThread()
+	repeatStatus := 0
 	if !testing.Short() && guiAvailable() {
 		resWinBridge.Store(winBridgeScenario())
 		resWinErrorUnbind.Store(winErrorUnbindScenario())
@@ -59,11 +60,15 @@ func TestMain(m *testing.M) {
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
-			os.Exit(repeatDataURL(n))
+			repeatStatus = repeatDataURL(n)
 		}
 		resWinClose.Store(winCloseViaUIScenario()) // last: it ends with WM_QUIT
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if code == 0 {
+		code = repeatStatus
+	}
+	os.Exit(code)
 }
 
 // winCloseViaUIScenario simulates the user closing the window (WM_CLOSE, as the
@@ -422,8 +427,9 @@ func TestSchemeURLRoundTrip(t *testing.T) {
 // repeatDataURL runs dataURLScenario n times in this process, printing each
 // result, and returns the exit status: 1 when any run failed. It is a
 // diagnostic for TKT-01M3MWY0QQQ6J07DHDY0CCBN2V (Stop dropping a data: page's
-// binding call on Windows now and then), set by TUOHI_REPEAT_DATAURL=n, and
-// replaces the ordinary test run.
+// binding call on Windows now and then), set by TUOHI_REPEAT_DATAURL=n. It
+// runs after the other scenarios, and the ordinary tests still run and
+// assert: the process fails when either they or a repeat fail.
 func repeatDataURL(n int) int {
 	failed := 0
 	for i := 1; i <= n; i++ {
