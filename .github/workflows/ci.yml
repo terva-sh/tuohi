@@ -211,6 +211,11 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
 
+      # The step below runs only the root package, so the single-instance
+      # package, whose Windows backend nothing else exercises, runs here.
+      - name: Run single-instance tests
+        run: go test -count=1 -timeout 120s ./instance/
+
       # The test opens a real WebView2 window and exercises the JS↔Go bridge.
       # Windows runners come with the Edge WebView2 Runtime preinstalled.
       #
