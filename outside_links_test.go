@@ -1,7 +1,9 @@
 package tuohi
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,10 +21,15 @@ var resOutsideLinks atomic.Value // string
 // that host. The second server records every request it gets; it must get
 // none.
 func outsideLinksScenario() string {
-	var requested atomic.Int32
-	outside, closeOutside, err := servePlain(func(string) (string, string) {
-		requested.Add(1)
-		return "", `<!DOCTYPE html><p>outside</p>`
+	var reqMu sync.Mutex
+	var requests []string
+	outside, closeOutside, err := serveRecording(func(target, purpose string) {
+		reqMu.Lock()
+		defer reqMu.Unlock()
+		if purpose != "" {
+			target += "(" + purpose + ")"
+		}
+		requests = append(requests, target)
 	})
 	if err != nil {
 		return "listen error: " + err.Error()
@@ -97,7 +104,13 @@ func outsideLinksScenario() string {
 		time.Sleep(300 * time.Millisecond)
 		mu.Lock()
 		defer mu.Unlock()
-		result <- fmt.Sprintf("%s requested=%d", strings.Join(report, " "), requested.Load())
+		reqMu.Lock()
+		defer reqMu.Unlock()
+		got := fmt.Sprintf("%s requested=%d", strings.Join(report, " "), len(requests))
+		if len(requests) > 0 {
+			got += " " + strings.Join(requests, ",")
+		}
+		result <- got
 	}()
 
 	w.w.Navigate(trusted + "page")
@@ -121,4 +134,54 @@ func TestOutsideLinksNotRequested(t *testing.T) {
 	if got != want {
 		t.Fatalf("outside links:\n got %s\nwant %s", got, want)
 	}
+}
+
+// serveRecording answers every request on a fresh loopback port with a small
+// page, and calls seen with each request's target and its Sec-Purpose or
+// Purpose header, which a speculative request (a prefetch or preconnect)
+// carries. It returns the server's base URL, ending in a slash, and a
+// function that stops it.
+func serveRecording(seen func(target, purpose string)) (string, func(), error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, err
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				br := bufio.NewReader(conn)
+				line, err := br.ReadString('\n')
+				if err != nil {
+					return
+				}
+				target, purpose := "", ""
+				if f := strings.Fields(line); len(f) == 3 {
+					target = f[1]
+				}
+				for {
+					h, err := br.ReadString('\n')
+					if err != nil {
+						return
+					}
+					h = strings.TrimRight(h, "\r\n")
+					if h == "" {
+						break
+					}
+					name, value, _ := strings.Cut(h, ":")
+					if strings.EqualFold(name, "Sec-Purpose") || strings.EqualFold(name, "Purpose") {
+						purpose = strings.TrimSpace(value)
+					}
+				}
+				seen(target, purpose)
+				const body = `<!DOCTYPE html><p>outside</p>`
+				_, _ = fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(body), body)
+			}()
+		}
+	}()
+	return "http://" + ln.Addr().String() + "/", func() { _ = ln.Close() }, nil
 }
