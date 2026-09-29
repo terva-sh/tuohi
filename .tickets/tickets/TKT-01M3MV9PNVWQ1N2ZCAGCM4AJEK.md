@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T02:45:08Z
+updated_at: 2026-09-29T02:51:13Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -165,3 +165,17 @@ GitHub run 36513098161 showed WebView2 (runtime 153) requesting GET /link and GE
    - **Tracking:** the case is listed with server redirects and meta refresh as still requested first.
 
 Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:51:13Z
+
+### Review disposition for PR #26, round 2 (terva-review run on febc61a)
+
+The round-1 findings were reported handled: finding 1 resolved, and finding 2 declined, as documented. GitHub run 36514058532 on febc61a passed every job.
+
+1. **Medium: SVG outside links bypass the click intercept.** Fixed.
+   - **The fix:** `hrefOf` reads `href` when it is a string. For an SVG link it reads `href.baseVal`, or the `href` or `xlink:href` attribute. `linkOf` also accepts a link that has only `xlink:href`.
+   - **`TestOutsideLinksScript`** gains three cases: an SVG link, an SVG link with only `xlink:href`, and a trusted SVG link. With the old read, both outside cases fail.
+   - **`TestOutsideLinksNotRequested`** gains an `svglink` step, which dispatches a click on the text inside an SVG `<a>`. On WebKitGTK 6.0 with the `navigate` listener off, the old read let `/svg` reach the server, and `hrefOf` does not.
+2. **Medium: GET forms with file inputs are handed off with a different URL.** Fixed. The query is built pair by pair from the `FormData` entries, and a file value is written as its `name`, as a browser's GET submission does. `URLSearchParams(FormData)` had written `[object File]`. `TestOutsideLinksScript` gains a GET form with a file field, whose expected result is `?q=x&f=a+b.txt`.
+
+Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
