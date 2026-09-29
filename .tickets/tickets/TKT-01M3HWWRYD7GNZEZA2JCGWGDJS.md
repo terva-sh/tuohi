@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:16:52Z
+updated_at: 2026-09-29T22:19:44Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -105,3 +105,12 @@ Disposition for the terva-review finding at e6d120d (run c028a63a), fixed in 489
   - Matching the stem without the hyphen rule makes the test fail, leaving 2 files beside a system `vendor/app.desktop`.
 
 `just ci` passes.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:19:44Z
+
+Disposition for the terva-review finding at 5839755 (run d2daa612), fixed in e240630:
+
+- **Accepted, medium: "Remove a generated entry when a foreign user entry takes its desktop ID".** A user subdirectory entry that shares the id is now handled like a system entry. tuohi's own `applications/<id>.desktop` and its icons are removed, and nothing is written again.
+  - `TestWaylandIdentitySubdirEntry` now installs tuohi's entry first, adds the other entry, and installs twice more. The other entry must be untouched, and nothing of tuohi's may remain. It checks this for both the system and the user directory.
+  - Going back to the previous order leaves 3 files beside the user's `vendor/app.desktop`, and the test fails.
+  - The `App.DesktopEntry` doc now says tuohi's entry is removed once any such entry appears.
