@@ -63,6 +63,20 @@ func webkitRunnable() (bool, string) {
 	return true, ""
 }
 
+// isWritableDir reports whether dir accepts new files right now, by creating
+// and removing a probe file inside it. CreateTemp fails on a missing or
+// read-only directory.
+func isWritableDir(dir string) bool {
+	f, err := os.CreateTemp(dir, ".tuohi-write-probe-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
 // guiAvailable reports whether the GTK/WebKitGTK stack can actually run here:
 // the shared libraries load, a display is present AND WebKitGTK can spawn its
 // helper processes. Without all three, the GUI scenarios are skipped so

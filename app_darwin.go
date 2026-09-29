@@ -1,16 +1,12 @@
 // macOS backends for the app-scope services: the application icon (an
-// NSImage handed to AppKit, which the Dock draws), the single-instance lock
-// and hand-off socket (flock + Unix socket) and Open/Reveal (NSWorkspace) -
-// all via purego's Objective-C runtime (no cgo).
+// NSImage handed to AppKit, which the Dock draws) and Open/Reveal
+// (NSWorkspace) - all via purego's Objective-C runtime (no cgo).
 package tuohi
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -101,96 +96,6 @@ func reapplyAppIcon() {
 		return
 	}
 	_ = setAppIcon(lastIcon, "")
-}
-
-// runtimeDir picks a per-user directory for the lock and socket. On Linux
-// XDG_RUNTIME_DIR is the right place; elsewhere (macOS included) the temp
-// dir is the portable fallback.
-func runtimeDir() string {
-	d := os.Getenv("XDG_RUNTIME_DIR")
-	if d != "" {
-		return d
-	}
-	return os.TempDir()
-}
-
-func instancePaths(id string) (lock, sock string) {
-	stem := filepath.Join(runtimeDir(), "native-si-"+instanceKey(id))
-	return stem + ".lock", stem + ".sock"
-}
-
-func acquire(id string, onMessage func([]string)) (*instanceLock, error) {
-	lockPath, sockPath := instancePaths(id)
-	// lockPath is runtimeDir() + a sha256 hex of id, so it cannot traverse out.
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304
-	if err != nil {
-		return nil, err
-	}
-	// A file descriptor is a small non-negative int, so the conversion is safe.
-	fd := int(f.Fd()) // #nosec G115
-	err = syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
-	if err != nil {
-		_ = f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, errAlreadyRunning
-		}
-		return nil, err
-	}
-
-	// We hold the lock: we are the primary. A previous primary that crashed may
-	// have left a stale socket file; since we hold the lock, removing it is safe.
-	_ = os.Remove(sockPath)
-	ln, err := net.Listen("unix", sockPath)
-	if err != nil {
-		_ = syscall.Flock(fd, syscall.LOCK_UN)
-		_ = f.Close()
-		return nil, err
-	}
-	go serveInstance(ln, onMessage)
-
-	return &instanceLock{release: func() error {
-		_ = ln.Close() // unblocks the Accept loop and unlinks the socket
-		_ = os.Remove(sockPath)
-		_ = syscall.Flock(fd, syscall.LOCK_UN)
-		err := f.Close()
-		_ = os.Remove(lockPath)
-		return err
-	}}, nil
-}
-
-func serveInstance(ln net.Listener, onMessage func([]string)) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			return // listener closed on Release
-		}
-		go func() {
-			defer func() { _ = conn.Close() }()
-			data, err := io.ReadAll(conn)
-			if err != nil {
-				return
-			}
-			var args []string
-			if json.Unmarshal(data, &args) == nil && onMessage != nil {
-				onMessage(args)
-			}
-		}()
-	}
-}
-
-func send(id string, args []string) error {
-	_, sockPath := instancePaths(id)
-	conn, err := net.Dial("unix", sockPath)
-	if err != nil {
-		return err // no instance listening (dial refused / socket missing)
-	}
-	defer func() { _ = conn.Close() }()
-	data, err := json.Marshal(args)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Write(data)
-	return err
 }
 
 var (

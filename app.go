@@ -27,8 +27,6 @@ package tuohi
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
@@ -169,7 +167,7 @@ func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
 // App configures an appkit application and carries its runtime scope.
 //
 // It is the single application-scoped object: the exported fields hold the
-// application settings (content filesystem, tray, icon, single-instance, ...)
+// application settings (content filesystem, tray, icon, ...)
 // and unexported fields hold the state of the scope (committed settings and
 // the one-time platform initialization). It is conceptually similar to how
 // http.Server holds configuration and context together.
@@ -205,27 +203,10 @@ type App struct {
 	// is fixed when each view is created.
 	Events string
 
-	// ID uniquely identifies this application - e.g.
-	// "com.github.malivvan.appkit" - the key the single-instance rule locks
-	// on. It is optional outside Single Instance Mode: with App.Exec nil it is
-	// unused and several instances of the same binary run side by side. When
-	// App.Exec is set (Single Instance Mode is on), ID is REQUIRED: a later
-	// launch of an app whose ID matches an already-running primary forwards
-	// its command-line arguments to that primary (see Exec) and exits
-	// quietly. Launching the binary with "--new-instance" in its arguments
-	// always starts a fresh instance, even in single-instance mode.
+	// ID uniquely identifies this application - e.g. "com.example.app". The
+	// autostart registration is stored under it (see App.Autostart). Single
+	// instance lives in the tuohi/instance package, which takes its own id.
 	ID string
-
-	// Exec, when non-nil, ENABLES Single Instance Mode: only one process of
-	// this application runs at a time, and every later launch is redirected to
-	// it instead of starting a new process. App.ID must then uniquely identify
-	// the application (see the ID doc). With Exec nil (the default),
-	// single-instance mode is off and every launch runs its own process.
-	//
-	// Exec is invoked on the primary instance with the command-line arguments
-	// of each redirected later launch. It runs on its own goroutine, so hand
-	// the arguments to the UI thread if you touch UI state.
-	Exec func(args []string)
 
 	// Name is the application name, used where the OS asks for one - most
 	// visibly as the source shown by desktop notifications (App.Notify), and
@@ -394,7 +375,6 @@ type appConfig struct {
 	Tray   *tray.Config
 	Icon   []byte
 	ID     string
-	Exec   func(args []string)
 	FS     fs.FS
 	HTTP   bool
 	Debug  bool
@@ -412,7 +392,6 @@ func snapshotConfig(a *App) appConfig {
 		Tray:   a.Tray,
 		Icon:   a.Icon,
 		ID:     a.ID,
-		Exec:   a.Exec,
 		FS:     a.FS,
 		HTTP:   a.HTTP,
 		Debug:  a.Debug || envDebug(),
@@ -427,19 +406,17 @@ type appScope struct {
 	cfg     appConfig // committed settings snapshot
 	initErr error
 
-	// Lifecycle state. startOnce guards the one-time app start (single
-	// instance + icon, see (*App).start); windows counts the
+	// Lifecycle state. startOnce guards the one-time app start (the icon,
+	// see (*App).start); windows counts the
 	// live windows created through App.Show (owned windows only);
 	// exitOnce/exitFlag end the Wait run loop (App.Quit, or the last window
 	// closing when App.Exit is set). No app-scope web server exists: the
 	// loopback servers (macOS always, Linux and Windows under App.HTTP) are
 	// per-view, temporary, and owned by the engine (see viewContentBase).
-	startOnce   sync.Once
-	startErr    error
-	releaseInst func()
-	windows     int32
-	exitOnce    sync.Once
-	exitFlag    int32
+	startOnce sync.Once
+	windows   int32
+	exitOnce  sync.Once
+	exitFlag  int32
 
 	// views is the set of Views currently shown (and managed) by this App,
 	// each with the engine App.Show created for it. App.Show registers a View
@@ -525,9 +502,7 @@ func (a *App) Wait() error {
 	if err != nil {
 		return fmt.Errorf("appkit: wait: %w", err)
 	}
-	if err := a.start(s); err != nil {
-		return err
-	}
+	a.start(s)
 	// A configured tray shows its icon before the loop runs - Wait runs on the
 	// UI thread, which is where tray.Set must be called - and the loop below
 	// dispatches the tray's menu events. Remove hides the icon when the loop
@@ -544,10 +519,6 @@ func (a *App) Wait() error {
 		appUIWait()
 	}
 	ui.exitLoop()
-	if s.releaseInst != nil {
-		s.releaseInst()
-		s.releaseInst = nil
-	}
 	return nil
 }
 
@@ -562,9 +533,8 @@ func (a *App) Quit() {
 	s.requestExit()
 }
 
-// start performs the one-time application initialization: the single-instance
-// rule (enabled by App.Exec, keyed on App.ID) and the best-effort runtime
-// icon (App.Icon). It runs once - on the first window creation or the first
+// start performs the one-time application initialization: the best-effort
+// runtime icon (App.Icon). It runs once - on the first window creation or the first
 // Wait call - which is the single "app initialization" point of the scope;
 // later calls are no-ops. App.Show and Wait both call it, so the order does
 // not matter. Content serving is NOT started here: there is no permanently
@@ -572,14 +542,8 @@ func (a *App) Quit() {
 // vhost on Windows, or over a TEMPORARY per-view loopback server (macOS and
 // Linux always; Windows when App.HTTP opts in), started at window creation
 // and stopped once the window has been loaded (see viewContentBase).
-func (a *App) start(s *appScope) error {
+func (a *App) start(s *appScope) {
 	s.startOnce.Do(func() {
-		release, err := enforceSingleInstance(&s.cfg)
-		if err != nil {
-			s.startErr = err
-			return
-		}
-		s.releaseInst = release
 		// The process icon: App.Icon when the consumer set one, otherwise the
 		// embedded appkit mark (_icon). setAppIcon is best-effort per platform
 		// (Dock on macOS, GTK window icons on Linux, no-op on Windows) and its
@@ -605,12 +569,11 @@ func (a *App) start(s *appScope) error {
 			}
 		}
 	})
-	return s.startErr
 }
 
 // scopePtr points at the currently active App scope so the per-OS engines can
 // report window close events into it (appWindowClosed). One live application
-// per process is the supported model (matching the single-instance lock).
+// per process is the supported model.
 var scopePtr atomic.Pointer[appScope]
 
 // appWindowClosed is invoked by the per-OS engines when an owned window
@@ -706,114 +669,6 @@ func (a *App) Backend() string {
 		return ""
 	}
 	return platformBackend()
-}
-
-// errAlreadyRunning is returned by the internal single-instance machinery when
-// another process holds the lock for the requested id.
-var errAlreadyRunning = errors.New("appkit: another instance is already running")
-
-// instanceLock is a held single-instance lock. Single-instance handling is
-// deliberately exposed only through App (Exec / ID) - there is no
-// public manual API. Release relinquishes the lock and stops listening for
-// hand-offs; it is safe to call more than once (later calls are no-ops
-// returning the first result).
-type instanceLock struct {
-	once    sync.Once
-	relErr  error
-	release func() error
-}
-
-// Release relinquishes the lock. See instanceLock.
-func (l *instanceLock) Release() error {
-	l.once.Do(func() { l.relErr = l.release() })
-	return l.relErr
-}
-
-// acquireInstance tries to become the single instance identified by id (a
-// stable application identifier such as "com.example.app"). It returns the
-// owning lock when no instance is running, or errAlreadyRunning when one
-// already is. onMessage, when non-nil, receives the arguments of later
-// launches that were redirected to this primary.
-func acquireInstance(id string, onMessage func([]string)) (*instanceLock, error) {
-	return acquire(id, onMessage)
-}
-
-// sendInstance delivers args to the instance already running under id, for use
-// after acquireInstance returned errAlreadyRunning. It returns an error when no
-// instance is listening.
-func sendInstance(id string, args []string) error { return send(id, args) }
-
-// instanceKey derives a short, filesystem- and pipe-name-safe key from an arbitrary
-// id, so the lock/socket/pipe names stay bounded in length and collision-free.
-func instanceKey(id string) string {
-	sum := sha256.Sum256([]byte(id))
-	return hex.EncodeToString(sum[:8])
-}
-
-// enforceSingleInstance applies the single-instance rule. It is only active
-// when App.Exec is set (a non-nil Exec enables Single Instance Mode): with a
-// nil Exec every launch runs its own process. When active, App.ID names the
-// application the rule locks on - with Exec set and an empty ID it returns an
-// error, because a single instance needs a stable identifier to lock. When
-// active, this process becomes the primary instance (its Release is returned
-// so the caller defers it); a second launch forwards its arguments to the
-// primary and terminates the process quietly (os.Exit(0)). The rule is also
-// skipped when the binary was started with the "--new-instance" override flag
-// (which always starts a fresh instance) or when this process already holds
-// the primary lock.
-func enforceSingleInstance(opts *appConfig) (func(), error) {
-	if opts.Exec == nil || hasNewInstanceFlag(os.Args) {
-		return func() {}, nil
-	}
-	id := opts.ID
-	if id == "" {
-		return nil, errors.New("appkit: App.ID is required when App.Exec enables single-instance mode")
-	}
-	if instanceHeld() {
-		return func() {}, nil
-	}
-	inst, err := acquireInstance(id, opts.Exec)
-	if errors.Is(err, errAlreadyRunning) {
-		// Another instance owns the lock: hand it our arguments and go away.
-		_ = sendInstance(id, os.Args[1:])
-		os.Exit(0)
-	}
-	if err != nil {
-		return nil, err
-	}
-	setInstanceHeld(true)
-	return func() {
-		setInstanceHeld(false)
-		_ = inst.Release()
-	}, nil
-}
-
-// hasNewInstanceFlag reports whether the process was started with the
-// "--new-instance" override, which always starts a fresh instance.
-func hasNewInstanceFlag(args []string) bool {
-	for _, a := range args {
-		if a == "--new-instance" {
-			return true
-		}
-	}
-	return false
-}
-
-var (
-	instanceMu  sync.Mutex
-	primaryHeld bool
-)
-
-func instanceHeld() bool {
-	instanceMu.Lock()
-	defer instanceMu.Unlock()
-	return primaryHeld
-}
-
-func setInstanceHeld(v bool) {
-	instanceMu.Lock()
-	primaryHeld = v
-	instanceMu.Unlock()
 }
 
 // binder is the surface bindEntry writes every declarative entry onto: the
