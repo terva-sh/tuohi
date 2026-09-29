@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M6JQZJWB23HPXXQZVZR
 title: Report missing WebKitGTK symbols as an error, not a panic
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -14,19 +14,20 @@ assignees: []
 milestone: v0.1.0
 parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
-dependencies: []
+dependencies:
+  - TKT-01M3HWWRW7YGCHHZY4BFEX3A6W
 blocks_on: none
 references: []
 moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-29T21:13:08Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---

@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRWX3D9XTA5RTW5AC26R
 title: Finish renaming appkit to tuohi in prose, env vars, and names
 type: chore
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -14,19 +14,21 @@ assignees: []
 milestone: v0.1.0
 parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
-dependencies: []
+dependencies:
+  - TKT-01M3J59M1H9PZ04J2C9JJZ7V13
+  - TKT-01M3HWWRW7YGCHHZY4BFEX3A6W
 blocks_on: none
 references: []
 moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T19:26:49Z
+updated_at: 2026-09-29T21:13:08Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---

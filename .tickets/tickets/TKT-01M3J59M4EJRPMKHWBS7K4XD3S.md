@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M4EJRPMKHWBS7K4XD3S
 title: Guard tuohi's loopback server and settle its idle shutdown
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -21,12 +21,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:33:30Z
+updated_at: 2026-09-29T21:13:07Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---

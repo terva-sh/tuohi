@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRW7YGCHHZY4BFEX3A6W
 title: Replace pure/ with upstream ebitengine/purego
 type: task
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -22,12 +22,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T19:26:49Z
+updated_at: 2026-09-29T21:13:07Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
@@ -75,3 +75,18 @@ A diff against upstream v0.11.1 in the module cache shows the copy is v0.11.0 pl
 - panic message prefixes.
 
 Non-`pure` code uses `RegisterLibFunc` (155), `SyscallN` (73, Windows COM), `NewCallback` (23), `RegisterFunc` (21), `Dlopen` (16), `Dlsym` (14), and `pure/objc` on darwin. Upstream `objc` has the same API, so the switch should be mechanical. Decision: replace it.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:13:06Z
+
+### Owner decision, 2026-09-30: upstream purego, with the FreeBSD flag
+
+Replace `pure/` with `github.com/ebitengine/purego` and delete the directory.
+
+A measurement settled it. In a scratch module on upstream v0.11.1, a `CGO_ENABLED=0` build for `GOOS=freebsd` fails, because `internal/fakecgo/freebsd.go` uses `//go:cgo_export_dynamic`, which the compiler accepts only in cgo-generated code. With `-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std` it builds. `GOOS=netbsd` builds without the flag.
+
+The copy builds FreeBSD without the flag only because it dropped those two directives. Its own comment, in `pure/internal/fakecgo/freebsd.go`, says the result "may fail to resolve libc's references at runtime". So the copy's one advantage was a FreeBSD binary that may not work, where upstream plus the flag gives one that does.
+
+- `just cross`, the Makefile, and both workflows pass the flag for FreeBSD.
+- The README tells FreeBSD consumers to pass it.
+
+Rejected: keeping `pure/` and resyncing it to v0.11.1. That keeps 7,400 lines of per-architecture code in this repository for no behaviour anyone needs.
