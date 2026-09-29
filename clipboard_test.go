@@ -1,5 +1,3 @@
-//go:build linux || freebsd || netbsd || darwin
-
 package tuohi
 
 import (
@@ -17,12 +15,12 @@ var resClipboard atomic.Value // string
 // that a Latin-1 or byte-truncating path would mangle.
 const clipboardText = "tuohi ✓ 日本語 — ünïcödé"
 
-// clipboardScenario round-trips text through tuohi/clipboard, which reaches
-// the UI thread through the hook newView publishes. It copies and pastes once on the UI
-// thread before the loop runs, where the calls run in place, and once from
-// another goroutine while the loop runs, where they are marshalled to the UI
-// thread. The two texts differ, so the second paste cannot pass on the first
-// copy.
+// clipboardScenario round-trips text through tuohi/clipboard. On GTK and
+// macOS the package reaches the UI thread through the hook newView
+// publishes; Windows needs none. It copies and pastes once on the UI
+// thread before the loop runs, and once from another goroutine while the
+// loop runs, which GTK and macOS marshal to the UI thread. The two texts
+// differ, so the second paste cannot pass on the first copy.
 func clipboardScenario() string {
 	w := &View{Width: 300, Height: 200}
 	if err := testApp().Show(w); err != nil {

@@ -10,10 +10,10 @@
 // text at its first NUL byte, because the native clipboards take C strings,
 // and replaces invalid UTF-8 with U+FFFD.
 //
-// It calls the toolkit tuohi's window already loaded, so no external program
-// runs: on Linux, FreeBSD and NetBSD the GTK clipboard, gtk_clipboard_* on
-// GTK 3 and gdk_clipboard_* on GTK 4, and on macOS the general NSPasteboard.
-// That has three costs:
+// No external program runs. On Linux, FreeBSD and NetBSD it calls the GTK
+// that tuohi's window already loaded, gtk_clipboard_* on GTK 3 and
+// gdk_clipboard_* on GTK 4, on macOS the general NSPasteboard, and on
+// Windows the Win32 clipboard. GTK and macOS have three costs:
 //
 //   - The clipboard works only once tuohi has started its toolkit, which is
 //     when a tuohi App shows its first window. A program that never opens a
@@ -26,8 +26,9 @@
 //   - GTK 4 reads the clipboard asynchronously, so Paste waits on a round
 //     trip through the UI thread, which keeps running its loop meanwhile.
 //
-// On Windows it still wraps github.com/atotto/clipboard, which uses the
-// Win32 clipboard. Other platforms return ErrUnsupported.
+// Windows needs no window: the clipboard works in any program. When another
+// process holds the clipboard open, Copy and Paste retry for up to a second.
+// Other platforms return ErrUnsupported.
 //
 // Both functions are safe to call from any goroutine. On GTK and macOS the
 // work runs on the UI thread: in place when the caller is on it, otherwise
@@ -39,8 +40,8 @@ import (
 	"strings"
 )
 
-// ErrNoApp is returned by Copy and Paste when the clipboard needs tuohi's
-// toolkit and no tuohi App is running one: none has shown a window yet, or
+// ErrNoApp is returned by Copy and Paste on GTK and macOS, where the
+// clipboard needs tuohi's toolkit, when no tuohi App is running one: none has shown a window yet, or
 // its loop has stopped and the caller is not on the UI thread.
 var ErrNoApp = errors.New("clipboard: needs a running tuohi app, which starts the toolkit when it shows its first window")
 
@@ -56,9 +57,8 @@ func Copy(text string) error {
 	return copyText(strings.ToValidUTF8(text, "�"))
 }
 
-// Paste returns the text on the system clipboard. On GTK and macOS a
-// clipboard that holds no text, empty or holding only an image, is "" with a
-// nil error; atotto on Windows reports it as an error.
+// Paste returns the text on the system clipboard. A clipboard that holds no
+// text, empty or holding only an image, is "" with a nil error.
 func Paste() (string, error) {
 	return paste()
 }

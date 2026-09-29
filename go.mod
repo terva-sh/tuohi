@@ -3,7 +3,6 @@ module github.com/terva-sh/tuohi
 go 1.26.0
 
 require (
-	github.com/atotto/clipboard v0.1.4
 	github.com/ebitengine/purego v0.11.1
 	github.com/godbus/dbus/v5 v5.2.2
 	golang.org/x/net v0.59.0

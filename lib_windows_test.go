@@ -70,6 +70,7 @@ func TestMain(m *testing.M) {
 		resReplyTrust.Store(replyTrustScenario())
 		resPermissions.Store(permissionsScenario())
 		resLoopbackLate.Store(loopbackLateScenario())
+		resClipboard.Store(clipboardScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
 			repeatStatus = repeatDataURL(n)
 		}
