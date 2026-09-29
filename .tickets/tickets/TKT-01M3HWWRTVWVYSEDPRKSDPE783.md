@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T05:07:44Z
+updated_at: 2026-09-29T05:16:21Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -129,3 +129,38 @@ See `docs/architecture.md`, under "Permissions are denied unless the app grants 
 - **All platforms:** `APPKIT_DEBUG=1` turns dev tools on in any build (`app.go:167`).
 
 Shape: a per-view permission policy that the app sets, denying by default, applied in one handler per engine and connected to every engine. Decide whether dev tools may be turned on by an environment variable in a release build. The review leans no: `View.Debug` is the app's choice, and an environment variable is the user's.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T05:16:21Z
+
+### Implementation (feat/permissions)
+
+As planned. Details settled while building it:
+
+- **Linux handler.** It resolves each request type with `Dlsym` first, so a WebKitGTK that lacks one (clipboard requests are recent) loads anyway.
+- **Screen capture.** A user-media request for neither video nor audio, which is how a screen capture arrives, asks `permits` for nothing and is denied, because `permits` needs at least one permission.
+- **Windows.** Every other permission kind is set to DENY, with a log line.
+- **macOS.** It builds the origin as `scheme://host[:port]/` from the `WKSecurityOrigin`.
+- **Logging.** Each denial is logged, because a page only sees `NotAllowedError`.
+- **`allows`** is used only by the Linux device-label case, so it lives in `lib_unix.go`.
+
+### Tests and controls
+
+`TestPermissions` (GUI) shows three views: none, camera, and clipboard. Each tries video, audio, and a gesture-less `execCommand('paste')`, and has a frame on another origin, delegated with `allow="camera; microphone"`, try video.
+
+Expected on Linux, which passes on both stacks:
+- none: all denied, paste false, frame denied;
+- camera: video ok, audio denied, frame ok (WebKitGTK shares the page's grant with a delegated frame);
+- clipboard: paste true.
+
+Windows expects the frame to be denied, since its origin is not trusted, and paste false. macOS checks only the default view.
+
+Controls on GTK4, each of which fails:
+- `permits` granting everything, where everything is ok;
+- the clipboard setting always on, as before, where paste is true in every view;
+- no Linux handler, where the camera view is denied, proving the grant path is ours.
+
+Filed as drafts, out of this ticket's criteria:
+- TKT-01M3NSA8HE52CHVQZ2A6T8H5NS (Decide whether APPKIT_DEBUG may open dev tools in a release build);
+- TKT-01M3NSA8JEDJJEBA47SVA4EZ7T (Decide whether macOS keeps element fullscreen on by default).
+
+The Windows and macOS expectations are unverified until GitHub CI runs them.
