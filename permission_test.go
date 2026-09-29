@@ -192,7 +192,9 @@ func TestPermissions(t *testing.T) {
 			"camera: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError asked=clipboard:no; " +
 			"clipboard: video=NotFoundError audio=NotFoundError paste=false read=ok notify=denied frame=NotFoundError asked=clipboard:yes"
 	case "darwin":
-		want = "none: video=OverconstrainedError audio=denied paste=false read=denied notify=none frame=OverconstrainedError asked=microphone:no"
+		// With no camera on the runner, WebKit rejects video before it asks;
+		// the microphone request reaches the delegate and is denied.
+		want = "none: video=OverconstrainedError audio=denied paste=false read=denied notify=denied frame=OverconstrainedError asked=microphone:no"
 		got, _, _ = strings.Cut(got, ";")
 	default:
 		want = "none: video=denied audio=denied paste=false read=denied notify=denied frame=denied asked=camera:no,camera:no,microphone:no; " +
