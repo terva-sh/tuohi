@@ -15,6 +15,37 @@ func uniqueID(name string) string {
 	return fmt.Sprintf("native-instance-test-%s-%d", name, os.Getpid())
 }
 
+// acquireCollect acquires id and returns a channel of what it receives.
+func acquireCollect(t *testing.T, id string) <-chan Message {
+	t.Helper()
+	got := make(chan Message, 4)
+	lock, err := Acquire(id, func(m Message) { got <- m })
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	t.Cleanup(func() { _ = lock.Release() })
+	return got
+}
+
+// expectOnly waits for a message with args want, and fails if any other
+// message arrives first or soon after.
+func expectOnly(t *testing.T, got <-chan Message, want []string) {
+	t.Helper()
+	select {
+	case m := <-got:
+		if !slices.Equal(m.Args, want) {
+			t.Fatalf("received args %.40q, want %q", m.Args, want)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the message")
+	}
+	select {
+	case m := <-got:
+		t.Fatalf("received an extra message with %d args", len(m.Args))
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 // TestAcquireSendRoundTrip exercises the single-instance machinery end to end
 // in one process: the first Acquire wins, a second is rejected with
 // ErrAlreadyRunning, and Send forwards arguments and its working directory,

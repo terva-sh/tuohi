@@ -8,10 +8,8 @@
 package instance
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -24,12 +22,6 @@ import (
 // socket of every application using this package. Each application's names
 // inside it come from key, so they do not collide.
 const dirName = "tuohi"
-
-// ioTimeout bounds how long the running instance waits for a sender to finish
-// its message, and how long Send waits to connect and write. A launch writes
-// its message at once, so the only sender that takes longer is one that has
-// stalled. It is a variable so that tests can shorten it.
-var ioTimeout = 5 * time.Second
 
 // errNoPeerCred is returned by peerUID where the system cannot report the
 // user at the other end of a Unix socket.
@@ -311,21 +303,6 @@ func peerAllowed(uid int, err error, self int) bool {
 		return true
 	}
 	return err == nil && uid == self
-}
-
-// readMessage reads one encoded Message from r, which the sender closes once
-// it has written it. It reports false for a message over maxMessage, one that
-// does not decode, and a read that fails, including one a deadline cut short.
-func readMessage(r io.Reader) (Message, bool) {
-	data, err := io.ReadAll(io.LimitReader(r, maxMessage+1))
-	if err != nil || len(data) > maxMessage {
-		return Message{}, false
-	}
-	var m Message
-	if json.Unmarshal(data, &m) != nil {
-		return Message{}, false
-	}
-	return m, true
 }
 
 func send(id string, data []byte) error {
