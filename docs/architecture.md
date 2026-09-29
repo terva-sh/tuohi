@@ -44,7 +44,7 @@ different directions, the loopback consumer wins.
 | Bridge security model | Each view trusts an allowlist of origins, by default the one it opened. One gate covers bindings, events, and internal messages. A navigation policy sends other origins to the system browser. | TKT-01M3HWWRT7X1RZZYY6KFEP0ERE |
 | Permissions | Denied by default on every engine, granted per view by the app. | TKT-01M3HWWRTVWVYSEDPRKSDPE783 |
 | Single instance | Its own package, hardened as designed IPC. | TKT-01M3HWWRVGMZTXBYJ86FCTH0V8, TKT-01M3J59M1H9PZ04J2C9JJZ7V13 |
-| The FFI layer | Upstream purego replaces `pure/`. | TKT-01M3HWWRW7YGCHHZY4BFEX3A6W |
+| The FFI layer | Upstream purego, a module dependency, replaced appkit's copy in `pure/`. | TKT-01M3HWWRW7YGCHHZY4BFEX3A6W |
 | How the engines share one interface | An unexported `engine` interface and a shared bridge core. | TKT-01M3J59M0VJYQ3E652Y0FD90H3 |
 | Threading | Every exported method is safe from any goroutine on every engine. | TKT-01M3J1H8CPMZX9EJX8R2CQRA6P |
 | Package boundaries | The root package is the window. Desktop services move to subpackages. | TKT-01M3J59M1H9PZ04J2C9JJZ7V13 |
@@ -528,11 +528,16 @@ headers if it wants cross-origin isolation.
 
 ## The FFI layer: upstream purego
 
-`pure/` is purego v0.11.0 with its package renamed, Android and iOS removed,
-and panic messages prefixed. A diff against upstream v0.11.1 shows nothing
-else. Engine code uses the standard entry points:
+tuohi depends on upstream `github.com/ebitengine/purego`, v0.11.1. appkit
+shipped a copy in `pure/`: purego v0.11.0 with its package renamed, Android
+and iOS removed, and panic messages prefixed.
+TKT-01M3HWWRW7YGCHHZY4BFEX3A6W (Replace pure/ with upstream
+ebitengine/purego) replaced it with the dependency. That brought in
+upstream's v0.11.1 fixes, handed the per-architecture assembly back to the
+Ebitengine project, and closed the Apache-2.0 notice gap in the copy. Engine
+code uses the standard entry points:
 
-| Entry point | Calls outside `pure/` |
+| Entry point | Calls |
 |---|---|
 | `RegisterLibFunc` | 155 |
 | `SyscallN` | 73, all Windows COM calls |
@@ -541,11 +546,16 @@ else. Engine code uses the standard entry points:
 | `Dlopen` | 16 |
 | `Dlsym` | 14 |
 
-The darwin code also uses `pure/objc`, whose API matches upstream's `objc`
-package. TKT-01M3HWWRW7YGCHHZY4BFEX3A6W (Replace pure/ with upstream
-ebitengine/purego) switches to the dependency. That brings in upstream's
-v0.11.1 fixes, hands the per-architecture assembly back to the Ebitengine
-project, and closes the Apache-2.0 notice gap in the copy.
+The darwin code also uses purego's `objc` package.
+
+FreeBSD costs one build flag. Without cgo, purego's `internal/fakecgo`
+exports `environ` and `__progname` with `//go:cgo_export_dynamic`, which the
+compiler accepts only in cgo-generated code, so a FreeBSD build must pass
+`-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std`. `just cross`,
+the Makefile, and both workflows pass it, and the README tells consumers.
+appkit's copy dropped the two directives instead. It built without the
+flag, and by its own comment the result might not resolve libc's references
+at run time. NetBSD needs no flag.
 
 One behaviour to change on the way: `RegisterLibFunc` panics on a missing
 symbol, and on Unix it runs inside `ensureInit`'s `sync.Once`, so a missing

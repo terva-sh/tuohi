@@ -5,7 +5,7 @@ package tuohi
 import (
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 // putBounds (386): the 32-bit Windows (MS x86 __stdcall) convention passes a
@@ -16,7 +16,7 @@ import (
 // as separate words reproduces the by-value RECT exactly. (Only over-aligned
 // aggregates are marshalled indirectly on x86; a RECT of four LONGs is not.)
 func (i *controller) putBounds(r rect) {
-	pure.SyscallN(i.vtbl.PutBounds,
+	purego.SyscallN(i.vtbl.PutBounds,
 		uintptr(unsafe.Pointer(i)),
 		uintptr(uint32(r.Left)),
 		uintptr(uint32(r.Top)),

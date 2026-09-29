@@ -2,7 +2,7 @@
 // a hidden helper window whose procedure receives the icon's mouse messages
 // and pops the menu (TrackPopupMenu). Windows has no dlopen, so symbols are
 // resolved with LoadLibrary/GetProcAddress and bound with
-// pure.RegisterFunc; the window procedure is a pure.NewCallback.
+// purego.RegisterFunc; the window procedure is a purego.NewCallback.
 //
 // Config.Icon (a PNG) becomes the HICON via CreateIconFromResourceEx; when a
 // DarkModeIcon is set the tray picks light/dark from the system theme
@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -254,7 +254,7 @@ func ensureInit() error {
 				initErr = fmt.Errorf("tray: resolve %s: %w", name, e)
 				return
 			}
-			pure.RegisterFunc(p, addr)
+			purego.RegisterFunc(p, addr)
 		}
 		reg(&registerClassExW, user32, "RegisterClassExW")
 		reg(&createWindowExW, user32, "CreateWindowExW")
@@ -284,7 +284,7 @@ func ensureInit() error {
 			return
 		}
 
-		trayWndProcCB = pure.NewCallback(trayWndProc)
+		trayWndProcCB = purego.NewCallback(trayWndProc)
 		classNamePtr = utf16Ptr("NativeTrayWindow")
 		hInst := getModuleHandleW(nil)
 		wc := wndClassExW{

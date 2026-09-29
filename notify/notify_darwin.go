@@ -1,5 +1,5 @@
 // macOS notification backend: posts an NSUserNotification through the shared
-// NSUserNotificationCenter, using pure's Objective-C runtime bindings (no
+// NSUserNotificationCenter, using purego's Objective-C runtime bindings (no
 // cgo). The API is deprecated since macOS 10.14 but still functional, and it
 // delivers without an app bundle, a window, or a running run loop.
 //
@@ -24,8 +24,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
-	"github.com/terva-sh/tuohi/pure/objc"
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 )
 
 var (
@@ -62,7 +62,7 @@ func ensureInit() error {
 			"/System/Library/Frameworks/Foundation.framework/Foundation",
 			"/System/Library/Frameworks/AppKit.framework/AppKit",
 		} {
-			_, err := pure.Dlopen(fw, pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+			_, err := purego.Dlopen(fw, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 			if err != nil {
 				initErr = fmt.Errorf("notify: load %s: %w", fw, err)
 				return

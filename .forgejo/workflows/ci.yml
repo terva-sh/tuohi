@@ -29,7 +29,7 @@ jobs:
       image: container.local.sothr.com/library/golang:1.27-alpine
     steps:
       - name: Install dependencies
-        # gcompat: every test binary that reaches pure/ is linked for glibc's
+        # gcompat: every test binary that reaches purego is linked for glibc's
         # loader, /lib64/ld-linux-x86-64.so.2, even with CGO_ENABLED=0, and
         # cannot start on musl without it. The same holds for any consumer's
         # binary, which is why tuohi targets glibc desktops.
@@ -56,18 +56,17 @@ jobs:
       - name: Embedded JavaScript
         run: make --no-print-directory js-check
 
-      # pure/ is excluded here. Its suite is upstream purego's: it compiles C
-      # fixtures with the toolchain's C compiler, which this image does not
-      # carry, and GitHub CI runs it on Ubuntu. The ticket replacing pure/
-      # with upstream purego removes the exception.
       - name: go test
-        run: go test $(go list ./... | grep -v '/pure')
+        run: go test ./...
 
+      # FreeBSD needs purego's fakecgo compiled with -std when cgo is off.
       - name: Cross-build every target
         run: |
           for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 freebsd/amd64 netbsd/amd64; do
             echo "== $t"
-            GOOS=${t%/*} GOARCH=${t#*/} go build ./...
+            flags=""
+            if [ "${t%/*}" = freebsd ]; then flags="-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std"; fi
+            GOOS=${t%/*} GOARCH=${t#*/} go build $flags ./...
           done
 
       - name: Ticket store

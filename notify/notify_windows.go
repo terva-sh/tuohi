@@ -4,7 +4,7 @@
 // entry (kept for the life of the process); every Show then sends NIM_MODIFY
 // with NIF_INFO to raise the balloon. No tray, window or cgo is required.
 // Symbols are resolved with LoadLibrary/GetProcAddress and bound with
-// pure.RegisterFunc; the window procedure is a pure.NewCallback.
+// purego.RegisterFunc; the window procedure is a purego.NewCallback.
 //
 // Options: the urgency maps to the balloon info flags - UrgencyCritical shows
 // the error glyph, low/normal the information glyph (the historical look of a
@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 const (
@@ -175,7 +175,7 @@ func ensureInit() error {
 				initErr = fmt.Errorf("notify: resolve %s: %w", name, e)
 				return
 			}
-			pure.RegisterFunc(p, addr)
+			purego.RegisterFunc(p, addr)
 		}
 		reg(&registerClassExW, user32, "RegisterClassExW")
 		reg(&createWindowExW, user32, "CreateWindowExW")
@@ -193,7 +193,7 @@ func ensureInit() error {
 			return
 		}
 
-		wndProcCB = pure.NewCallback(notifyWndProc)
+		wndProcCB = purego.NewCallback(notifyWndProc)
 		className = utf16Ptr("NativeNotifyWindow")
 		hInst := getModuleHandleW(nil)
 		wc := wndClassExW{

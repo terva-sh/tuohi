@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRW7YGCHHZY4BFEX3A6W
 title: Replace pure/ with upstream ebitengine/purego
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -19,10 +19,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: feat/upstream-purego
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-purego
+  commit: c198cb894390c9708dbb26523ac5f637cb0b67d5
+  session: null
+  claimed_at: 2026-09-29T21:20:29Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:13:07Z
+updated_at: 2026-09-29T21:20:29Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -54,9 +61,18 @@ Replace `pure/`, a modified copy of purego v0.11.0 (7,472 lines), with a depende
 
 ## Acceptance criteria
 
-- [ ] tuohi depends on github.com/ebitengine/purego and pure/ is removed
+- [x] tuohi depends on github.com/ebitengine/purego and pure/ is removed
 - [ ] Every target in just cross still builds, and the GUI scenarios pass
-- [ ] NOTICE and docs/provenance.md reflect the change
+- [x] NOTICE and docs/provenance.md reflect the change
+
+## Implementation plan
+
+1. Rewrite the imports `github.com/terva-sh/tuohi/pure` and `.../pure/objc` to `github.com/ebitengine/purego` and `.../purego/objc`, and the `pure.` qualifier to `purego.`. Only `pure/` itself imports the internal packages, so nothing else changes.
+2. Delete `pure/`, then run `go get github.com/ebitengine/purego@v0.11.1` and `go mod tidy`.
+3. Give FreeBSD the fakecgo `-std` flag in `just cross`, the Makefile (`cross-bsd`, `lint-bsd` through GOFLAGS, and the demo build), the Forgejo cross step, and the GitHub demo matrix.
+4. Drop the `pure/` exceptions: the Forgejo test grep, `just test-pure`, the `packages` filter, the golangci exclusion, and `.gitattributes`.
+5. Update NOTICE, docs/provenance.md, docs/architecture.md, the README's platform section, and AGENTS.md.
+6. Verify locally: `just ci`, `just test-gui` on both stacks, all 19 demo targets, and golangci-lint for all five GOOS values. macOS and Windows get tested on GitHub after merge.
 
 ## Notes
 
@@ -90,3 +106,18 @@ The copy builds FreeBSD without the flag only because it dropped those two direc
 - The README tells FreeBSD consumers to pass it.
 
 Rejected: keeping `pure/` and resyncing it to v0.11.1. That keeps 7,400 lines of per-architecture code in this repository for no behaviour anyone needs.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:20:29Z
+
+### Verified before the pull request, at c198cb8
+
+- `just ci` passes.
+- `just test-gui` passes on webkitgtk-6.0 and webkit2gtk-4.1.
+- All 19 demo targets in the GitHub matrix build with `CGO_ENABLED=0`. FreeBSD amd64 and arm64 build with the fakecgo flag.
+- golangci-lint v2.13.1 reports 0 issues for linux, darwin, windows, freebsd, and netbsd.
+
+For FreeBSD, golangci-lint also needs the flag, because it type-checks through the build: without it, it fails with the same `cgo_export_dynamic` error. `lint-bsd` therefore passes the flag through GOFLAGS, appended to the workflow's own GOFLAGS so `-trimpath` and the linker flags survive. That was checked with GitHub's exact GOFLAGS value.
+
+The Forgejo test-step exception is gone, as the 2026-09-27 note asked. So is `just test-pure`: with no copy in the tree, purego's own suite is upstream's to run.
+
+macOS and Windows are not yet run on the real engines. GitHub CI covers them after the merge, following the post-merge rule.

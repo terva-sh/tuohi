@@ -5,7 +5,7 @@ package tuohi
 import (
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 // putBounds (arm64): per AAPCS64, a 16-byte integer aggregate (RECT) is passed
@@ -14,5 +14,5 @@ import (
 func (i *controller) putBounds(r rect) {
 	lo := uintptr(uint32(r.Left)) | uintptr(uint32(r.Top))<<32
 	hi := uintptr(uint32(r.Right)) | uintptr(uint32(r.Bottom))<<32
-	pure.SyscallN(i.vtbl.PutBounds, uintptr(unsafe.Pointer(i)), lo, hi)
+	purego.SyscallN(i.vtbl.PutBounds, uintptr(unsafe.Pointer(i)), lo, hi)
 }

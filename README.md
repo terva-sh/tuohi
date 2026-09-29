@@ -43,7 +43,7 @@ cross-compiler for every target (MinGW for Windows, a sysroot for Linux),
 builds stop being reproducible, and `go get`/`go install` only works for
 people who already have that toolchain set up.
 
-appkit keeps cgo out entirely. Through [pure](https://github.com/malivvan/appkit/pure)
+appkit keeps cgo out entirely. Through [purego](https://github.com/ebitengine/purego)
 it loads the OS view at runtime (`dlopen` / `LoadLibrary`), so no C compiler
 is in the loop:
 
@@ -193,8 +193,8 @@ to bundle, but that runtime must be present:
 
 ### Supported platforms (build targets)
 
-appkit binds the OS web engine through [pure](https://github.com/malivvan/appkit/pure)
-(runtime `dlopen`, no cgo), so compilation tracks pure's supported platforms:
+tuohi binds the OS web engine through [purego](https://github.com/ebitengine/purego)
+(runtime `dlopen`, no cgo), so compilation tracks purego's supported platforms:
 
 | GOOS    | GOARCH                                                                           |
 |---------|----------------------------------------------------------------------------------|
@@ -209,16 +209,21 @@ appkit binds the OS web engine through [pure](https://github.com/malivvan/appkit
 
 
 
+- **FreeBSD needs one build flag.** With `CGO_ENABLED=0`, purego's
+  `internal/fakecgo` exports `environ` and `__progname` with a directive the
+  compiler accepts only in cgo-generated code, so a FreeBSD build without cgo
+  must compile that package with `-std`:
+
+  ```sh
+  CGO_ENABLED=0 GOOS=freebsd go build -gcflags=github.com/ebitengine/purego/internal/fakecgo=-std ./...
+  ```
+
+  NetBSD needs no flag.
 - Runtime on the BSDs is **not** verified and depends on what the port
   provides: a desktop GTK/WebKitGTK with the sonames appkit probes
   ([shared libraries](#linux-shared-libraries) - a BSD port may name them
   differently), a session D-Bus for the tray/notify/dialog backends, and
-  working `flock`/Unix sockets for single-instance mode. On FreeBSD the
-  vendored `pure/internal/fakecgo` no longer puts `environ`/`__progname` into
-  the dynamic symbol table (that needed a `-gcflags` override), so a
-  `CGO_ENABLED=0` binary that dlopens libc may fail to resolve libc's
-  references; the cgo build (`CGO_ENABLED=1`, FreeBSD's default) keeps the full
-  runtime. Some helpers are
+  working `flock`/Unix sockets for single-instance mode. Some helpers are
   Linux-specific at runtime (e.g. the `xdg-open` opener and the console-bell
   fallback in `notify`) and degrade or report unsupported elsewhere. Other
   GOOSes (OpenBSD, DragonFly, Solaris, AIX, Plan 9, js) have no lib-family
@@ -917,7 +922,7 @@ go build -ldflags="-H windowsgui" .
 
 - `lib_darwin.go` / `lib_unix.go` / `lib_windows.go` - the per-platform
   engine layer: every direct platform-API call (WKWebView and WebKitGTK
-  through the pure objc/GTK bindings, WebView2 and Win32/COM), per-OS view
+  through the purego objc/GTK bindings, WebView2 and Win32/COM), per-OS view
   init (`ensureInit` on macOS/Linux, `ensureWinInit`/`ensureCOMInit` on
   Windows) and the per-backend `bridgePostFn`; the per-OS `newView(v *View, serve)`
   window constructor (which registers the `app` scheme serving the app's

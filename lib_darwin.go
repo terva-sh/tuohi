@@ -1,4 +1,4 @@
-// macOS View backend in pure Go via pure's Objective-C runtime.
+// macOS View backend in pure Go via purego's Objective-C runtime.
 //
 // This backend drives AppKit and WebKit directly, so appkit needs no cgo and
 // no bundled native library on macOS.
@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
-	"github.com/terva-sh/tuohi/pure/objc"
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 
 	"github.com/terva-sh/tuohi/dialog"
 )
@@ -160,20 +160,20 @@ func ensureInit() error {
 			"/System/Library/Frameworks/Cocoa.framework/Cocoa",
 			"/System/Library/Frameworks/WebKit.framework/WebKit",
 		} {
-			_, err := pure.Dlopen(fw, pure.RTLD_GLOBAL|pure.RTLD_LAZY)
+			_, err := purego.Dlopen(fw, purego.RTLD_GLOBAL|purego.RTLD_LAZY)
 			if err != nil {
 				initErr = fmt.Errorf("webview: dlopen %s: %w", fw, err)
 				return
 			}
 		}
-		q, err := pure.Dlsym(pure.RTLD_DEFAULT, "_dispatch_main_q")
+		q, err := purego.Dlsym(purego.RTLD_DEFAULT, "_dispatch_main_q")
 		if err != nil {
 			initErr = fmt.Errorf("webview: resolve _dispatch_main_q: %w", err)
 			return
 		}
 		mainQueue = q
-		pure.RegisterLibFunc(&dispatchAsyncF, pure.RTLD_DEFAULT, "dispatch_async_f")
-		dispatchWork = pure.NewCallback(func(ctx uintptr) uintptr {
+		purego.RegisterLibFunc(&dispatchAsyncF, purego.RTLD_DEFAULT, "dispatch_async_f")
+		dispatchWork = purego.NewCallback(func(ctx uintptr) uintptr {
 			dispatchMu.Lock()
 			f := dispatchMap[ctx]
 			delete(dispatchMap, ctx)

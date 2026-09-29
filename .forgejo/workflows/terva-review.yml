@@ -84,6 +84,10 @@ jobs:
           # request is too large to review (context_limit), and a model cannot
           # judge them. See docs/running-reviews.md#keep-a-review-within-its-context.
           # REVIEW_EXCLUDE_PATHS: web/dist/**, package-lock.json
+          # pure/ is appkit's copy of purego, deleted by the pull request that
+          # replaces it with the upstream module. Its assembly alone overflows
+          # the review's context. Remove this once that pull request is merged.
+          REVIEW_EXCLUDE_PATHS: pure/**
           # A dispatch with carry: true copies the last review's verdict to a
           # head whose later commits touch only these paths or the excluded
           # ones. See docs/running-reviews.md#carry-a-review-forward.

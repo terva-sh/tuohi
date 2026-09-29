@@ -1,7 +1,7 @@
 // macOS backends for the app-scope services: the application icon (an
 // NSImage handed to AppKit, which the Dock draws), the single-instance lock
 // and hand-off socket (flock + Unix socket) and Open/Reveal (NSWorkspace) -
-// all via pure's Objective-C runtime (no cgo).
+// all via purego's Objective-C runtime (no cgo).
 package tuohi
 
 import (
@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
-	"github.com/terva-sh/tuohi/pure/objc"
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 )
 
 var (
@@ -44,7 +44,7 @@ func iconEnsureInit() error {
 			"/System/Library/Frameworks/Foundation.framework/Foundation",
 			"/System/Library/Frameworks/AppKit.framework/AppKit",
 		} {
-			_, err := pure.Dlopen(fw, pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+			_, err := purego.Dlopen(fw, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 			if err != nil {
 				iconInitErr = fmt.Errorf("appkit: load %s: %w", fw, err)
 				return
@@ -207,7 +207,7 @@ func openEnsureInit() error {
 			"/System/Library/Frameworks/Foundation.framework/Foundation",
 			"/System/Library/Frameworks/AppKit.framework/AppKit",
 		} {
-			_, err := pure.Dlopen(fw, pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+			_, err := purego.Dlopen(fw, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 			if err != nil {
 				openInitErr = fmt.Errorf("open: load %s: %w", fw, err)
 				return
@@ -654,7 +654,7 @@ func plistFirstProgramArg(data []byte) string {
 }
 
 // SMAppService (macOS 13+) access without CGO: the class is driven through
-// the Objective-C runtime with pure, exactly like the rest of the darwin
+// the Objective-C runtime with purego, exactly like the rest of the darwin
 // backend (lib_darwin.go). SMAppService.mainAppService registers the app that
 // CONTAINS the running binary - i.e. it only makes sense for a bundled .app,
 // whose own bundle identifier is the registration key.

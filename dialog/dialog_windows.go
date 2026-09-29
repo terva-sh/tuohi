@@ -1,13 +1,13 @@
 // Windows open/save panels: the Common Item Dialog COM API (IFileOpenDialog
-// / IFileSaveDialog) via pure. Show is application-modal and pumps its own
+// / IFileSaveDialog) via purego. Show is application-modal and pumps its own
 // message loop, so callers must invoke Open on the UI thread (the package
 // contract).
 //
 // COM idiom: each interface is a struct whose first field is the vtbl
 // pointer, the vtbl is a struct of uintptr slots in exact IDL order, and a
-// method call is pure.SyscallN(vtbl.Method, this, args...). Windows has no
+// method call is purego.SyscallN(vtbl.Method, this, args...). Windows has no
 // dlopen, so symbols are resolved with LoadLibrary/GetProcAddress and bound
-// with pure.RegisterFunc.
+// with purego.RegisterFunc.
 
 package dialog
 
@@ -19,7 +19,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 // --- CLSIDs / IIDs ---------------------------------------------------------
@@ -139,62 +139,62 @@ type comdlgFilterSpec struct {
 }
 
 func (d *fileDialog) Show(parent uintptr) int32 {
-	r, _, _ := pure.SyscallN(d.vtbl.Show, d.this(), parent)
+	r, _, _ := purego.SyscallN(d.vtbl.Show, d.this(), parent)
 	return int32(r) // #nosec G115 -- HRESULT is a 32-bit value
 }
 func (d *fileDialog) GetOptions() uint32 {
 	var fos uint32
-	pure.SyscallN(d.vtbl.GetOptions, d.this(), uintptr(unsafe.Pointer(&fos))) // #nosec G103 -- out-param on a Go local, pinned by the call
+	purego.SyscallN(d.vtbl.GetOptions, d.this(), uintptr(unsafe.Pointer(&fos))) // #nosec G103 -- out-param on a Go local, pinned by the call
 	return fos
 }
 func (d *fileDialog) SetOptions(fos uint32) {
-	pure.SyscallN(d.vtbl.SetOptions, d.this(), uintptr(fos))
+	purego.SyscallN(d.vtbl.SetOptions, d.this(), uintptr(fos))
 }
 func (d *fileDialog) SetTitle(s *uint16) {
-	pure.SyscallN(d.vtbl.SetTitle, d.this(), uintptr(unsafe.Pointer(s))) // #nosec G103 -- LPCWSTR arg, pinned by the call
+	purego.SyscallN(d.vtbl.SetTitle, d.this(), uintptr(unsafe.Pointer(s))) // #nosec G103 -- LPCWSTR arg, pinned by the call
 }
 func (d *fileDialog) SetFileName(s *uint16) {
-	pure.SyscallN(d.vtbl.SetFileName, d.this(), uintptr(unsafe.Pointer(s))) // #nosec G103 -- LPCWSTR arg, pinned by the call
+	purego.SyscallN(d.vtbl.SetFileName, d.this(), uintptr(unsafe.Pointer(s))) // #nosec G103 -- LPCWSTR arg, pinned by the call
 }
 func (d *fileDialog) SetFolder(si uintptr) {
-	pure.SyscallN(d.vtbl.SetFolder, d.this(), si)
+	purego.SyscallN(d.vtbl.SetFolder, d.this(), si)
 }
 func (d *fileDialog) SetFileTypes(n uint32, specs *comdlgFilterSpec) {
-	pure.SyscallN(d.vtbl.SetFileTypes, d.this(), uintptr(n), uintptr(unsafe.Pointer(specs))) // #nosec G103 -- spec array kept alive by the caller
+	purego.SyscallN(d.vtbl.SetFileTypes, d.this(), uintptr(n), uintptr(unsafe.Pointer(specs))) // #nosec G103 -- spec array kept alive by the caller
 }
 func (d *fileDialog) GetResult(out *uintptr) int32 {
-	r, _, _ := pure.SyscallN(d.vtbl.GetResult, d.this(), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
-	return int32(r)                                                                    // #nosec G115 -- HRESULT is a 32-bit value
+	r, _, _ := purego.SyscallN(d.vtbl.GetResult, d.this(), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
+	return int32(r)                                                                      // #nosec G115 -- HRESULT is a 32-bit value
 }
 func (d *fileDialog) Release() {
-	pure.SyscallN(d.vtbl.Release, d.this())
+	purego.SyscallN(d.vtbl.Release, d.this())
 }
 
 func (s *shellItem) GetDisplayName(sigdn uint32, out *uintptr) int32 {
-	r, _, _ := pure.SyscallN(s.vtbl.GetDisplayName, s.this(), uintptr(sigdn), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
-	return int32(r)                                                                                         // #nosec G115 -- HRESULT is a 32-bit value
+	r, _, _ := purego.SyscallN(s.vtbl.GetDisplayName, s.this(), uintptr(sigdn), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
+	return int32(r)                                                                                           // #nosec G115 -- HRESULT is a 32-bit value
 }
 func (s *shellItem) Release() {
-	pure.SyscallN(s.vtbl.Release, s.this())
+	purego.SyscallN(s.vtbl.Release, s.this())
 }
 
 func (d *fileOpenDialog) GetResults(out *uintptr) int32 {
-	r, _, _ := pure.SyscallN(d.vtbl.GetResults, d.this(), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
-	return int32(r)                                                                     // #nosec G115 -- HRESULT is a 32-bit value
+	r, _, _ := purego.SyscallN(d.vtbl.GetResults, d.this(), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
+	return int32(r)                                                                       // #nosec G115 -- HRESULT is a 32-bit value
 }
 
 func (a *shellItemArray) GetCount(out *uint32) int32 {
-	r, _, _ := pure.SyscallN(a.vtbl.GetCount, a.this(), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
-	return int32(r)                                                                   // #nosec G115 -- HRESULT is a 32-bit value
+	r, _, _ := purego.SyscallN(a.vtbl.GetCount, a.this(), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
+	return int32(r)                                                                     // #nosec G115 -- HRESULT is a 32-bit value
 }
 
 func (a *shellItemArray) GetItemAt(i uint32, out *uintptr) int32 {
-	r, _, _ := pure.SyscallN(a.vtbl.GetItemAt, a.this(), uintptr(i), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
-	return int32(r)                                                                                // #nosec G115 -- HRESULT is a 32-bit value
+	r, _, _ := purego.SyscallN(a.vtbl.GetItemAt, a.this(), uintptr(i), uintptr(unsafe.Pointer(out))) // #nosec G103 -- out-param on a Go local, pinned by the call
+	return int32(r)                                                                                  // #nosec G115 -- HRESULT is a 32-bit value
 }
 
 func (a *shellItemArray) Release() {
-	pure.SyscallN(a.vtbl.Release, a.this())
+	purego.SyscallN(a.vtbl.Release, a.this())
 }
 
 // --- bound ole32 / shell32 functions ---------------------------------------
@@ -230,7 +230,7 @@ func ensureInit() error {
 				initErr = e
 				return
 			}
-			pure.RegisterFunc(fn, addr)
+			purego.RegisterFunc(fn, addr)
 		}
 		reg(&coInitializeEx, ole32, "CoInitializeEx")
 		reg(&coTaskMemFree, ole32, "CoTaskMemFree")

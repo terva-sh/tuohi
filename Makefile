@@ -27,15 +27,20 @@ build:
 	GOOS=linux   GOARCH=ppc64le     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_ppc64le ./demo/
 	GOOS=linux   GOARCH=riscv64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_riscv64 ./demo/
 	GOOS=linux   GOARCH=s390x       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_s390x ./demo/
-	GOOS=freebsd GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_freebsd_amd64 ./demo/
-	GOOS=freebsd GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_freebsd_arm64 ./demo/
+	GOOS=freebsd GOARCH=amd64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_freebsd_amd64 ./demo/
+	GOOS=freebsd GOARCH=arm64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_freebsd_arm64 ./demo/
 	GOOS=netbsd  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_netbsd_amd64 ./demo/
 	GOOS=netbsd  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_netbsd_arm64 ./demo/
 
 
+# FreeBSD needs purego's fakecgo compiled with -std when cgo is off: it
+# exports environ and __progname with a directive the compiler otherwise
+# refuses. golangci-lint builds through GOFLAGS, so it gets the flag there.
+FAKECGO_STD := -gcflags=github.com/ebitengine/purego/internal/fakecgo=-std
+
 # T5: the per-OS engine files only compile on their native OS, so CI must
 # cross-build the Tier-1 matrix - every OS/arch pair the README ships (the
-# pure bindings and the net/http/crypto-tls-free code cross-compile
+# purego bindings and the net/http/crypto-tls-free code cross-compile
 # everywhere) - plus the Tier-2 BSD targets (see cross-bsd). linux/amd64 is
 # covered by `build`.
 cross: cross-bsd
@@ -45,11 +50,9 @@ cross: cross-bsd
 	GOOS=darwin GOARCH=arm64 go build ./...
 	GOOS=linux GOARCH=arm64 go build ./...
 
-# cross-bsd builds the Tier-2 FreeBSD/NetBSD targets (cgo disabled, no extra
-# flags - the vendored pure/internal/fakecgo declares FreeBSD's libc symbols
-# without needing pure's -std gcflag).
+# cross-bsd builds the Tier-2 FreeBSD/NetBSD targets with cgo disabled.
 cross-bsd:
-	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build ./...
+	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build $(FAKECGO_STD) ./...
 	CGO_ENABLED=0 GOOS=netbsd GOARCH=amd64 go build ./...
 
 # RD2: the injected JS (bridge, events, bind script) lives inside Go raw
@@ -96,10 +99,9 @@ cover:
 lint:
 	golangci-lint run ./...
 
-# lint-bsd type-checks the Tier-2 FreeBSD/NetBSD targets (no gcflags needed;
-# see cross-bsd).
+# lint-bsd type-checks the Tier-2 FreeBSD/NetBSD targets (see FAKECGO_STD).
 lint-bsd:
-	CGO_ENABLED=0 GOOS=freebsd golangci-lint run ./...
+	CGO_ENABLED=0 GOOS=freebsd GOFLAGS='$(GOFLAGS) $(FAKECGO_STD)' golangci-lint run ./...
 	CGO_ENABLED=0 GOOS=netbsd golangci-lint run ./...
 
 fmt:
