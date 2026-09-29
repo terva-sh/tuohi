@@ -126,6 +126,7 @@ func TestMain(m *testing.M) {
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
 		resPermissions.Store(permissionsScenario())
+		resClipboard.Store(clipboardScenario())
 	}
 	os.Exit(m.Run())
 }

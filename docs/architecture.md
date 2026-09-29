@@ -97,14 +97,19 @@ package) did it. The layout:
 | `tuohi/tray` | tray icon and menu. It existed already; `App.Tray` is gone, and callers set the tray up in `App.Start`. |
 
 None of the subpackages imports the root, and that direction stays. Where a
-service needs the UI thread, `tuohi` exports a hook and does not import the
-service. The hook today is `App.Start`: it runs on the UI thread when `Wait`
-starts, before its loop dispatches any event, and an error from it ends
-`Wait`. The tray is set up there, since `tray.Set` must run on the UI thread
-and the loop that follows dispatches its menu events. Services with UI-thread
-needs of their own, the native clipboard next
-(TKT-01M3J59M2BR91XQBDT1TPPM4G5), will reach the UI thread through a hook
-`tuohi` exports in the same way, without importing the root.
+service needs the UI thread, `tuohi` provides a hook and does not import the
+service. There are two:
+
+- `App.Start` runs on the UI thread when `Wait` starts, before its loop
+  dispatches any event, and an error from it ends `Wait`. The tray is set up
+  there, since `tray.Set` must run on the UI thread and the loop that follows
+  dispatches its menu events.
+- `internal/toolkit` is for a service that needs the UI thread whenever it is
+  called. When the first window exists, the root publishes the UI-thread call
+  it uses itself and, on Unix, which GTK it loaded and that library's
+  handles. `tuohi/clipboard` reads it (TKT-01M3J59M2BR91XQBDT1TPPM4G5). The
+  package is internal, so it is not API, and it holds no code of either side,
+  so a program that only opens a window links nothing of the clipboard.
 
 Keeping one package was the alternative. It keeps appkit's single-`App`
 design, which is pleasant for an application that wants everything. It loses
@@ -527,13 +532,20 @@ headers if it wants cross-origin isolation.
   `.desktop` `Exec` quoting. That quoting was copied from Wails, and it
   neither doubles `%` nor quotes the reserved characters:
   TKT-01M3J59M535T9QH2RS1ZY6PSJM.
-- **Clipboard** is `tuohi/clipboard`: `Copy` and `Paste` on text. It still
-  wraps atotto, and drops it for native calls next: GTK3, GTK4,
-  `NSPasteboard`, and Win32. TKT-01M3J59M2BR91XQBDT1TPPM4G5. On Linux, atotto
-  runs `wl-copy`, `xclip`, or `xsel` and has no clipboard without one of them.
-  GTK is already in the process. The one awkward piece is GTK4 paste, which is
-  asynchronous. GTK calls belong on the UI thread, which the package will
-  reach through a hook the root exports.
+- **Clipboard** is `tuohi/clipboard`: `Copy` and `Paste` on text. On Linux,
+  FreeBSD, and NetBSD it calls the GTK already in the process, through
+  purego: `gtk_clipboard_*` on GTK3 and `gdk_clipboard_*` on GTK4, on the UI
+  thread it reaches through `internal/toolkit`. No external program runs.
+  GTK4 reads only asynchronously, so `Paste` starts the read and iterates the
+  main context until its callback fires, as GTK3's own blocking read does. A
+  GUI scenario round-trips non-ASCII text on both stacks. The owner accepted
+  the costs on 2026-09-30, and the package documents them: the clipboard
+  works only once a tuohi app has shown a window; on Wayland, and on X11
+  without a clipboard manager, copied text lasts only as long as the process;
+  and Wayland may refuse a copy without recent input on one of its windows.
+  macOS and Windows still wrap atotto, which runs `pbcopy` and `pbpaste` on
+  macOS. `NSPasteboard` and Win32 replace it next, one engine per pull
+  request: TKT-01M3J59M2BR91XQBDT1TPPM4G5.
 - **Notify, tray, and dialog** were already subpackages and stay as they are.
   The root no longer imports notify or tray. The tray is set up in
   `App.Start`, and its icon is the caller's `tray.Config.Icon`: the root no
