@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:41:53Z
+updated_at: 2026-09-29T21:52:24Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -139,3 +139,11 @@ Forgejo's Docker runner may confine user namespaces differently from rootless po
 - golangci-lint reports 0 issues for linux, darwin, windows, and netbsd.
 - actionlint passes on `.github/workflows/ci.yml`. For the Forgejo files it reports only the unknown `docker` runner label.
 - Go 1.26: vet passes for linux, darwin, and windows; `go test -c` builds for darwin and windows; all eight `just cross` targets build.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:52:24Z
+
+### terva-review disposition, PR #37, first round (c2cbe5f)
+
+**Declined: "Disable cgo in the Forgejo GUI job" (medium).** The finding says that job environments are separate, so the check job's `CGO_ENABLED=0` does not reach the gui job. That setting is not the check job's. It sits in the workflow-level `env:` block of `.forgejo/workflows/ci.yml`, above `jobs:`, and Actions applies a workflow-level env to every job. The gui job therefore runs with `CGO_ENABLED=0` already. Repeating it on the job would only answer a misreading.
+
+The gui job passed on the real runner in 2m38s, on both stacks.
