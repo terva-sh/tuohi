@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:55:04Z
+updated_at: 2026-09-29T22:15:43Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -157,3 +157,16 @@ The first-round finding shows as declined.
 **Declined: "Remove old assets when rerunning a release" (medium).** The finding: rerunning the release job for a tag released under the old workflow leaves that release's demo binaries attached. That is true, and it is deliberate. The only such release is v0.1.0-alpha.1, a GitHub pre-release with 19 assets.
 
 Deleting assets from a published release is an outward-facing change, and a CI rerun should not make it silently. The no-binaries decision governs releases cut from now on. Whether alpha.1 keeps its binaries is left for the owner to decide and do by hand, for example with `gh release delete-asset`.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:15:43Z
+
+Post-merge check of PR #37 on GitHub: run 36638027032 at 669905a.
+
+- **Passed:** Test MacOS and Test Windows, now with `TUOHI_REQUIRE_GUI=1`, `-v` and `CGO_ENABLED=0`. Also all four Linux Xvfb legs, golangci-lint, and 18 of 19 build legs.
+- **Failed:** Build (linux_s390x). purego v0.11.1 compiles s390x without cgo only under `s390x && (cgo || go1.27)` (`syscall_unix.go`). #37 lowered `go.mod` to `go 1.26.0`, so setup-go installed 1.26 and `syscall_syscallN` was undefined. Before #37 the leg got Go 1.27 from `go.mod`.
+- **Fix on `ci/s390x-go127`:** that leg alone names Go 1.27, and the others keep `go.mod`'s minimum. The README says s390x needs 1.27.
+  - Raising the module minimum to 1.27 was rejected, because the owner chose 1.26.
+  - Dropping s390x from the matrix was rejected, because it would stop checking a target the README lists.
+  - Checked locally: `CGO_ENABLED=0 GOOS=linux GOARCH=s390x go build ./demo` succeeds on 1.27.1, and actionlint is clean.
+
+AC3 ("Both workflows match the decisions") stays unticked until this lands and GitHub `main` is green.
