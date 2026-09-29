@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T04:00:09Z
+updated_at: 2026-09-29T04:06:58Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -153,3 +153,20 @@ GitHub run 36519419676 on 1ce79c8 passed every job, including `TestWindowTitle` 
    - **How bad a miss is.** The window catches up at the next change to the head's, root's or document's child list. An untrusted page still cannot rename the window, so a miss leaves a stale title and nothing worse.
 
 No code change in this round.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T04:06:58Z
+
+### Review disposition for PR #28, round 2 (terva-review run on 17a4206)
+
+The round-1 finding was recorded as declined. GitHub run 36519637652 on 17a4206 passed every job.
+
+1. **Medium: wait for the untrusted navigation before asserting its title.** Fixed. Before checking the title, the `blank` step now waits, for up to 10 s, until the view reports `about:blank` as its page's URL. It then confirms that the trusted page's bridge no longer answers a `window.loaded` probe. If either check fails, the step reports where the view is instead of passing.
+
+   A new test helper, `pageURL`, reads the page URL on each engine:
+   - Linux: `webkit_web_view_get_uri`.
+   - macOS: `WKWebView.URL`.
+   - Windows: `committedURI`, which is set when a document commits, and `about:blank` is recorded because the navigation policy lets it proceed.
+
+   Control: with the navigation replaced by a no-op, the step reports `blank=at http://127.0.0.1:PORT/page` and the test fails.
+
+Checks passed after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
