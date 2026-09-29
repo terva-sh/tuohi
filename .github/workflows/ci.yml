@@ -235,10 +235,10 @@ jobs:
         run: |
           # Pre-compile the test binary – the build can be slow on Windows,
           # so separate it from the test execution timeout.
-          go test -c -o appkit_test.exe .
+          go test -c -o tuohi_test.exe .
 
           # Capture stdout/stderr, kill if it exceeds the limit, and preserve exit code.
-          $p = Start-Process -FilePath .\appkit_test.exe `
+          $p = Start-Process -FilePath .\tuohi_test.exe `
             -ArgumentList '-test.v','-test.timeout=180s' `
             -NoNewWindow -PassThru `
             -RedirectStandardOutput out.txt -RedirectStandardError err.txt

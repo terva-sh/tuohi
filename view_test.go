@@ -177,7 +177,7 @@ function assert(cond, msg) {
 }
 listeners['mousedown'][0](mouse(10, 10));            // inside .titlebar (drag)
 assert(posts.length === 1, 'drag mousedown posted once, got ' + posts.length);
-assert(posts[0].method === '__appkitWindowDrag', 'drag method, got ' + posts[0].method);
+assert(posts[0].method === '__tuohiWindowDrag', 'drag method, got ' + posts[0].method);
 assert(posts[0].params[0].button === 0, 'drag button 0');
 
 listeners['mousedown'][0](mouse(360, 10));           // inside .titlebar-button (no-drag)
@@ -185,7 +185,7 @@ assert(posts.length === 1, 'no-drag mousedown must not post, got ' + posts.lengt
 
 listeners['mousedown'][0](mouse(2, 150));            // left edge of resizable window
 assert(posts.length === 2, 'edge mousedown posted, got ' + posts.length);
-assert(posts[1].method === '__appkitWindowResize', 'resize method, got ' + posts[1].method);
+assert(posts[1].method === '__tuohiWindowResize', 'resize method, got ' + posts[1].method);
 assert(posts[1].params[0].direction === 'w', 'resize direction w, got ' + posts[1].params[0].direction);
 
 listeners['mousedown'][0](mouse(100, 100));          // plain content
@@ -195,28 +195,28 @@ assert(posts.length === 2, 'content mousedown must not post, got ' + posts.lengt
 // time and space) posts the maximize toggle and NOT a second drag request.
 listeners['mousedown'][0](mouse(150, 20, 1000));
 assert(posts.length === 3, 'double-click first mousedown posted, got ' + posts.length);
-assert(posts[2].method === '__appkitWindowDrag', 'first click of a pair drags, got ' + posts[2].method);
+assert(posts[2].method === '__tuohiWindowDrag', 'first click of a pair drags, got ' + posts[2].method);
 listeners['mousedown'][0](mouse(150, 20, 1250));     // same spot, 250 ms later
 assert(posts.length === 4, 'double-click second mousedown posted, got ' + posts.length);
-assert(posts[3].method === '__appkitWindowToggleMaximize', 'second click toggles, got ' + posts[3].method);
+assert(posts[3].method === '__tuohiWindowToggleMaximize', 'second click toggles, got ' + posts[3].method);
 assert(posts[3].params === undefined, 'toggle carries no params payload');
 
 // The pending pair was consumed, so a fast third click drags instead of
 // firing a second toggle.
 listeners['mousedown'][0](mouse(151, 20, 1300));
-assert(posts.length === 5 && posts[4].method === '__appkitWindowDrag',
+assert(posts.length === 5 && posts[4].method === '__tuohiWindowDrag',
   'fast third click drags (pair consumed), got ' + posts[4].method);
 
 // A slow second click (600 ms later) is a plain drag, not a toggle.
 listeners['mousedown'][0](mouse(200, 20, 2000));
 listeners['mousedown'][0](mouse(200, 20, 2600));
-assert(posts.length === 7 && posts[6].method === '__appkitWindowDrag',
+assert(posts.length === 7 && posts[6].method === '__tuohiWindowDrag',
   'slow second click drags, got ' + posts[6].method);
 
 // A far second click (100 ms later but 30 px away) is a plain drag too.
 listeners['mousedown'][0](mouse(250, 20, 3000));
 listeners['mousedown'][0](mouse(280, 20, 3100));
-assert(posts.length === 9 && posts[8].method === '__appkitWindowDrag',
+assert(posts.length === 9 && posts[8].method === '__tuohiWindowDrag',
   'far second click drags, got ' + posts[8].method);
 console.log('PASS');
 `
@@ -257,7 +257,7 @@ const posts = [];
 const goEvents = [];
 global.window = {
   crypto: { getRandomValues: function(a) { for (let i = 0; i < a.length; i++) { a[i] = i + 1; } return a; } },
-  __appkit_event__: function(name, args) {
+  __tuohi_event__: function(name, args) {
     goEvents.push([name, args]);
     return Promise.resolve();
   },

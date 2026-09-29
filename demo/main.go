@@ -1,4 +1,4 @@
-// Command demo is the single appkit showcase application.
+// Command demo is the single tuohi showcase application.
 //
 // It replaces the old per-feature demos with ONE app that exercises the whole
 // main package behind a single, borderless, cross-platform window, and doubles
@@ -49,8 +49,8 @@
 // self test).
 // The demo window needs the platform view (WebKitGTK on Linux, WebView2 on
 // Windows, WKWebView on macOS); on a headless box run it under xvfb-run.
-// Every start logs the web-engine backend in use (appkit's App.Backend), so
-// the run mode and the APPKIT_BACKEND override are visible at a glance.
+// Every start logs the web-engine backend in use (tuohi's App.Backend), so
+// the run mode and the TUOHI_BACKEND override are visible at a glance.
 package main
 
 import (
@@ -75,7 +75,7 @@ import (
 )
 
 // assetsFS embeds the single-page UI (index.html + app.css + app.js). The
-// same tree is the demo's App.FS - appkit serves it from the uniform app://
+// same tree is the demo's App.FS - tuohi serves it from the uniform app://
 // origin on every platform (see App.FS).
 //
 //go:embed assets
@@ -149,7 +149,7 @@ func main() {
 	// tray shows trayIcon, the same mark downscaled to 32 pixels. The Dock
 	// icon stays by default; it disappears only when -tray is requested (the
 	// tray package runs the app under the menu-bar "accessory" policy).
-	app := &tuohi.App{Name: "appkit demo x", Exit: true}
+	app := &tuohi.App{Name: "tuohi demo x", Exit: true}
 
 	// The tray menu captures w; it is assigned right after App.Show returns.
 	// It is OFF by default (the windowed showcase keeps its Dock/taskbar
@@ -162,7 +162,7 @@ func main() {
 	if withTray {
 		cfg := tray.Config{
 			Icon:    trayIcon,
-			Tooltip: "appkit demo",
+			Tooltip: "tuohi demo",
 			Items: []tray.Item{
 				{Label: "Show", OnClick: func() {
 					// Bringing the window back from the tray also un-minimizes
@@ -294,7 +294,7 @@ func main() {
 			"demoEcho":   func(s string) string { return s },
 			"demo.clock": func() string { return time.Now().Format("15:04:05.000") },
 			"demo.mark":  func(s string) string { return "marked: " + s },
-			"demo.meta":  map[string]any{"app": "appkit demo", "ui": "app://app/index.html"},
+			"demo.meta":  map[string]any{"app": "tuohi demo", "ui": "app://app/index.html"},
 			// demo.pair: the accessor-pair form - [2]any{getter, setter}.
 			// Reading the property runs the getter over the bridge, assigning
 			// runs the setter; the value lives in this Go closure state.
@@ -317,7 +317,7 @@ func main() {
 			"demoNotify": func() string {
 				// notify.Show names the source after the app; unsupported
 				// platforms surface errors.Is(err, notify.ErrUnsupported).
-				if err := notify.Show(app.Name, "appkit demo", "Hello from the appkit demo window!"); err != nil {
+				if err := notify.Show(app.Name, "tuohi demo", "Hello from the tuohi demo window!"); err != nil {
 					return err.Error()
 				}
 				return ""
@@ -344,7 +344,7 @@ func main() {
 				// View.Dialog blocks the calling goroutine until the user
 				// dismisses the panel, so it must NOT run on the UI thread - a
 				// Bind callback (this goroutine) is exactly the right place.
-				opts := dialog.Options{Title: "appkit demo"}
+				opts := dialog.Options{Title: "tuohi demo"}
 				switch kind {
 				case "save":
 					opts.Type = dialog.TypeSave
@@ -507,7 +507,7 @@ func main() {
 	// Load the SAME app from the same uniform URL on every platform: the
 	// embedded UI lives at the root of the demo's App.FS, so the window
 	// opens "app://app/index.html" (set as the declarative View.URL above,
-	// navigated by App.Show). appkit serves that origin through each
+	// navigated by App.Show). tuohi serves that origin through each
 	// platform's native "app" scheme, so this code never varies. The JS
 	// bridge is attached regardless of the origin, so the self test works
 	// the same way everywhere.

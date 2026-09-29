@@ -927,18 +927,18 @@ func TestViewContentBaseHTTPAndDarwin(t *testing.T) {
 	}
 }
 
-// --- Bind-plan validation (R2 prefix collisions, E4 denylist, R1 reserved
+// --- Bind-plan validation (prefix collisions, the denylist, reserved
 // names) --------------------------------------------------------------
 
 func TestValidateTopLevelRejectsReservedAndDenylisted(t *testing.T) {
-	// E4/R1: top-level names that would clobber appkit's page surface or a
+	// Top-level names that would clobber tuohi's page surface or a
 	// common window global fail at plan time; deeper segments are the
 	// consumer's own namespace and pass.
 	bad := []string{
 		"close", "open", "name", "fetch", "document", "location", // windowGlobalDenylist
 		"__webview__",           // the bridge instance
-		"__appkit_event__",      // the events binding
-		"__appkitWindowDrag",    // an internal message method
+		"__tuohi_event__",       // the events binding
+		"__tuohiWindowDrag",     // an internal message method
 		"events",                // the default events global
 		"close.thing", "name.x", // top segment is what counts
 	}
@@ -965,7 +965,7 @@ func TestValidateTopLevelRejectsReservedAndDenylisted(t *testing.T) {
 }
 
 func TestCheckDottedPrefixes(t *testing.T) {
-	// R2: a leaf and a namespace under it cannot both be bound; unrelated
+	// A leaf and a namespace under it cannot both be bound; unrelated
 	// names and plain overrides are fine.
 	if err := checkDottedPrefixes(map[string]bool{"api": true, "api.id": true}); err == nil {
 		t.Fatal("api + api.id must collide")
@@ -1001,7 +1001,7 @@ func TestApplyBindsRejectsInvalidPlans(t *testing.T) {
 	}{
 		{"prefix collision across maps", map[string]any{"api": func() {}}, map[string]any{"api.id": func() {}}},
 		{"prefix collision within one map", nil, map[string]any{"demo": func() {}, "demo.theme": func() {}}},
-		{"reserved name", nil, map[string]any{"__appkit_event__": func() {}}},
+		{"reserved name", nil, map[string]any{"__tuohi_event__": func() {}}},
 		{"denylisted top level", nil, map[string]any{"name": func() {}}},
 		{"events global", nil, map[string]any{"events": func() {}}},
 		{"bad segments", nil, map[string]any{"a..b": func() {}}},

@@ -19,16 +19,13 @@ tuohi is a fork of `github.com/malivvan/appkit` v0.1.0, whose repository no
 longer exists. [docs/provenance.md](docs/provenance.md) records where the
 source came from and what the review of it found, and [NOTICE](NOTICE) credits
 the projects it draws on. The fork is being reviewed and reworked before its
-first release, so expect the API to change. Until then, the documentation below
-is appkit's, and it names the library appkit.
+first release, so expect the API to change.
 [docs/architecture.md](docs/architecture.md) records the shape tuohi is moving
 to, and why.
 
 ---
 
-# appkit [![Go Reference](https://pkg.go.dev/badge/github.com/malivvan/appkit.svg)](https://pkg.go.dev/github.com/malivvan/appkit) ![test](https://github.com/malivvan/appkit/workflows/test/badge.svg) [![Release](https://img.shields.io/github/v/release/malivvan/appkit.svg?sort=semver)](https://github.com/malivvan/appkit/releases/latest) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-appkit is a pure-Go foundation for building web-based desktop applications. It
+tuohi is a pure-Go foundation for building web-based desktop applications. It
 drives the web engine each operating system already ships - WKWebView on
 macOS, WebKitGTK on Linux, WebView2 on Windows - behind a single Go API, and
 adds what a window needs around it: windows and app windows, drag regions,
@@ -44,7 +41,7 @@ cross-compiler for every target (MinGW for Windows, a sysroot for Linux),
 builds stop being reproducible, and `go get`/`go install` only works for
 people who already have that toolchain set up.
 
-appkit keeps cgo out entirely. Through [purego](https://github.com/ebitengine/purego)
+tuohi keeps cgo out entirely. Through [purego](https://github.com/ebitengine/purego)
 it loads the OS view at runtime (`dlopen` / `LoadLibrary`), so no C compiler
 is in the loop:
 
@@ -60,7 +57,7 @@ is in the loop:
 - **`CGO_ENABLED=0` builds** - reproducible output, and a `go get` /
   `go install` that just works with no compiler to install first.
 
-One caveat, so "self-contained" is not misread: appkit does **not** bundle a
+One caveat, so "self-contained" is not misread: tuohi does **not** bundle a
 browser engine - it is not Electron. The binary ships no native library and
 stays small, but it uses the *system* view at runtime, so the target machine
 needs that present: WebView2 on Windows (preinstalled on current Windows
@@ -122,7 +119,7 @@ needs that present: WebView2 on Windows (preinstalled on current Windows
   (keyboard focus into the web content) and
   `Raise` (front the window and activate the app) round out the runtime
   controls. Geometry, however, does **not** change at runtime - sizing and
-  moving a window after creation is a defined non-feature of appkit (the
+  moving a window after creation is a defined non-feature of tuohi (the
   platforms cannot agree on it: Wayland compositors do not let a client move
   or resize its own toplevel, and GTK4 has no move API at all), so a unified
   runtime setter would silently fail on part of the target matrix. Set the
@@ -242,23 +239,23 @@ tray.Remove()
 ## Install
 
 ```bash
-go get github.com/malivvan/appkit@latest
+go get github.com/terva-sh/tuohi@latest
 ```
 
 ## Requirements
 
-appkit binds the view the operating system already provides; there is nothing
+tuohi binds the view the operating system already provides; there is nothing
 to bundle, but that runtime must be present:
 
 - **Linux**, **FreeBSD** and **NetBSD** - a system WebKitGTK with GTK4 or 
-  GTK3; appkit detects which at runtime, or you can pin one with the 
-  `APPKIT_BACKEND` environment variable ([Choosing a stack](#choosing-a-stack-APPKIT_BACKEND) below).
+  GTK3; tuohi detects which at runtime, or you can pin one with the 
+  `TUOHI_BACKEND` environment variable ([Choosing a stack](#choosing-a-stack-tuohi_backend) below).
   The exact libraries and how to install or debug them are in 
   [Linux shared libraries](#linux-shared-libraries) below.
 - **Windows** - the Microsoft Edge WebView2 Runtime (preinstalled on current
   Windows 10/11; otherwise install the Evergreen Runtime). It is located via
   the registry, and `App.Show` returns an error if it is missing. To bundle
-  zero native DLLs, appkit calls the runtime's internal environment-creation
+  zero native DLLs, tuohi calls the runtime's internal environment-creation
   export directly instead of shipping `WebView2Loader.dll`; that export is
   undocumented and could change in a future Edge runtime (in which case
   `App.Show` returns a clear error). See the note on `createEnvironment` in
@@ -313,7 +310,7 @@ tuohi binds the OS web engine through [purego](https://github.com/ebitengine/pur
 
   NetBSD needs no flag.
 - Runtime on the BSDs is **not** verified and depends on what the port
-  provides: a desktop GTK/WebKitGTK with the sonames appkit probes
+  provides: a desktop GTK/WebKitGTK with the sonames tuohi probes
   ([shared libraries](#linux-shared-libraries) - a BSD port may name them
   differently), a session D-Bus for the tray/notify/dialog backends, and
   working `flock`/Unix sockets for the `instance` package. Some helpers are
@@ -325,7 +322,7 @@ tuohi binds the OS web engine through [purego](https://github.com/ebitengine/pur
 ### Linux shared libraries
 
 Linux is the hard case: every distro packages WebKitGTK a little differently,
-but what appkit needs is concrete. These are the exact sonames it tries to
+but what tuohi needs is concrete. These are the exact sonames it tries to
 `dlopen` at startup. They must be loadable by the dynamic linker (on the
 default search path, in the `ldconfig` cache, or in `LD_LIBRARY_PATH`) and
 match the **architecture of your binary** - a 64-bit Go build needs 64-bit
@@ -336,7 +333,7 @@ Always loaded:
 - `libglib-2.0.so.0`
 - `libgobject-2.0.so.0`
 
-`libwebkitgtk-6.0.so.4` decides the stack: if it loads, appkit uses GTK4;
+`libwebkitgtk-6.0.so.4` decides the stack: if it loads, tuohi uses GTK4;
 otherwise GTK3. It never loads both - most desktops have GTK3 and GTK4
 installed side by side, and pulling both into one process corrupts GTK's type
 system and crashes `gtk_init`.
@@ -348,22 +345,25 @@ Either stack needs WebKitGTK 2.40 or newer. The GTK4 stack needs GTK 4.12 or
 newer, and the GTK3 stack GTK 3.20 or newer. An older library fails
 `App.Show` with an error that names every function it lacks.
 
-### Choosing a stack (`APPKIT_BACKEND`)
+### Choosing a stack (`TUOHI_BACKEND`)
 
-The `APPKIT_BACKEND` environment variable pins one of the two stacks before
+The `TUOHI_BACKEND` environment variable pins one of the two stacks before
 the probe above runs - useful when both are installed and you want to force
 one, or to reproduce a bug against a specific WebKitGTK:
 
-- `APPKIT_BACKEND=webkitgtk-6.0` - the GTK4 stack
-- `APPKIT_BACKEND=webkit2gtk-4.1` - the GTK3 stack (still falls back to the
+- `TUOHI_BACKEND=webkitgtk-6.0` - the GTK4 stack
+- `TUOHI_BACKEND=webkit2gtk-4.1` - the GTK3 stack (still falls back to the
   `-4.0` sonames inside that stack when `-4.1` is absent)
 
 If the pinned backend's libraries cannot be loaded - or the value is anything
-other than the two above - appkit prints a warning to stderr and continues
+other than the two above - tuohi prints a warning to stderr and continues
 with the auto-detected stack that works. macOS and Windows always use their
 single built-in backend (WKWebView / WebView2) and ignore the variable.
 `App.Backend()` reports the stack that was actually loaded (the demo logs it
 on every start).
+
+The `TUOHI_*` environment variables were named `APPKIT_*` in v0.1.0-alpha.1,
+and the old names are no longer read.
 
 On the GTK4 stack, the file dialogs additionally load `libgio-2.0.so.0` the
 first time a dialog opens (it ships with GLib, so it is present wherever the
@@ -402,16 +402,16 @@ package main
 import (
 	"log"
 
-	"github.com/malivvan/appkit"
+	"github.com/terva-sh/tuohi"
 )
 
 func main() {
-	app := &appkit.App{}
-	view := &appkit.View{
+	app := &tuohi.App{}
+	view := &tuohi.View{
 		Debug:  true, // inspector on (App.Debug turns it on for every view)
 		Width:  800,
 		Height: 600,
-		URL:    "data:text/html,%3Ch1%3EHello%20from%20Appkit%3C%2Fh1%3E",
+		URL:    "data:text/html,%3Ch1%3EHello%20from%20tuohi%3C%2Fh1%3E",
 	}
 	view.Ready = func() { /* the first page finished loading */ }
 	if err := app.Show(view); err != nil {
@@ -501,7 +501,7 @@ Binding names are checked when the window is created, and a bad one fails
 have non-empty, whitespace-free segments (`"api.call"` is fine; `"a..b"`,
 `".x"` and `"x.y z"` are not); a top-level name must not be one of the
 common `window.*` built-ins (`close`, `open`, `name`, `fetch`, `document`,
-…), appkit's own internals (`__webview__`, anything starting `__appkit`) or
+…), tuohi's own internals (`__webview__`, anything starting `__tuohi`) or
 the page's events global (`window.events` by default, whatever `App.Events`
 renames it to); and a leaf and its namespace cannot both be bound (`"api"`
 together with `"api.id"` is refused, because one would silently destroy the
@@ -574,8 +574,8 @@ Then block with `App.Wait`, which runs the platform UI loop:
   exported settings are committed the first time an App method is called.
 
 ```go
-app := &appkit.App{Name: "My App", Exit: true} // end when the window closes
-view := &appkit.View{
+app := &tuohi.App{Name: "My App", Exit: true} // end when the window closes
+view := &tuohi.View{
 	Width: 1280,
 	Height: 800,
 	URL:   "https://example.com", // the first page; loaded by App.Show
@@ -590,12 +590,12 @@ if err := app.Wait(); err != nil { // returns when the window closes or Quit is 
 }
 ```
 
-The per-window knobs appkit reads at window creation live directly on the
+The per-window knobs tuohi reads at window creation live directly on the
 `App` and the `View` - there is no nested settings struct:
 
 - `App.Debug` and `View.Debug` (default **false**) - the dev-tools /
   inspector switch. `View.Debug` opens one window's inspector; `App.Debug`
-  applies app-wide; the two OR together, and the `APPKIT_DEBUG=1`
+  applies app-wide; the two OR together, and the `TUOHI_DEBUG=1`
   environment variable forces the tools on for every view no matter what.
   Backend mapping: WebView2 `DevTools`, WebKitGTK
   `enable-developer-extras`, `WKPreferences.developerExtrasEnabled`.
@@ -605,7 +605,7 @@ The per-window knobs appkit reads at window creation live directly on the
   events bridge, `window.events` with `on`/`off`/`emit`.
 
 ```go
-view := &appkit.View{
+view := &tuohi.View{
 	Debug: true, // inspector on for this window only
 }
 ```
@@ -698,18 +698,18 @@ the dot to close) - the same chrome on every platform.
 ### Serving your UI (App.FS)
 
 Set `App.FS` before the app scope opens (it is committed once, like every
-`App` setting) and appkit serves your content to every view from the uniform
+`App` setting) and tuohi serves your content to every view from the uniform
 `app://` origin:
 
 ```go
 //go:embed ui
 var uiFS embed.FS
 
-app := &appkit.App{
+app := &tuohi.App{
 	Name: "My App",
 	FS:   uiFS, // the whole UI: HTML, CSS, JS, assets
 }
-view := &appkit.View{Debug: true}
+view := &tuohi.View{Debug: true}
 if err := app.Show(view); err != nil {
 	log.Fatal(err)
 }
@@ -755,8 +755,8 @@ player - anything the user clicks in passing - that reads as a broken button,
 and the user ends up clicking twice.
 
 ```go
-app := &appkit.App{}
-view := &appkit.View{FirstMouse: true}
+app := &tuohi.App{}
+view := &tuohi.View{FirstMouse: true}
 if err := app.Show(view); err != nil {
 	log.Fatal(err)
 }
@@ -796,7 +796,7 @@ its own bridge - `App.Show` installs it at creation, so `w.On`/`w.Off`/
 reaches every listener on both sides exactly once.
 
 ```go
-view := &appkit.View{}
+view := &tuohi.View{}
 if err := app.Show(view); err != nil {
 	log.Fatal(err)
 }
@@ -829,7 +829,7 @@ shows both directions live.
 
 Native open/save/directory dialogs live in the standalone
 [`dialog`](dialog/) package
-(`github.com/malivvan/appkit/dialog`), which shows the panels without any
+(`github.com/terva-sh/tuohi/dialog`), which shows the panels without any
 window. A single entry point, `dialog.Open`, presents whatever panel
 `dialog.Options.Type` selects (`TypeOpen`, `TypeOpenMultiple`, `TypeSave` or
 `TypeDirectory`) from the program's main thread and returns the chosen paths
@@ -859,7 +859,7 @@ package on its own.
 ## System tray
 
 A tray icon with a menu is the [`tray`](tray/) package's job
-(`github.com/malivvan/appkit/tray`). Standalone, `tray.Run` owns the
+(`github.com/terva-sh/tuohi/tray`). Standalone, `tray.Run` owns the
 process's UI event loop and blocks until `tray.Stop` (see
 [tray/demo](tray/demo/)); macOS, Windows and Linux are implemented. Linux runs
 over a D-Bus StatusNotifierItem + `com.canonical.dbusmenu` export, so no
@@ -918,7 +918,7 @@ the full API table, threading rules and per-platform behavior, and
 ## Desktop notifications
 
 OS-level notifications are the [`notify`](notify/) package's job
-(`github.com/malivvan/appkit/notify`): title + message, with no window and no
+(`github.com/terva-sh/tuohi/notify`): title + message, with no window and no
 tray icon required. macOS uses `NSUserNotificationCenter`, Windows a
 `Shell_NotifyIconW` balloon, Linux `org.freedesktop.Notifications` over D-Bus
 (with a `notify-send`/`kdialog` fallback). The standalone package goes beyond
@@ -986,7 +986,7 @@ The standalone subpackage demos remain: `tray/demo` (tray icons, menus,
 checkboxes), `notify/demo` (notifications) and `dialog/demo` (all four panel
 kinds via the `dialog` package).
 
-Each demo spawns a real appkit window (which needs the platform view:
+Each demo spawns a real tuohi window (which needs the platform view:
 WebKitGTK on Linux, WebView2 on Windows, WKWebView on macOS).
 
 ## Testing
@@ -1060,5 +1060,5 @@ go build -ldflags="-H windowsgui" .
 - `clipboard/` - text `Copy` and `Paste`
 - `dialog/` - the standalone native file-dialog package; `dialog/demo/` inside
 
-appkit loads the OS view framework directly and bundles or extracts no native
+tuohi loads the OS view framework directly and bundles or extracts no native
 library, so there is no extracted file to verify or swap.

@@ -33,7 +33,7 @@ import (
 	"github.com/terva-sh/tuohi/notify"
 )
 
-const source = "appkit notify demo"
+const source = "tuohi notify demo"
 
 func main() {
 	icon, err := makeIconPNG()
@@ -57,7 +57,7 @@ func main() {
 		}
 	}
 
-	report("plain notification", notify.Show(source, "Information", "This is an informational message from appkit."))
+	report("plain notification", notify.Show(source, "Information", "This is an informational message from tuohi."))
 	time.Sleep(1500 * time.Millisecond)
 
 	// Custom icon: in-memory PNG bytes on Linux/macOS; on Windows use a stock
@@ -102,7 +102,7 @@ func makeIconPNG() ([]byte, error) {
 		for x := 0; x < size; x++ {
 			dx, dy := x-size/2, y-size/2
 			if dx*dx+dy*dy <= r*r {
-				img.SetRGBA(x, y, color.RGBA{R: 0xE8, G: 0x7D, B: 0x1E, A: 0xFF}) // appkit orange
+				img.SetRGBA(x, y, color.RGBA{R: 0xE8, G: 0x7D, B: 0x1E, A: 0xFF}) // the demo icon's orange
 			}
 		}
 	}

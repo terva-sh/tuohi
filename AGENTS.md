@@ -183,10 +183,11 @@ licensing or attribution.
   darwin, windows, freebsd and netbsd. Only Linux is tested here. macOS and
   Windows engines are tested by `.github/workflows/ci.yml` on GitHub's hosted
   runners, which is also why the GitHub mirror exists.
-- **The upstream prose still says appkit.** The module and package are
-  `tuohi`, but comments, the README body, `APPKIT_*` environment variables and
-  the `appkit-app` autostart slug are inherited. A ticket owns renaming them.
-  Do not add new uses.
+- **The library is called tuohi, never appkit.** New code, comments,
+  strings, and prose say tuohi: `TUOHI_*` environment variables, `tuohi: `
+  error prefixes, `__tuohi` page internals. appkit is named only in NOTICE,
+  docs/provenance.md, and statements of history such as the fork line above.
+  AppKit with a capital K is Apple's framework and stays as it is.
 
 ### Commands
 

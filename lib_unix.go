@@ -3,9 +3,9 @@
 // Unix View backend (Linux, FreeBSD, NetBSD) in pure Go via purego's
 //
 // This backend dlopen/dlsyms the system GTK and WebKitGTK shared objects
-// directly, so appkit needs no cgo and no bundled native library on Unix.
+// directly, so tuohi needs no cgo and no bundled native library on Unix.
 // It detects the runtime stack: GTK4 + webkitgtk-6.0 when present, else
-// GTK3 + webkit2gtk-4.1 (falling back to -4.0). The APPKIT_BACKEND
+// GTK3 + webkit2gtk-4.1 (falling back to -4.0). The TUOHI_BACKEND
 // environment variable pins one of the two stacks when both are installed;
 // see linuxBackendOverride below.
 
@@ -46,11 +46,11 @@ const (
 	defaultWidth  = 640
 	defaultHeight = 480
 
-	// jscGCRealtimeSignal is the POSIX signal appkit reconfigures
+	// jscGCRealtimeSignal is the POSIX signal tuohi reconfigures
 	// JavaScriptCore's stop-the-world GC machinery onto via
 	// JSConfigureSignalForGC (see ensureInit): real-time signal 34, the first
 	// one glibc leaves for application use (32/33 are NPTL-internal). Unlike
-	// JSC's default SIGUSR1 it carries no pre-installed handler in an appkit
+	// JSC's default SIGUSR1 it carries no pre-installed handler in a tuohi
 	// process, so JSC installs its own without the startup warning.
 	jscGCRealtimeSignal = 34
 )
@@ -318,10 +318,10 @@ func recoverInit(err *error) {
 	}
 }
 
-// --- APPKIT_BACKEND backend selection --------------------------------------
+// --- TUOHI_BACKEND backend selection --------------------------------------
 
-// envBackendGTK4 and envBackendGTK3 are the documented APPKIT_BACKEND values:
-// the two WebKitGTK stacks appkit can use on Unix, named after their
+// envBackendGTK4 and envBackendGTK3 are the documented TUOHI_BACKEND values:
+// the two WebKitGTK stacks tuohi can use on Unix, named after their
 // library family (libwebkitgtk-6.0 vs libwebkit2gtk-4.1). The values match
 // the package names distros use (webkitgtk-6.0 / webkit2gtk-4.1).
 const (
@@ -331,20 +331,20 @@ const (
 
 // Backend preferences returned by linuxBackendOverride.
 const (
-	backendAuto int = iota // auto-detect (APPKIT_BACKEND unset or unknown)
+	backendAuto int = iota // auto-detect (TUOHI_BACKEND unset or unknown)
 	backendGTK4            // force the GTK4 + webkitgtk-6.0 stack
 	backendGTK3            // force the GTK3 + webkit2gtk-4.x stack
 )
 
-// linuxBackendOverride reads APPKIT_BACKEND and reports which stack it pins:
+// linuxBackendOverride reads TUOHI_BACKEND and reports which stack it pins:
 // backendGTK4 for envBackendGTK4, backendGTK3 for envBackendGTK3, backendAuto
 // when it is unset. Any other value prints a warning on stderr and is treated
 // as backendAuto, so a typo degrades to the documented auto-detection chain
 // instead of failing the app. macOS and Windows always use their
 // single built-in backend and never consult this variable; FreeBSD and
-// NetBSD run this same GTK backend, so APPKIT_BACKEND applies there too.
+// NetBSD run this same GTK backend, so TUOHI_BACKEND applies there too.
 func linuxBackendOverride() int {
-	v := os.Getenv("APPKIT_BACKEND")
+	v := os.Getenv("TUOHI_BACKEND")
 	if v == "" {
 		return backendAuto
 	}
@@ -354,7 +354,7 @@ func linuxBackendOverride() int {
 	case envBackendGTK3:
 		return backendGTK3
 	}
-	fmt.Fprintf(os.Stderr, "appkit: warning: APPKIT_BACKEND=%q is not a known value (want %q or %q); using the auto-detected stack\n",
+	fmt.Fprintf(os.Stderr, "tuohi: warning: TUOHI_BACKEND=%q is not a known value (want %q or %q); using the auto-detected stack\n",
 		v, envBackendGTK4, envBackendGTK3)
 	return backendAuto
 }
@@ -398,7 +398,7 @@ func loadGTK3Stack() (gtk, webkit, jsc uintptr, err error) {
 }
 
 // platformBackend reports the web-engine backend the loaded stack provides,
-// using the APPKIT_BACKEND value names so callers can echo back exactly what
+// using the TUOHI_BACKEND value names so callers can echo back exactly what
 // they want. It is meaningful only after ensureInit has run (see App.Backend).
 func platformBackend() string {
 	if gtk4 {
@@ -447,7 +447,7 @@ func initEngine() (err error) {
 	// 'GdkDisplayManager'"). So load libgtk-4 only when webkitgtk-6.0 is
 	// actually present -- otherwise GTK4 never enters the process.
 	//
-	// APPKIT_BACKEND pins one of the two stacks before this chain runs. A
+	// TUOHI_BACKEND pins one of the two stacks before this chain runs. A
 	// pinned stack whose libraries cannot be loaded prints a warning and
 	// falls through to the auto-detection chain, so the app still starts on
 	// the stack that works.
@@ -456,18 +456,18 @@ func initEngine() (err error) {
 	case backendGTK4:
 		var err error
 		if gtk, webkit, jsc, err = loadGTK4Stack(); err != nil {
-			fmt.Fprintf(os.Stderr, "appkit: warning: APPKIT_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK4, err)
+			fmt.Fprintf(os.Stderr, "tuohi: warning: TUOHI_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK4, err)
 		} else {
 			gtk4 = true
 		}
 	case backendGTK3:
 		var err error
 		if gtk, webkit, jsc, err = loadGTK3Stack(); err != nil {
-			fmt.Fprintf(os.Stderr, "appkit: warning: APPKIT_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK3, err)
+			fmt.Fprintf(os.Stderr, "tuohi: warning: TUOHI_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK3, err)
 		}
 	}
 	if gtk == 0 {
-		// Auto-detection (APPKIT_BACKEND unset, unknown, or its pinned
+		// Auto-detection (TUOHI_BACKEND unset, unknown, or its pinned
 		// stack failed to load above).
 		var err error
 		if gtk, webkit, jsc, err = loadGTK4Stack(); err == nil {
@@ -482,7 +482,7 @@ func initEngine() (err error) {
 	// JavaScriptCore (JSC) suspends threads during its stop-the-world
 	// garbage collections with a POSIX signal, and its default - SIGUSR1,
 	// signal 10 on Linux - already carries the Go runtime's handler in
-	// every appkit process. JSC would therefore print "Overriding
+	// every tuohi process. JSC would therefore print "Overriding
 	// existing handler for signal 10. Set JSC_SIGNAL_FOR_GC if you want
 	// WebKit to use a different signal" as the process's first stderr
 	// line and replace Go's handler. That message is written by WebKit
@@ -1605,7 +1605,7 @@ func gtk3InstallAppIcon(pix []byte, w, h int) error {
 		int32(w), int32(h), int32(stride), 0, 0) // #nosec G115 -- icon dimensions bounded by image/png
 	if icon == 0 {
 		appIconPix = nil
-		return errors.New("appkit: application icon: gdk_pixbuf_new_from_data failed")
+		return errors.New("tuohi: application icon: gdk_pixbuf_new_from_data failed")
 	}
 	// gtk_window_set_default_icon takes its own reference; the pixbuf handle
 	// and the backing pixels it borrows stay retained for the process lifetime.
@@ -1642,12 +1642,12 @@ func gtk4InstallAppIcon(pix []byte, w, h int) error {
 	// holding our own reference (appIconBytes) keeps the lifetime unambiguous.
 	appIconBytes = gBytesNew(unsafe.Pointer(&premul[0]), uintptr(len(premul)))
 	if appIconBytes == 0 {
-		return errors.New("appkit: application icon: g_bytes_new failed")
+		return errors.New("tuohi: application icon: g_bytes_new failed")
 	}
 	tex := gdkMemoryTextureNew(int32(w), int32(h), gdkMemoryR8G8B8A8Premultiplied, appIconBytes, uintptr(stride)) // #nosec G115 -- icon dimensions bounded by image/png
 	if tex == 0 {
 		appIconBytes = 0
-		return errors.New("appkit: application icon: gdk_memory_texture_new failed")
+		return errors.New("tuohi: application icon: gdk_memory_texture_new failed")
 	}
 	appIconList = gListAppend(appIconList, tex)
 	return nil
@@ -2039,7 +2039,7 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		w.Destroy()
 		return nil, err
 	}
-	// Window settings: apply appkit's tuned WebKitSettings right after the
+	// Window settings: apply tuohi's tuned WebKitSettings right after the
 	// web view is created (WebKitSettings changes only take effect on the
 	// next navigation). Page JavaScript is always on (WebKit's native
 	// default). Media streams are native-OFF in WebKitGTK and turned on, so
@@ -2052,7 +2052,7 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	// (navigator.clipboard, on a user gesture), and copying on a click works
 	// either way. The debug-driven pair - the dev-tools
 	// switch and console forwarding - tracks the view's resolved Debug flag
-	// (View.Debug OR App.Debug / APPKIT_DEBUG). Every other WebKitSettings
+	// (View.Debug OR App.Debug / TUOHI_DEBUG). Every other WebKitSettings
 	// property keeps the loaded library's own compiled-in defaults.
 	st := webkitWebViewGetSettings(w.webview)
 	webkitSettingsSetEnableMediaStream(st, true)

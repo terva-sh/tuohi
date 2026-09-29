@@ -41,18 +41,18 @@
 // Other View methods, such as Eval, Navigate and Close, are safe from any
 // goroutine; they are marshalled to the UI thread.
 //
-// Source layout: the package is split into three file families. app*.go
-// holds the application scope - the App type (configuration + runtime
-// context), its app-scope methods (Show, Wait, Open/Reveal, Backend) and the
-// per-OS app internals (app icon, Open/Reveal); view*.go holds the view/window
-// API surface (the define-first View struct and its methods, the geometry +
-// State/Config types, scheme types, App.Show glue, the View Dialog method,
-// drag regions); the binding/events machinery may be split further into
-// bind.go (registry model + value conversion), bind_gen.go (the generated
-// JS) and bind_evt.go (the events bridge) - see AGENTS.md "Source layout";
-// lib*.go holds the pure per-platform engine layer
-// (lib_{darwin,linux,windows}.go talk to WKWebView/WebKitGTK/WebView2 and the
-// platform APIs).
+// Source layout: app*.go holds the application scope - the App type
+// (configuration + runtime context), its app-scope methods (Show, Wait,
+// Open/Reveal, Backend) and the per-OS app internals (app icon,
+// Open/Reveal); view*.go holds the view/window API surface (the define-first
+// View struct and its methods, geometry and State, scheme types, App.Show
+// glue, the View Dialog method, drag regions); bind.go (registry model +
+// value conversion), bind_gen.go (the generated JS) and bind_evt.go (the
+// events bridge) hold the binding and events machinery; engine.go holds the
+// engine interface every platform satisfies and the code they share; and
+// lib_darwin.go, lib_unix.go and lib_windows.go are the per-platform engine
+// layer, which talks to WKWebView, WebKitGTK and WebView2 and the platform
+// APIs.
 //
 // Platform code lives in *_unix.go / *_windows.go / *_darwin.go files; a
 // capability that a platform cannot provide returns an Err* sentinel or is a
@@ -139,10 +139,10 @@ func boxDownscale(src *image.NRGBA, size int) *image.NRGBA {
 	return dst
 }
 
-// envDebug reports whether APPKIT_DEBUG=1 override-enables the dev tools.
-func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
+// envDebug reports whether TUOHI_DEBUG=1 override-enables the dev tools.
+func envDebug() bool { return os.Getenv("TUOHI_DEBUG") == "1" }
 
-// App configures an appkit application and carries its runtime scope.
+// App configures a tuohi application and carries its runtime scope.
 //
 // It is the single application-scoped object: the exported fields hold the
 // application settings (content filesystem, icon, the Start hook, ...)
@@ -167,7 +167,7 @@ type App struct {
 	// Debug turns the platform web inspector / developer tools on for every
 	// window of this app (the app-wide default for View.Debug): set it once
 	// for "every window is debuggable". A view's own View.Debug ORs over it,
-	// and the APPKIT_DEBUG=1 environment variable forces the tools on for
+	// and the TUOHI_DEBUG=1 environment variable forces the tools on for
 	// every view no matter what.
 	//
 	// Like every App field it is committed when the app scope opens (later
@@ -177,7 +177,7 @@ type App struct {
 	// developerExtrasEnabled (macOS).
 	Debug bool
 
-	// Events names the JavaScript global the appkit events bridge installs on
+	// Events names the JavaScript global the tuohi events bridge installs on
 	// every page of this app: window.<Events> with on/off/emit (see
 	// View.On/Off/Emit). Empty (the default) uses the name "events". The name
 	// is fixed when each view is created.
@@ -192,8 +192,8 @@ type App struct {
 	// best-effort basis wherever the platform supports it at runtime (macOS
 	// Dock, Linux GTK3/GTK4 window icons, ...). It is applied once, when the
 	// app scope opens and before the first window exists. When Icon is unset
-	// the embedded appkit mark is used instead (unexported; appkit applies it
-	// itself), so an appkit application always has a process face unless it
+	// the embedded tuohi mark is used instead (unexported; tuohi applies it
+	// itself), so a tuohi application always has a process face unless it
 	// brings its own. Unlike the per-window page icon it sets the face of the PROCESS; a
 	// stable, runtime process icon is intentionally a best-effort feature
 	// because it is hard to keep identical across all platforms. An unset icon
@@ -224,45 +224,16 @@ type App struct {
 
 	// Bind holds the application's declarative bindings: every entry is bound
 	// onto each view App.Show creates, so one entry here covers all windows.
-	// A key is a DOTTED path - dots separate nested variables on the page, so
-	// a value bound at "app.someAPI.call" appears as window.app.someAPI.call.
-	// What a value becomes is decided by its kind alone:
+	// Keys and values follow the rules [View.Bind] documents: a dotted key
+	// names a nested page variable, and the value's kind decides whether it
+	// becomes a function, an accessor property or a frozen constant.
 	//
-	//   - a function becomes a JS function the page calls. Its arity decides
-	//     whether it ALSO works as a variable: a zero-argument function is a
-	//     callable GETTER - call it (`window.name()`), or read it as a value
-	//     (`await window.name`, which calls it with no arguments); a
-	//     one-argument function is a callable SETTER - call it
-	//     (`window.name(v)`), or ASSIGN to it (`window.name = v`, which runs
-	//     it with the assigned value; the assignment expression yields that
-	//     value, so await the CALL form for the result);
-	//   - a length-2 array of two functions ([2]any{getter, setter}) becomes
-	//     a readable AND writable property: reading it runs the getter over
-	//     the bridge (`const v = await window.name`), assigning to it runs
-	//     the setter (`window.name = v`) - see makeAccessorBinding;
-	//   - any other value - a bool, a number, a string, or any JSON-encodable
-	//     value such as a struct, map or slice - becomes an immutable JS
-	//     constant bound wholesale under that name.
-	//
-	// The page's calls are dispatched to Go in the order it makes them, so a
-	// read issued after a write observes the write
-	// (`window.count = 1; await window.count`).
-	//
-	// No part of a Go type is ever bound separately: structs and maps are
-	// never walked. The namespace the bindings of a page are installed into
-	// is frozen once the batch finishes, so the page cannot mutate the
-	// functions, constants or accessor objects it was given.
-	//
-	// A nil entry binds nothing. A view may override an app-wide name - or
-	// unbind it with a nil entry - through its own View.Bind map.
-	//
-	// Entries are applied to every view deterministically: in alphabetical
-	// key order, before the view's own View.Bind entries (see App.Show), so
-	// the result never depends on Go's map iteration order.
-	//
-	// Like every App field it is committed when the app scope opens (later
-	// edits have no effect) and is read once per shown view, at window
-	// creation.
+	// What differs from View.Bind: a nil entry here binds nothing, and a view
+	// overrides an app-wide name - or unbinds it with a nil entry - through
+	// its own View.Bind map. The entries are applied to every view in
+	// alphabetical key order, before the view's own (see App.Show). Like every
+	// App field, Bind is committed when the app scope opens (later edits have
+	// no effect) and is read once per shown view, at window creation.
 	Bind map[string]any
 
 	// FS is the filesystem the application serves to its views - the app's
@@ -274,7 +245,7 @@ type App struct {
 	//
 	//	w.Navigate("app://app/index.html")
 	//
-	// - and appkit serves the file at that path in the filesystem on every
+	// - and tuohi serves the file at that path in the filesystem on every
 	// platform. The serving is scheme-first on Windows and Linux: WebView2's
 	// https vhost for the custom "app" scheme (whose responses carry the
 	// isolation headers), the registered custom scheme on Linux (WebKitGTK
@@ -357,7 +328,7 @@ type appConfig struct {
 }
 
 // snapshotConfig copies an App's exported settings into a plain appConfig.
-// Debug commits App.Debug OR the APPKIT_DEBUG=1 environment override (the
+// Debug commits App.Debug OR the TUOHI_DEBUG=1 environment override (the
 // environment variable forces the dev tools on for every view).
 func snapshotConfig(a *App) appConfig {
 	return appConfig{
@@ -441,7 +412,7 @@ func (a *App) unregisterView(v *View, w engine) {
 // scope. Every App method calls begin before running its action.
 func (a *App) begin() (*appScope, error) {
 	if a == nil {
-		return nil, errors.New("appkit: nil *App")
+		return nil, errors.New("tuohi: nil *App")
 	}
 	a.scopeOnce.Do(func() {
 		s := &appScope{cfg: snapshotConfig(a)}
@@ -468,9 +439,8 @@ func (a *App) begin() (*appScope, error) {
 // the process being killed) ends it.
 //
 // Create all windows with App.Show and keep every UI call on the goroutine
-// that calls Wait (the main goroutine). A simple single-window app may skip
-// Wait and call View.Run on its window instead; the two models must not be
-// mixed.
+// that calls Wait (the main goroutine). Every app, even one with a single
+// window, runs its loop through Wait: View has no Run method of its own.
 func (a *App) Wait() error {
 	// Before the scope opens, so that a refused call does no platform
 	// initialization on the wrong thread.
@@ -479,7 +449,7 @@ func (a *App) Wait() error {
 	}
 	s, err := a.begin()
 	if err != nil {
-		return fmt.Errorf("appkit: wait: %w", err)
+		return fmt.Errorf("tuohi: wait: %w", err)
 	}
 	// The icon and App.Start set up what needs the UI thread before the loop
 	// below dispatches its events. Wait normally runs on that thread; on
@@ -529,7 +499,7 @@ func (a *App) Quit() {
 func (a *App) start(s *appScope) {
 	s.startOnce.Do(func() {
 		// The process icon: App.Icon when the consumer set one, otherwise the
-		// embedded appkit mark (_icon). setAppIcon is best-effort per platform
+		// embedded tuohi mark (_icon). setAppIcon is best-effort per platform
 		// (Dock on macOS, GTK window icons on Linux, no-op on Windows) and its
 		// errors are deliberately ignored - an un-decodable PNG must never
 		// keep the application from starting.
@@ -572,7 +542,7 @@ func (s *appScope) requestExit() {
 // after the one-time platform initialization has run:
 //
 //   - "webkitgtk-6.0" or "webkit2gtk-4.1" on Linux - the stack that was
-//     actually loaded, honoring the APPKIT_BACKEND environment variable
+//     actually loaded, honoring the TUOHI_BACKEND environment variable
 //     (see README "Linux shared libraries");
 //   - "WKWebView" on macOS and "WebView2" on Windows, whose single built-in
 //     backend ignores the variable.
@@ -598,7 +568,7 @@ type binder interface {
 // binderBatch is the OPTIONAL batching surface applyBinds uses when the
 // engine offers it: every declarative binding of one window is prepared,
 // registered and live-installed in ONE pass - a single script rebuild and a
-// single live-install Eval - instead of one full rebuild per name (P1).
+// single live-install Eval - instead of one full rebuild per name.
 // Every real engine implements it; the recording test stubs don't, so
 // applyBinds falls back to per-name Bind calls for them.
 type binderBatch interface {
@@ -625,10 +595,10 @@ type bindRequest struct {
 // encountered. A nil w or a nil value is an error.
 func bindEntry(w binder, name string, v any) ([]string, error) {
 	if w == nil {
-		return nil, fmt.Errorf("appkit: Bind requires a non-nil View")
+		return nil, fmt.Errorf("tuohi: Bind requires a non-nil View")
 	}
 	if v == nil {
-		return nil, fmt.Errorf("appkit: Bind requires a non-nil value")
+		return nil, fmt.Errorf("tuohi: Bind requires a non-nil value")
 	}
 	if err := w.Bind(name, v); err != nil {
 		return nil, fmt.Errorf("binding %s: %w", name, err)
@@ -653,13 +623,13 @@ func bindEntry(w binder, name string, v any) ([]string, error) {
 // dotted-name rules (validateBindName), the reserved/denylist top-level
 // checks (validateTopLevel) and the dotted-prefix collision check
 // (checkDottedPrefixes) fail loudly HERE - at App.Show - instead of letting
-// two names silently destroy each other on the page (R2/RE2/E4).
+// two names silently destroy each other on the page.
 func applyBinds(w binder, appBinds, viewBinds map[string]any) error {
 	binds, unbinds, err := planBinds(appBinds, viewBinds, eventsGlobalOf(w))
 	if err != nil {
 		return err
 	}
-	// Engine bindings register and install in ONE batch pass (P1); stubs
+	// Engine bindings register and install in ONE batch pass; stubs
 	// without BindBatch fall back to the same per-name calls as before.
 	if len(binds) > 0 {
 		if bw, ok := w.(binderBatch); ok {
@@ -677,10 +647,10 @@ func applyBinds(w binder, appBinds, viewBinds map[string]any) error {
 	for _, name := range unbinds {
 		u, ok := w.(interface{ Unbind(string) error })
 		if !ok {
-			return fmt.Errorf("appkit: unbinding %s: engine cannot unbind", name)
+			return fmt.Errorf("tuohi: unbinding %s: engine cannot unbind", name)
 		}
 		if err := u.Unbind(name); err != nil {
-			return fmt.Errorf("appkit: unbinding %s: %w", name, err)
+			return fmt.Errorf("tuohi: unbinding %s: %w", name, err)
 		}
 	}
 	return nil
@@ -699,7 +669,7 @@ func applyBinds(w binder, appBinds, viewBinds map[string]any) error {
 // requests in deterministic order: app keys, then view keys, alphabetical
 // within each map.
 func planBinds(appBinds, viewBinds map[string]any, eventsGlobal string) (binds []bindRequest, unbinds []string, err error) {
-	// final is the set of names that end up bound (R2's collision domain).
+	// final is the set of names that end up bound, the domain of the prefix-collision check.
 	final := make(map[string]bool, len(appBinds)+len(viewBinds))
 	check := func(name string) error {
 		if err := validateBindName(name); err != nil {
@@ -758,7 +728,7 @@ func eventsGlobalOf(w binder) string {
 
 // windowGlobalDenylist is the small set of top-level window names a binding
 // must not take: replacing these silently breaks the page's own globals (and
-// often appkit's injected scripts) with no error anywhere (E4). The check
+// often tuohi's injected scripts) with no error anywhere. The check
 // only applies to the FIRST name segment - names under a consumer-chosen
 // namespace like "demo.open" are the consumer's own object and are fine. The
 // list is deliberately conservative: the window built-ins every page relies
@@ -774,11 +744,11 @@ var windowGlobalDenylist = map[string]bool{
 	"clearTimeout": true, "clearInterval": true, "getComputedStyle": true, "matchMedia": true,
 }
 
-// validateTopLevel rejects bind names that would clobber appkit's own page
+// validateTopLevel rejects bind names that would clobber tuohi's own page
 // surface or a common window global: the first dot-segment of the name must
 // not equal the events API global of this view (window.<eventsGlobal>), must
 // not be "__webview__" (the bridge instance) and must not start with
-// "__appkit" (every internal message method and the events binding live
+// "__tuohi" (every internal message method and the events binding live
 // there, see the internal* constants), and must not be a denylisted window
 // built-in (windowGlobalDenylist). Deeper segments are not restricted: they
 // live under the consumer's own namespace objects.
@@ -787,14 +757,14 @@ func validateTopLevel(name, eventsGlobal string) error {
 	if i := strings.IndexByte(name, '.'); i >= 0 {
 		top = name[:i]
 	}
-	if top == "__webview__" || strings.HasPrefix(top, "__appkit") {
-		return fmt.Errorf("appkit: binding name %q is reserved for appkit's internal page API", name)
+	if top == "__webview__" || strings.HasPrefix(top, "__tuohi") {
+		return fmt.Errorf("tuohi: binding name %q is reserved for tuohi's internal page API", name)
 	}
 	if top == eventsGlobal {
-		return fmt.Errorf("appkit: binding name %q would replace the page's events API (window.%s)", name, eventsGlobal)
+		return fmt.Errorf("tuohi: binding name %q would replace the page's events API (window.%s)", name, eventsGlobal)
 	}
 	if windowGlobalDenylist[top] {
-		return fmt.Errorf("appkit: binding name %q would replace the page's own window.%s", name, top)
+		return fmt.Errorf("tuohi: binding name %q would replace the page's own window.%s", name, top)
 	}
 	return nil
 }
@@ -804,7 +774,7 @@ func validateTopLevel(name, eventsGlobal string) error {
 // another ("api" vs "api.id", "app.x" vs "app.x.y"). The page installer
 // creates namespace objects for dotted names, so binding both a leaf and a
 // namespace under it is order-dependent and one of the two silently destroys
-// the other (R2); validating the whole final set up front makes the failure
+// the other; validating the whole final set up front makes the failure
 // loud, deterministic and independent of Go's map order.
 func checkDottedPrefixes(names map[string]bool) error {
 	keys := make([]string, 0, len(names))
@@ -814,7 +784,7 @@ func checkDottedPrefixes(names map[string]bool) error {
 	sort.Strings(keys)
 	for i := 1; i < len(keys); i++ {
 		if strings.HasPrefix(keys[i], keys[i-1]+".") {
-			return fmt.Errorf("appkit: binding names %q and %q collide: %q is nested under %q, and a leaf and its namespace cannot both be bound", keys[i], keys[i-1], keys[i], keys[i-1])
+			return fmt.Errorf("tuohi: binding names %q and %q collide: %q is nested under %q, and a leaf and its namespace cannot both be bound", keys[i], keys[i-1], keys[i], keys[i-1])
 		}
 	}
 	return nil
@@ -832,7 +802,7 @@ func sortedMapKeys[V any](m map[string]V) []string {
 }
 
 // cloneBindMap returns a defensive copy of a Bind map, taken at the moment
-// App.Show reads it (RE3). The declarative bind maps are shared, unlocked Go
+// App.Show reads it. The declarative bind maps are shared, unlocked Go
 // maps the consumer may keep mutating; binding reads them exactly once, so
 // snapshotting at first read removes the "map read while a goroutine writes
 // it" footgun (the app-wide App.Bind map is snapshotted the same way inside
@@ -881,10 +851,10 @@ func (a *App) Reveal(path string) error {
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("appkit: resolve %q: %w", path, err)
+		return fmt.Errorf("tuohi: resolve %q: %w", path, err)
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return fmt.Errorf("appkit: reveal %q: %w", path, err)
+		return fmt.Errorf("tuohi: reveal %q: %w", path, err)
 	}
 	return revealFile(abs)
 }
@@ -894,7 +864,7 @@ func (a *App) Reveal(path string) error {
 func validateScheme(rawurl string) error {
 	u, err := url.Parse(rawurl)
 	if err != nil {
-		return fmt.Errorf("appkit: parse %q: %w", rawurl, err)
+		return fmt.Errorf("tuohi: parse %q: %w", rawurl, err)
 	}
 	if !allowedSchemes[u.Scheme] {
 		return fmt.Errorf("%w: %q (allowed: http, https, mailto)", ErrScheme, u.Scheme)
@@ -919,7 +889,7 @@ var allowedSchemes = map[string]bool{
 var ErrNotMainThread = errors.New("tuohi: on macOS the UI runs on the main thread; call App.Show and App.Wait from main")
 
 // ErrScheme is returned by Open when the URL's scheme is not in the allow-list.
-var ErrScheme = errors.New("appkit: refused URL scheme")
+var ErrScheme = errors.New("tuohi: refused URL scheme")
 
 // serveAppFS returns the content resolver for an App.FS: it maps a request
 // URL's path onto a file in the filesystem and answers it with the matching
@@ -1052,7 +1022,7 @@ func (s *appScope) startViewServer() (*loopbackServer, error) {
 	}
 	srv, _, err := listenLoopbackHTTP(serveAppFS(s.cfg.FS))
 	if err != nil {
-		return nil, fmt.Errorf("appkit: serve App.FS for a view: %w", err)
+		return nil, fmt.Errorf("tuohi: serve App.FS for a view: %w", err)
 	}
 	return srv, nil
 }

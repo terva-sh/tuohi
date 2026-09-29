@@ -101,7 +101,7 @@ type eventSub struct {
 
 // eventsBindName is the Go function the injected JS calls to forward a
 // JS-side emit into Go. It must match the name referenced in eventsInitScript.
-const eventsBindName = "__appkit_event__"
+const eventsBindName = "__tuohi_event__"
 
 // installEvents wires the events bridge onto w and returns its per-view
 // state: the document-start script (eventsInitScript(global)) and the
@@ -121,7 +121,7 @@ func installEvents(w eventsHost, global string) (*events, error) {
 	}
 	w.Init(eventsInitScript(global))
 	if err := w.Bind(eventsBindName, e.receiveFromJS); err != nil {
-		return nil, fmt.Errorf("appkit: install events bridge: %w", err)
+		return nil, fmt.Errorf("tuohi: install events bridge: %w", err)
 	}
 	return e, nil
 }
@@ -160,7 +160,7 @@ func (w *webview) Off(name string) {
 // Emit publishes an event to every listener on both sides. See View.Emit.
 func (w *webview) Emit(name string, data ...any) error {
 	if w.events == nil {
-		return errors.New("appkit: events bridge is not installed on this view")
+		return errors.New("tuohi: events bridge is not installed on this view")
 	}
 	return w.events.Emit(name, data...)
 }
@@ -197,7 +197,7 @@ func (e *events) Emit(name string, data ...any) error {
 	for i := range data {
 		b, err := json.Marshal(data[i])
 		if err != nil {
-			return fmt.Errorf("appkit: encode event %q argument %d: %w", name, i, err)
+			return fmt.Errorf("tuohi: encode event %q argument %d: %w", name, i, err)
 		}
 		raw[i] = b
 		parts[i] = string(b)
@@ -287,15 +287,15 @@ func eventsInitScript(global string) string {
       try {
         fn.apply(null, args);
       } catch (e) {
-        console.error('appkit: event handler for "' + name + '" threw:', e);
+        console.error('tuohi: event handler for "' + name + '" threw:', e);
       }
     });
   }
   function emit(name) {
     var args = Array.prototype.slice.call(arguments, 1);
     fire(name, args);
-    if (typeof window.__appkit_event__ === 'function') {
-      var promise = window.__appkit_event__(name, args);
+    if (typeof window.__tuohi_event__ === 'function') {
+      var promise = window.__tuohi_event__(name, args);
       if (promise && typeof promise.catch === 'function') { promise.catch(function() {}); }
     }
   }

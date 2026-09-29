@@ -1,6 +1,6 @@
 // macOS View backend in pure Go via purego's Objective-C runtime.
 //
-// This backend drives AppKit and WebKit directly, so appkit needs no cgo and
+// This backend drives AppKit and WebKit directly, so tuohi needs no cgo and
 // no bundled native library on macOS.
 
 package tuohi
@@ -101,7 +101,7 @@ func sel(name string) objc.SEL {
 func class(name string) objc.ID {
 	c := objc.GetClass(name)
 	if c == 0 {
-		panic(fmt.Sprintf("appkit: objc class %q not found", name))
+		panic(fmt.Sprintf("tuohi: objc class %q not found", name))
 	}
 	return objc.ID(c)
 }
@@ -203,7 +203,7 @@ func ensureInit() error {
 func registerClasses() error {
 	var err error
 	appDelegateClass, err = objc.RegisterClass(
-		"AppkitAppDelegate", objc.GetClass("NSResponder"),
+		"TuohiAppDelegate", objc.GetClass("NSResponder"),
 		[]*objc.Protocol{objc.GetProtocol("NSTouchBarProvider")}, nil,
 		[]objc.MethodDef{
 			{
@@ -217,7 +217,7 @@ func registerClasses() error {
 				// by the framed path - can never be brought back: AppKit's
 				// default reopen handling only creates an untitled document for
 				// document-style apps and otherwise does nothing. Restore the
-				// appkit window (un-minimize + re-show + make key) so a normal
+				// tuohi window (un-minimize + re-show + make key) so a normal
 				// menu-bar/Dock app behaves the way macOS users expect.
 				Cmd: sel("applicationShouldHandleReopen:hasVisibleWindows:"),
 				Fn: func(self objc.ID, _cmd objc.SEL, sender objc.ID, hasVisible bool) bool {
@@ -225,7 +225,7 @@ func registerClasses() error {
 						w.restoreOnReopen()
 						return false // we restored the window; stop AppKit's default
 					}
-					return true // no appkit window to restore; keep the default
+					return true // no tuohi window to restore; keep the default
 				},
 			},
 			{
@@ -243,7 +243,7 @@ func registerClasses() error {
 	}
 
 	scriptHandlerClass, err = objc.RegisterClass(
-		"AppkitScriptMessageHandler", objc.GetClass("NSResponder"),
+		"TuohiScriptMessageHandler", objc.GetClass("NSResponder"),
 		[]*objc.Protocol{objc.GetProtocol("WKScriptMessageHandler")}, nil,
 		[]objc.MethodDef{{
 			Cmd: sel("userContentController:didReceiveScriptMessage:"),
@@ -284,7 +284,7 @@ func registerClasses() error {
 	}
 
 	windowDelegateClass, err = objc.RegisterClass(
-		"AppkitWindowDelegate", objc.GetClass("NSObject"),
+		"TuohiWindowDelegate", objc.GetClass("NSObject"),
 		[]*objc.Protocol{objc.GetProtocol("NSWindowDelegate")}, nil,
 		[]objc.MethodDef{{
 			Cmd: sel("windowWillClose:"),
@@ -300,7 +300,7 @@ func registerClasses() error {
 	}
 
 	uiDelegateClass, err = objc.RegisterClass(
-		"AppkitUIDelegate", objc.GetClass("NSObject"),
+		"TuohiUIDelegate", objc.GetClass("NSObject"),
 		[]*objc.Protocol{objc.GetProtocol("WKUIDelegate")}, nil,
 		[]objc.MethodDef{
 			{
@@ -341,7 +341,7 @@ func registerClasses() error {
 	}
 
 	schemeHandlerClass, err = objc.RegisterClass(
-		"AppkitURLSchemeHandler", objc.GetClass("NSObject"),
+		"TuohiURLSchemeHandler", objc.GetClass("NSObject"),
 		[]*objc.Protocol{objc.GetProtocol("WKURLSchemeHandler")}, nil,
 		[]objc.MethodDef{
 			{Cmd: sel("webView:startURLSchemeTask:"), Fn: startURLSchemeTask},
@@ -356,13 +356,13 @@ func registerClasses() error {
 	// with no title bar (NSWindowStyleMaskBorderless), so a plain borderless
 	// window can NEVER become key - makeKeyAndOrderFront: / Raise would order
 	// it to the front but it stays non-key, and keyboard input never reaches
-	// the web view. Frameless appkit windows (View.Frame false, the
+	// the web view. Frameless tuohi windows (View.Frame false, the
 	// default) therefore allocate from this subclass; framed windows keep the
 	// plain NSWindow, whose titled style already allows keyness. Subclassing
 	// is the only mechanism - there is no window-level or runtime switch for
 	// it (same shape as firstMouseViewClass below).
 	borderlessWindowClass, err = objc.RegisterClass(
-		"AppkitBorderlessWindow", objc.GetClass("NSWindow"), nil, nil,
+		"TuohiBorderlessWindow", objc.GetClass("NSWindow"), nil, nil,
 		[]objc.MethodDef{
 			{
 				Cmd: sel("canBecomeKeyWindow"),
@@ -384,7 +384,7 @@ func registerClasses() error {
 	// AppKit asks the VIEW under the cursor, and there is no window-level or
 	// runtime switch for it.
 	firstMouseViewClass, err = objc.RegisterClass(
-		"AppkitFirstMouseWebView", objc.GetClass("WKWebView"), nil, nil,
+		"TuohiFirstMouseWebView", objc.GetClass("WKWebView"), nil, nil,
 		[]objc.MethodDef{{
 			Cmd: sel("acceptsFirstMouse:"),
 			Fn:  func(self objc.ID, _cmd objc.SEL, event objc.ID) bool { return true },
@@ -812,11 +812,11 @@ func postUI(f func()) bool {
 }
 
 // uiLoopExternal is the dispatcher's external hook: NSApp runs, but not
-// through tuohi (appkitRunsLoop), so the tray package or an embedding host
+// through tuohi (tuohiRunsLoop), so the tray package or an embedding host
 // owns the loop that drains the main queue.
 func uiLoopExternal() bool {
 	app := class("NSApplication").Send(sel("sharedApplication"))
-	return app.Send(sel("isRunning")) != 0 && !appkitRunsLoop.Load()
+	return app.Send(sel("isRunning")) != 0 && !tuohiRunsLoop.Load()
 }
 
 // performOnMain runs f on the UI thread and waits for it, running inline when
@@ -836,12 +836,12 @@ var (
 	notFirst    bool
 	windowCount int32
 
-	// appkitRunsLoop is true while OUR Run() drives [NSApp run]. When the
+	// tuohiRunsLoop is true while OUR Run() drives [NSApp run]. When the
 	// loop belongs to someone else (e.g. the tray package's Run started it
 	// before the first webview existed), it stays false: closing the last
-	// appkit window must not stop a loop we do not own, and Terminate must
+	// tuohi window must not stop a loop we do not own, and Terminate must
 	// not stop it either.
-	appkitRunsLoop atomic.Bool
+	tuohiRunsLoop atomic.Bool
 )
 
 func claimFirstInstance() bool {
@@ -929,10 +929,10 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 	// initialised (WKWebView copies its configuration at init, so nothing
 	// can change afterwards). The pushed values mirror WKWebView's native
 	// WKPreferences defaults - javaScriptEnabled YES, fullScreenEnabled NO
-	// (appkit's one tuned divergence: it enables fullscreen so the demo's
+	// (tuohi's one tuned divergence: it enables fullscreen so the demo's
 	// <video> can go fullscreen), deprecated javaEnabled/plugInsEnabled NO -
 	// except developerExtrasEnabled, which tracks the view's resolved Debug
-	// flag (View.Debug OR App.Debug / APPKIT_DEBUG). Every write goes
+	// flag (View.Debug OR App.Debug / TUOHI_DEBUG). Every write goes
 	// through KVC guarded by respondsToSelector: on the property's setter,
 	// so a preference the running macOS does not know (newer or removed
 	// properties, e.g. javaEnabled after 10.15) is skipped instead of
@@ -958,7 +958,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 			}
 		}
 		push("javaScriptEnabled", "setJavaScript:", num(true))
-		push("fullScreenEnabled", "setFullScreenEnabled:", num(true)) // appkit's tuned default (native NO)
+		push("fullScreenEnabled", "setFullScreenEnabled:", num(true)) // tuohi's tuned default (native NO)
 		push("developerExtrasEnabled", "setDeveloperExtrasEnabled:", num(devTools))
 		push("javaScriptCanOpenWindowsAutomatically", "setJavaScriptCanOpenWindowsAutomatically:", num(true))
 		push("minimumFontSize", "setMinimumFontSize:", numF(0))
@@ -1192,8 +1192,8 @@ func (w *webview) onWindowDestroyed(skipTermination bool) {
 	}
 	// Last owned window gone: stop the loop - but only when Run() drives it.
 	// An external owner's loop (for example the tray package's) outlives every
-	// appkit window.
-	if decWindowCount() <= 0 && !skipTermination && appkitRunsLoop.Load() {
+	// tuohi window.
+	if decWindowCount() <= 0 && !skipTermination && tuohiRunsLoop.Load() {
 		w.Terminate()
 	}
 }
@@ -1227,9 +1227,9 @@ func (w *webview) Run() {
 	}
 	ui.enterLoop()
 	defer ui.exitLoop()
-	appkitRunsLoop.Store(true)
+	tuohiRunsLoop.Store(true)
 	w.app.Send(sel("run"))
-	appkitRunsLoop.Store(false)
+	tuohiRunsLoop.Store(false)
 }
 
 // pumpUntilClosed services the event queue on the UI thread until this window
@@ -1267,7 +1267,7 @@ func (w *webview) pumpUntilClosed() {
 // stopping it would kill the owner's app; Terminate then only ends this
 // webview's Run wait, and the caller's Destroy closes the window.
 func (w *webview) Terminate() {
-	if w.app.Send(sel("isRunning")) != 0 && !appkitRunsLoop.Load() {
+	if w.app.Send(sel("isRunning")) != 0 && !tuohiRunsLoop.Load() {
 		// Closing the channel is enough for both Run shapes: the channel wait
 		// returns at once, and the pump polls it (see pumpUntilClosed for why
 		// a queued wake-up could not be trusted here).
@@ -1487,7 +1487,7 @@ func (w *webview) Minimize() {
 
 // restoreOnReopen brings this window back when the user clicks the app's Dock
 // icon while nothing of it is on screen (the "reopen" event, handled by the
-// AppkitAppDelegate's applicationShouldHandleReopen:hasVisibleWindows:). A
+// TuohiAppDelegate's applicationShouldHandleReopen:hasVisibleWindows:). A
 // frameless Minimize hides the window via orderOut with no Dock-miniature, and
 // a framed Minimize docks it as a miniature, so this performs the same
 // recovery a tray's Show menu item would: un-minimize if needed, then re-show
@@ -1761,7 +1761,7 @@ func (w *webview) destroyOnUI() {
 	})
 	// Unblock a Run() waiting on this window (the pump polls the channel).
 	w.closeOnce.Do(func() { close(w.closed) })
-	if w.ownsWindow && !appkitRunsLoop.Load() && w.app.Send(sel("isRunning")) == 0 {
+	if w.ownsWindow && !tuohiRunsLoop.Load() && w.app.Send(sel("isRunning")) == 0 {
 		// No run loop is active (the normal teardown, after Run returned):
 		// flush the events queued during destruction ourselves. When a loop IS
 		// running - ours or an external owner's - it drains them, and pumping
@@ -1967,7 +1967,7 @@ var publishToolkit sync.Once
 
 // platformBackend reports the web-engine backend in use. macOS has a single
 // built-in backend (WKWebView), so there is nothing to detect or override -
-// APPKIT_BACKEND is Linux-only (see lib_unix.go).
+// TUOHI_BACKEND is Linux-only (see lib_unix.go).
 func platformBackend() string { return "WKWebView" }
 
 // --- app-level run loop (App.Wait) -----------------------------------------
@@ -1978,9 +1978,9 @@ func platformBackend() string { return "WKWebView" }
 func appUIWait() {
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	if app.Send(sel("isRunning")) == 0 {
-		appkitRunsLoop.Store(true)
+		tuohiRunsLoop.Store(true)
 		app.Send(sel("run"))
-		appkitRunsLoop.Store(false)
+		tuohiRunsLoop.Store(false)
 		return
 	}
 	for !appExitRequested() {

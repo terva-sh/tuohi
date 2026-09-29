@@ -48,7 +48,7 @@ flat `Extensions` list or the named `Filters` list:
 The single-selection panels (`TypeOpen`, `TypeSave`, `TypeDirectory`) return
 at most one path. No native type ever crosses the API boundary - just strings.
 
-The appkit `View` interface exposes the same panels as one `Dialog` method -
+The tuohi `View` type exposes the same panels as one `Dialog` method -
 a thin wrapper that dispatches onto the UI thread and blocks the caller until
 the panel is dismissed.
 
@@ -102,7 +102,7 @@ and the demo reports that.
 
 ## Conventions
 
-Part of the appkit module. Like the sibling subpackages (`tray`, `notify`),
+Part of the tuohi module. Like the sibling subpackages (`tray`, `notify`),
 this README is the consumer guide - how to use the package. Implementation
 detail (COM plumbing, GTK stack probing, objc marshaling) lives in the doc
 comments of the `dialog*.go` source files, not in markdown.

@@ -188,7 +188,7 @@ func isAccessorKey(name string) bool {
 // segments contain whitespace cannot be installed as window properties
 // through the dot walker and are almost certainly caller mistakes - they
 // fail loudly at App.Show instead of creating odd, unreachable page
-// properties (RE2).
+// properties.
 func validateBindName(name string) error {
 	if name == "" {
 		return errors.New("binding name must not be empty")
@@ -347,7 +347,7 @@ type preparedBind struct {
 
 // prepareBindBatch validates every request of a bind batch through
 // bindEntries - one bad name or value fails the WHOLE batch before anything
-// is stored, so a failed App.Show never leaves a half-bound window (C4) -
+// is stored, so a failed App.Show never leaves a half-bound window -
 // and returns the per-request entries (for bindingsReplace) plus the
 // flattened, page-installing entries in request order (for the live install
 // script; the accessors' synthetic dispatch keys never install anything on
@@ -380,7 +380,7 @@ func prepareBindBatch(batch []bindRequest) ([]preparedBind, []binding, error) {
 // binding of a name the one that wins, deterministically. Every key the old
 // binding could own - the page name plus its two synthetic accessor dispatch
 // keys - is deleted first, so a replaced binding cannot leak stale dispatch
-// keys or unreachable entries (R1(a)/RE4). entries[0].name is the page name;
+// keys or unreachable entries. entries[0].name is the page name;
 // the remaining entries are the accessor's synthetic dispatch keys. Callers
 // hold the registry lock.
 func bindingsReplace(m map[string]binding, entries []binding) {
@@ -412,7 +412,7 @@ func handleInternalBindError(params json.RawMessage) {
 		return
 	}
 	r := reports[0]
-	log.Printf("appkit: live bind/unbind of %q failed on the page: %q", r.Name, r.Error)
+	log.Printf("tuohi: live bind/unbind of %q failed on the page: %q", r.Name, r.Error)
 }
 
 // serialQueue runs submitted functions one at a time, in submission order,

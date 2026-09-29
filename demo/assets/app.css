@@ -1,5 +1,5 @@
-/* appkit demo styles. The titlebar rules double as the drag-region contract:
-   appkit's app-region tracker reads the raw stylesheet text and turns
+/* tuohi demo styles. The titlebar rules double as the drag-region contract:
+   tuohi's app-region tracker reads the raw stylesheet text and turns
    "-app-region: drag/no-drag" into native window-drag boxes (the legacy
    "-webkit-app-region" / "-webview-app-region" spellings are also accepted),
    so the whole bar moves the window on every platform while the close button
@@ -43,7 +43,7 @@ body {
   border-top-right-radius: var(--radius);
   -webkit-user-select: none; /* the drag swallows clicks; no text selection */
   -user-select: none;
-  -app-region: drag;         /* appkit: whole bar drags the window */
+  -app-region: drag;         /* tuohi: whole bar drags the window */
   display: flex;
   align-items: center;
   gap: 10px;
@@ -68,7 +68,7 @@ body {
 }
 
 .tb-dot {
-  -app-region: no-drag; /* appkit: button stays interactive */
+  -app-region: no-drag; /* tuohi: button stays interactive */
   width: 26px;
   height: 26px;
   border-radius: 50%;

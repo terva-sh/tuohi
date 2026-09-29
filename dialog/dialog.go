@@ -13,7 +13,7 @@
 // threading model - the caller is responsible for already being on the main
 // thread. For example, an Ebitengine app wraps the call in
 // ebiten.RunOnMainThread, and a webview host uses its own UI-thread dispatch
-// (the appkit View method Dialog does exactly that).
+// (the tuohi View method Dialog does exactly that).
 //
 // A cancelled panel - and a panel that cannot be shown at all (no backend, or
 // no display, for example a Linux process without one) - yields a nil/empty

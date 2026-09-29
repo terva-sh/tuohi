@@ -1223,11 +1223,11 @@ func regReadString(root uintptr, subkey, name string) (string, error) {
 // CreateWebViewEnvironmentWithOptionsInternal export.
 //
 // Trade-off (deliberate): this is the internal/undocumented export that
-// WebView2Loader.dll itself wraps, and calling it directly is what lets appkit
+// WebView2Loader.dll itself wraps, and calling it directly is what lets tuohi
 // bundle ZERO native DLLs. Microsoft documents that it may change or be removed,
 // and that the stable, supported entry point is
 // CreateCoreWebView2EnvironmentWithOptions -- but that one is only exported by
-// WebView2Loader.dll, which would have to be shipped alongside the binary. appkit
+// WebView2Loader.dll, which would have to be shipped alongside the binary. tuohi
 // favors the zero-DLL design; if a future Edge runtime drops this export, the
 // GetProcAddress below fails with a clear error rather than misbehaving.
 func createEnvironment(userDataDir string, envHandler *comHandler) error {
@@ -1256,7 +1256,7 @@ func createEnvironment(userDataDir string, envHandler *comHandler) error {
 	}
 	addr, err := syscall.GetProcAddress(mod, "CreateWebViewEnvironmentWithOptionsInternal")
 	if err != nil {
-		// This internal export is how appkit avoids bundling WebView2Loader.dll; an
+		// This internal export is how tuohi avoids bundling WebView2Loader.dll; an
 		// incompatible/too-new Edge runtime that renamed or removed it lands here.
 		return fmt.Errorf("resolve CreateWebViewEnvironmentWithOptionsInternal (internal WebView2 loader export; installed Edge runtime may be incompatible): %w", err)
 	}
@@ -1328,10 +1328,10 @@ func (w *webview) embed(v *View) error {
 
 	// WebView2 settings: page JavaScript is always enabled (WebView2's native
 	// TRUE; the JS-disable knob was removed), and window.chrome.webview must
-	// stay on - appkit's JS bridge posts through it. appkit's tuned
+	// stay on - tuohi's JS bridge posts through it. tuohi's tuned
 	// divergences from WebView2's native defaults: the status bar is hidden
 	// (custom chrome) and dev tools open only when the view's resolved Debug
-	// flag is set (View.Debug OR App.Debug / APPKIT_DEBUG). Settings apply
+	// flag is set (View.Debug OR App.Debug / TUOHI_DEBUG). Settings apply
 	// from the next top-level navigation. Each property is written through
 	// the interface that owns its offset, obtained from the Base settings
 	// object by QueryInterface; a Runtime older than that interface skips the
@@ -1347,7 +1347,7 @@ func (w *webview) embed(v *View) error {
 		b.PutIsScriptEnabled(true)
 		b.PutIsWebMessageEnabled(true)
 		b.PutAreDefaultScriptDialogsEnabled(true)
-		b.PutIsStatusBarEnabled(false) // appkit hides WebView2's status bar (custom chrome)
+		b.PutIsStatusBarEnabled(false) // tuohi hides WebView2's status bar (custom chrome)
 		b.PutDevTools(devTools)
 		b.PutAreDefaultContextMenusEnabled(true)
 		b.PutAreHostObjectsAllowed(true)
@@ -1616,7 +1616,7 @@ func (w *webview) loadHTML(html string) {
 		return &response{Body: body, MIME: "text/html; charset=utf-8"}
 	})
 	if err != nil {
-		log.Printf("appkit: loadHTML: %v", err)
+		log.Printf("tuohi: loadHTML: %v", err)
 		return
 	}
 	stopLoopback(w.htmlServer.Swap(srv))
@@ -2376,7 +2376,7 @@ type webview struct {
 	fixed bool
 
 	// regions is the page's latest drag/no-drag box set (device px, client
-	// coordinates), reported via the __appkitAppRegions message. Written on
+	// coordinates), reported via the __tuohiAppRegions message. Written on
 	// the UI thread by handleInternal; read on the UI thread by the hit-test path.
 	regions appRegionSet
 
@@ -2407,7 +2407,7 @@ type webview struct {
 	dispatchSeq uintptr
 }
 
-var classNamePtr = utf16("appkit_webview")
+var classNamePtr = utf16("tuohi_webview")
 
 // newView creates a window and its web view on Windows. The App.Show method
 // opens the app scope first and then calls this constructor with the
@@ -2545,7 +2545,7 @@ func wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 }
 
 // hostProc is the subclass proc installed on an embedded (caller-owned) host
-// HWND. It routes only the messages appkit must see (WM_APP dispatch and
+// HWND. It routes only the messages tuohi must see (WM_APP dispatch and
 // WM_SIZE -> controller bounds) and hands everything else to the host's own
 // window proc.
 func hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
@@ -3003,7 +3003,7 @@ func (w *webview) beginResizeDrag(p dragRequestParams) {
 
 // platformBackend reports the web-engine backend in use. Windows has a single
 // built-in backend (WebView2), so there is nothing to detect or override -
-// APPKIT_BACKEND is Linux-only (see lib_unix.go).
+// TUOHI_BACKEND is Linux-only (see lib_unix.go).
 func platformBackend() string { return "WebView2" }
 
 // --- app-level run loop (App.Wait) -----------------------------------------

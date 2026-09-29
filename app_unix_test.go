@@ -88,13 +88,13 @@ func TestSetAppIconRejectsGarbage(t *testing.T) {
 // TestDesktopID pins the desktop-id sanitization rules.
 func TestDesktopID(t *testing.T) {
 	for in, want := range map[string]string{
-		"appkit demo":  "appkit-demo",
-		"AppKit Demo!": "appkit-demo",
-		"  My  App  ":  "my-app",
-		"123app":       "123app",
-		"a++b":         "a-b",
-		"---":          "app",
-		"":             "", // falls back to the executable name; not deterministic in tests
+		"tuohi demo":  "tuohi-demo",
+		"Tuohi Demo!": "tuohi-demo",
+		"  My  App  ": "my-app",
+		"123app":      "123app",
+		"a++b":        "a-b",
+		"---":         "app",
+		"":            "", // falls back to the executable name; not deterministic in tests
 	} {
 		if want == "" {
 			continue
@@ -120,7 +120,7 @@ func TestInstallWaylandIdentity(t *testing.T) {
 	// Simulate an older install that left the icon in a different hicolor
 	// size directory (e.g. the previous 256px demo glyph). Icon loaders pick
 	// the closest size, so such a stale copy would shadow the fresh install.
-	stale := filepath.Join(data, "icons", "hicolor", "256x256", "apps", "appkit-demo.png")
+	stale := filepath.Join(data, "icons", "hicolor", "256x256", "apps", "tuohi-demo.png")
 	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -132,9 +132,9 @@ func TestInstallWaylandIdentity(t *testing.T) {
 	for i := range img.Pix {
 		img.Pix[i] = 0x80
 	}
-	id := installWaylandIdentity("AppKit Demo", img)
-	if id != "appkit-demo" {
-		t.Fatalf("install returned id %q, want appkit-demo", id)
+	id := installWaylandIdentity("Tuohi Demo", img)
+	if id != "tuohi-demo" {
+		t.Fatalf("install returned id %q, want tuohi-demo", id)
 	}
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("stale icon copy at %s must be removed after install (err=%v)", stale, err)
@@ -150,13 +150,13 @@ func TestInstallWaylandIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), "Icon=appkit-demo") {
+	if !strings.Contains(string(got), "Icon=tuohi-demo") {
 		t.Errorf(".desktop content missing Icon key:\n%s", got)
 	}
 
 	// Idempotent: same id on re-run, files not rewritten (mtime unchanged).
 	before, _ := os.Stat(icon)
-	if id2 := installWaylandIdentity("AppKit Demo", img); id2 != id {
+	if id2 := installWaylandIdentity("Tuohi Demo", img); id2 != id {
 		t.Fatalf("second install returned %q, want %q", id2, id)
 	}
 	after, _ := os.Stat(icon)

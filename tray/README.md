@@ -10,7 +10,7 @@ checkbox/submenu/disabled menu items, per-item icons, tray-level click
 handlers, dark-mode icon switching and (on Windows) on-screen icon bounds.
 
 ```go
-import "github.com/malivvan/appkit/tray"
+import "github.com/terva-sh/tuohi/tray"
 
 err := tray.Run(tray.Config{
 	Icon:    appIconPNG, // PNG bytes
@@ -113,7 +113,7 @@ application - a second `Set`/`Run` returns `ErrAlreadyRunning`.
 
 ## Conventions
 
-Part of the appkit module. Public API lives in the tag-free `tray.go`,
+Part of the tuohi module. Public API lives in the tag-free `tray.go`,
 per-platform backends in `tray_{darwin,windows,linux}.go`, and
 `tray_other.go` returns `ErrUnsupported` so every `GOOS` builds. No
 `internal/` packages.

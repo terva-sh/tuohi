@@ -203,11 +203,11 @@ func TestBindEntriesExpansion(t *testing.T) {
 	}
 }
 
-// --- Bind-name validation (RE2), bindingsReplace (R1/RE4) and script
-// builders (P2/E2), install error reporting (R5) ---------------------------
+// --- Bind-name validation, bindingsReplace, script builders and install
+// error reporting ----------------------------------------------------------
 
 func TestValidateBindNameSegmentRules(t *testing.T) {
-	// RE2: names with empty dot segments or whitespace are rejected loudly;
+	// Names with empty dot segments or whitespace are rejected loudly;
 	// names that install cleanly pass.
 	bad := []string{"", ".x", "x.", "a..b", "a b", "a.b c", "a\tb"}
 	for _, name := range bad {
@@ -215,7 +215,7 @@ func TestValidateBindNameSegmentRules(t *testing.T) {
 			t.Errorf("validateBindName(%q) = nil, want error", name)
 		}
 	}
-	good := []string{"a", "a.b.c", "demo.theme", "appkit", "x1._y"}
+	good := []string{"a", "a.b.c", "demo.theme", "tuohi", "x1._y"}
 	for _, name := range good {
 		if err := validateBindName(name); err != nil {
 			t.Errorf("validateBindName(%q) = %v, want nil", name, err)
@@ -228,7 +228,7 @@ func TestValidateBindNameSegmentRules(t *testing.T) {
 }
 
 func TestBindingsReplaceRemovesOldSyntheticKeys(t *testing.T) {
-	// R1(a)/RE4: storing a new binding under a page name removes every key the
+	// Storing a new binding under a page name removes every key the
 	// old binding could own, including the accessor's synthetic dispatch keys
 	// - replacing a function with an accessor (or vice versa) can never leak
 	// stale entries.
@@ -260,7 +260,7 @@ func TestBindingsReplaceRemovesOldSyntheticKeys(t *testing.T) {
 
 // installCallFor builds one entry through bindEntries and returns its install
 // call expression, so the arity/kind -> installer selection is asserted
-// directly (E2 and the onBindFn split).
+// directly, including the onBindFn split for other arities.
 func installCallFor(t *testing.T, val any) string {
 	t.Helper()
 	entries, err := bindEntries("demo.fn", val)
@@ -274,8 +274,8 @@ func installCallFor(t *testing.T, val any) string {
 }
 
 func TestInstallCallAritySelection(t *testing.T) {
-	// Zero-argument functions install through onBind (awaitable getters -
-	// E2's .then lives there); one-argument functions through onBindSetter;
+	// Zero-argument functions install through onBind (awaitable getters,
+	// whose .then lives there); one-argument functions through onBindSetter;
 	// any other arity through onBindFn (plain callable, no .then).
 	if got := installCallFor(t, func() string { return "x" }); got != `onBind("demo.fn")` {
 		t.Errorf("zero-arg -> %s", got)
@@ -296,7 +296,7 @@ func TestInstallCallAritySelection(t *testing.T) {
 }
 
 func TestCreateBindScriptSortedDeterministic(t *testing.T) {
-	// P2: the document-start bind script emits entries in alphabetical name
+	// The document-start bind script emits entries in alphabetical name
 	// order no matter how the registry map iterated, so the output is
 	// deterministic and golden-testable.
 	entries := []binding{
@@ -331,7 +331,7 @@ func TestCreateBindScriptSortedDeterministic(t *testing.T) {
 }
 
 func TestLiveBindScriptGuardsAndReports(t *testing.T) {
-	// R5/R6: a live bind batch is a no-op before the bridge exists and every
+	// A live bind batch is a no-op before the bridge exists and every
 	// install failure is reported to Go through internalBindError instead of
 	// being swallowed by the fire-and-forget Eval.
 	script := liveBindScript([]binding{{name: "demo.x", kind: bindingFunc, gettable: true}})
@@ -356,7 +356,7 @@ func TestLiveBindScriptGuardsAndReports(t *testing.T) {
 	}
 }
 
-// FuzzValidateBindName pins the dotted-name validator (RE2): it must never
+// FuzzValidateBindName pins the dotted-name validator: it must never
 // panic, and a name it accepts must split into non-empty, whitespace-free
 // segments.
 func FuzzValidateBindName(f *testing.F) {
@@ -399,8 +399,8 @@ func FuzzMakeFuncWrapperArgDecode(f *testing.F) {
 	})
 }
 
-// TestGeneratedScriptsParse runs node --check over every script appkit
-// generates and injects (RD2): the scripts live inside Go raw strings, where
+// TestGeneratedScriptsParse runs node --check over every script tuohi
+// generates and injects: the scripts live inside Go raw strings, where
 // a syntax error has no editor support and would only surface as a silent
 // page failure. The behavioral harnesses below exercise them too, but this
 // parse gate fails FAST with a clear message naming the broken script. It
