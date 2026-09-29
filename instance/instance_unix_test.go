@@ -114,9 +114,16 @@ func TestXDGRuntimeDir(t *testing.T) {
 		t.Fatalf("lock directory = %s, want %s", d, want)
 	}
 
-	if err := os.Chmod(run, 0o755); err != nil {
+	// A fresh XDG_RUNTIME_DIR open to others, holding nothing of ours, is
+	// passed over.
+	open := filepath.Join(home, "open-run")
+	if err := os.Mkdir(open, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(open, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", open)
 	if d, want := lockDir(t, id), cacheDir(t); d != want {
 		t.Fatalf("with XDG_RUNTIME_DIR 0755, lock directory = %s, want %s", d, want)
 	}
@@ -124,6 +131,86 @@ func TestXDGRuntimeDir(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "relative/run")
 	if d, want := lockDir(t, id), cacheDir(t); d != want {
 		t.Fatalf("with a relative XDG_RUNTIME_DIR, lock directory = %s, want %s", d, want)
+	}
+}
+
+// TestXDGDirNoFallback: once XDG_RUNTIME_DIR holds our directory, an
+// instance may hold its lock there, so a failed check there is an error, not
+// a move to the cache directory where a second instance could lock too.
+func TestXDGDirNoFallback(t *testing.T) {
+	home := isolate(t)
+	run := filepath.Join(home, "run")
+	if err := os.Mkdir(run, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", run)
+	id := uniqueID("xdg-no-fallback")
+	lock, err := Acquire(id, nil)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	defer func() { _ = lock.Release() }()
+	ours := filepath.Join(run, dirName)
+	for _, c := range []struct {
+		name string
+		path string
+		mode os.FileMode
+	}{
+		{"our directory 0755", ours, 0o755},
+		{"XDG_RUNTIME_DIR 0755", run, 0o755},
+	} {
+		if err := os.Chmod(c.path, c.mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := paths(id); err == nil {
+			t.Errorf("%s: paths succeeded, want an error rather than the cache directory", c.name)
+		}
+		if second, err := Acquire(id, nil); err == nil {
+			_ = second.Release()
+			t.Errorf("%s: a second Acquire succeeded", c.name)
+		}
+		if err := os.Chmod(c.path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestAncestorsChecked: a lock directory below a directory other users can
+// write to is refused, because they could swap it after the check, unless
+// the sticky bit stops them, as on /tmp. The directory is checked as written
+// and through a symbolic link.
+func TestAncestorsChecked(t *testing.T) {
+	home := isolate(t)
+	shared := filepath.Join(home, "shared")
+	if err := os.Mkdir(shared, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(shared, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	cache := filepath.Join(shared, "cache")
+	link := filepath.Join(home, "cache-link")
+	if err := os.Symlink(cache, link); err != nil {
+		t.Fatal(err)
+	}
+	id := uniqueID("ancestors")
+	for _, base := range []string{cache, link} {
+		t.Setenv("XDG_CACHE_HOME", base)
+		if _, _, err := paths(id); err == nil || !strings.Contains(err.Error(), "written by group or others") {
+			t.Errorf("cache under a 0777 directory (%s): paths = %v, want it refused", base, err)
+		}
+	}
+	if err := os.Chmod(shared, 0o777|os.ModeSticky); err != nil {
+		t.Fatal(err)
+	}
+	for _, base := range []string{cache, link} {
+		t.Setenv("XDG_CACHE_HOME", base)
+		if _, _, err := paths(id); err != nil {
+			t.Errorf("cache under a sticky 1777 directory (%s): %v", base, err)
+		}
+	}
+	if err := checkAncestor(home, os.Getuid()+1); err == nil {
+		t.Error("checkAncestor accepted a directory of another, non-root uid")
 	}
 }
 

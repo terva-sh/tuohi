@@ -37,26 +37,119 @@ var errNoPeerCred = errors.New("instance: this system does not report a socket p
 
 // dir returns the directory for the lock and socket, creating it when it is
 // missing. XDG_RUNTIME_DIR is the right place on Linux, and is used when it is
-// an absolute path to a directory that passes checkDir and can hold ours: a
-// container can mount it read-only, or a session started with su can inherit
-// another user's. Otherwise the base is the user's cache directory,
-// ~/.cache on Linux and the BSDs and ~/Library/Caches on macOS. macOS's
-// per-user TMPDIR would also do, but the system deletes files there that have
-// not been touched for days, and a deleted lock file lets a second process
-// become primary while the first still runs. The shared temporary directory is
-// never used, because another user can create the names there first.
+// an absolute path to a directory of this user's that passes checkBase and can
+// hold ours: a container can mount it read-only, or a session started with su
+// can inherit another user's. Otherwise the base is the user's cache
+// directory, ~/.cache on Linux and the BSDs and ~/Library/Caches on macOS.
+// macOS's per-user TMPDIR would also do, but the system deletes files there
+// that have not been touched for days, and a deleted lock file lets a second
+// process become primary while the first still runs. The shared temporary
+// directory is never used, because another user can create the names there
+// first.
+//
+// Once this user's XDG_RUNTIME_DIR holds our directory, an instance may hold
+// its lock there, so a directory there that fails a check is an error rather
+// than a reason to move to the cache directory: moving would let a second
+// instance lock a different file and become primary too.
 func dir() (string, error) {
 	uid := os.Getuid()
-	if base := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(base) && checkDir(base, uid) == nil {
-		if d, err := makeDir(filepath.Join(base, dirName), uid); err == nil {
+	if base := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(base) && ownedBy(base, uid) {
+		d := filepath.Join(base, dirName)
+		if _, err := os.Lstat(d); err == nil {
+			if err := checkBase(base, uid); err != nil {
+				return "", err
+			}
+			if err := checkDir(d, uid); err != nil {
+				return "", err
+			}
 			return d, nil
+		}
+		if checkBase(base, uid) == nil {
+			made, err := makeDir(d, uid)
+			if err == nil {
+				return made, nil
+			}
+			if _, statErr := os.Lstat(d); statErr == nil {
+				return "", err
+			}
 		}
 	}
 	base, err := os.UserCacheDir()
 	if err != nil {
 		return "", fmt.Errorf("instance: no per-user directory for the lock: %w", err)
 	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return "", err
+	}
+	if err := checkAncestors(base, uid); err != nil {
+		return "", err
+	}
 	return makeDir(filepath.Join(base, dirName), uid)
+}
+
+// ownedBy reports whether path, not following a final symbolic link, belongs
+// to uid.
+func ownedBy(path string, uid int) bool {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == uid
+}
+
+// checkBase checks a base directory the way checkDir checks ours, and its
+// ancestors with checkAncestors.
+func checkBase(base string, uid int) error {
+	if err := checkDir(base, uid); err != nil {
+		return err
+	}
+	return checkAncestors(base, uid)
+}
+
+// checkAncestors returns an error unless path and every directory above it,
+// both as written and with symbolic links resolved, belongs to uid or root
+// and cannot be written by anyone else, except where the sticky bit keeps
+// others from renaming what they do not own, as on /tmp. Another user who
+// could write to one of them could move our checked directory aside after
+// the check and put one of their own in its place.
+func checkAncestors(path string, uid int) error {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	for _, p := range []string{filepath.Clean(path), resolved} {
+		for {
+			if err := checkAncestor(p, uid); err != nil {
+				return err
+			}
+			parent := filepath.Dir(p)
+			if parent == p {
+				break
+			}
+			p = parent
+		}
+	}
+	return nil
+}
+
+// checkAncestor checks one directory for checkAncestors.
+func checkAncestor(p string, uid int) error {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("instance: cannot read the owner of %s", p)
+	}
+	if int(st.Uid) != uid && st.Uid != 0 {
+		return fmt.Errorf("instance: %s belongs to uid %d, not %d or root", p, st.Uid, uid)
+	}
+	if fi.Mode().Perm()&0o022 != 0 && fi.Mode()&os.ModeSticky == 0 {
+		return fmt.Errorf("instance: %s can be written by group or others", p)
+	}
+	return nil
 }
 
 // makeDir creates d with mode 0700, and its parent when that is missing, and

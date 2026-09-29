@@ -516,7 +516,12 @@ headers if it wants cross-origin isolation.
     `XDG_RUNTIME_DIR` is private to the user, and in `tuohi` under the user's
     cache directory otherwise, never in `/tmp`. The directory is created
     0700, and one that is a symbolic link, belongs to another user, or is
-    open to group or others is refused;
+    open to group or others is refused. So is one below a directory that
+    another non-root user owns, or that others can write to without the
+    sticky bit, because they could swap it after the check. Once
+    `XDG_RUNTIME_DIR` holds the directory, a failed check there is an error
+    rather than a move to the cache directory, where a second instance could
+    become primary;
   - the running instance closes a connection from another user, read with
     `SO_PEERCRED` on Linux and `LOCAL_PEERCRED` on macOS and FreeBSD. NetBSD
     relies on the directory alone, since `golang.org/x/sys` has no call for

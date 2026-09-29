@@ -43,7 +43,11 @@
 // fallback to the shared temporary directory, where another user could take
 // the names first. Acquire and Send create the directory with mode 0700 and
 // refuse one that is a symbolic link, belongs to another user, or is open to
-// group or others. The running instance also closes a connection from another
+// group or others, and one below a directory that a user other than root
+// owns or that others can write to without the sticky bit, since they could
+// swap it. Once XDG_RUNTIME_DIR holds the directory, a failed check there is
+// an error, never a move to the cache directory, where a second instance
+// could take a lock of its own. The running instance also closes a connection from another
 // user where the system reports the peer's user, which Linux, macOS and
 // FreeBSD do; elsewhere the private directory is the only check. It reads at
 // most 1 MiB per message and gives a sender 5 seconds to finish, so a stalled
