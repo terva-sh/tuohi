@@ -18,7 +18,7 @@
 //	                       on every platform.
 //	./demo --framed        keep the OS window frame instead of the custom chrome
 //	./demo --selftest      showcase + automated self test, exit 0/1
-//	./demo -http           serve the window's app:// content over a temporary
+//	./demo -http           serve the window's app:// content over a per-view
 //	                       loopback http://localhost server (App.HTTP) instead
 //	                       of the native app scheme - an opt-in on Linux and
 //	                       Windows; macOS always serves that way.
@@ -35,7 +35,7 @@
 // content is served scheme-first on Linux and Windows (the custom "app"
 // scheme; Windows' https vhost carries the isolation headers, WebKitGTK's
 // scheme responses cannot - Linux pages are still SharedArrayBuffer-capable
-// via the JSC option), and macOS always serves over a TEMPORARY loopback
+// via the JSC option), and macOS always serves over a per-view loopback
 // http://localhost server (WKWebView cannot make a custom scheme a secure
 // context and long-term cannot provide SharedArrayBuffer on plain pages).
 // -http (App.HTTP) opts Linux and Windows into that loopback origin too,
@@ -182,7 +182,7 @@ func main() {
 	// every platform, and the window navigates to the uniform "app://"
 	// origin - the consumer never picks a serving mechanism. App.FS is
 	// served scheme-first (Linux's registered app scheme, WebView2's https
-	// vhost on Windows); macOS always serves over a TEMPORARY loopback
+	// vhost on Windows); macOS always serves over a per-view loopback
 	// http://localhost server (WKWebView SAB bug), and -http (App.HTTP)
 	// opts Linux and Windows into that loopback origin too.
 	app.FS = assetsRoot()

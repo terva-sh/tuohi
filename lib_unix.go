@@ -1166,9 +1166,7 @@ func onUIThread() bool {
 // loop has stopped for good leaves it queued, like every other marshalled
 // call here. It never waits, so such a Close cannot hang.
 func (w *webview) Destroy() {
-	// A window closed before its first load finished (blank window, early
-	// close) still owns a temporary loopback server: stop it here - the
-	// load-finished path (fireReady) never ran.
+	// The window's loopback server, if it has one, lives until here.
 	w.releaseLoopback()
 	if !onUIThread() {
 		dispatchMain(w.destroyOnUI)
@@ -1388,9 +1386,8 @@ func (w *webview) pointerDevice() uintptr {
 // resolveURL maps the uniform app:// origin onto this view's serving origin:
 // the loopback-server base configured at creation (App.HTTP on Linux, always
 // on macOS), or - no server up - the URL unchanged, so the engine serves the
-// app:// scheme natively. Once the temporary server's idle timeout has
-// closed it, the dead base is dropped here and later app:// navigations use
-// the scheme again. Every other URL passes through untouched.
+// app:// scheme natively. Should the server be closed, the dead base is
+// dropped here and later app:// navigations use the scheme again. Every other URL passes through untouched.
 func (w *webview) resolveURL(url string) string {
 	if w.contentBase != "" {
 		if w.transient != nil && w.transient.isClosed() {
@@ -1411,9 +1408,8 @@ func (w *webview) Navigate(url string) {
 		url = "about:blank"
 	}
 	// The uniform content origin is "app://" (see App.FS). resolveURL maps it
-	// onto this view's serving origin: this window's temporary loopback
-	// server's http://localhost base while its initial page loads under
-	// App.HTTP (same path, query and fragment, so the page really loads from
+	// onto this view's serving origin: this window's loopback server's
+	// http://localhost base under App.HTTP (same path, query and fragment, so the page really loads from
 	// the HTTP origin), or - with no server up - the engine serves the app://
 	// scheme natively.
 	url = w.resolveURL(url)
@@ -2077,15 +2073,15 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	}
 	// Per-view serving origin: SCHEME-FIRST on Linux - the registered custom
 	// "app" scheme serves the content (see registerSchemes), so no loopback
-	// server exists unless App.HTTP opts this window into the temporary
+	// server exists unless App.HTTP opts this window into the
 	// http://localhost origin (viewContentBase decides from the committed
 	// App.HTTP setting). WebKitGTK cannot attach the cross-origin-isolation
 	// headers to scheme responses, so a scheme-served Linux page is not
 	// crossOriginIsolated - SharedArrayBuffer still works because
 	// JSC_useSharedArrayBuffer is enabled (see ensureInit); the loopback
 	// origin (App.HTTP) delivers the headers. A started server is stopped
-	// again by releaseLoopback once the window's first load finishes. A
-	// start failure tears the freshly created window down.
+	// by releaseLoopback when the window is destroyed. A start failure tears
+	// the freshly created window down.
 	w.contentBase, w.transient, err = viewContentBase(v, false)
 	if err != nil {
 		w.Destroy()
