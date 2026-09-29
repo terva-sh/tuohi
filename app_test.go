@@ -37,31 +37,20 @@ func TestSnapshotConfigCarriesTray(t *testing.T) {
 
 // Shared fixtures for the tests below.
 const (
-	testAppID   = "com.example.app"
-	testAppName = "My App"
 	testIndex   = "index.html"
 	testCSSBody = "body{}"
 	testHTML    = "<h1>hi</h1>"
 )
 
-// TestSnapshotConfigCarriesExitAndID verifies that App.Exit and App.ID are
-// committed into the settings snapshot: Exit ends the process when the last
-// window closes (the default keeps it alive until App.Quit); ID names the
-// application's autostart registration.
-func TestSnapshotConfigCarriesExitAndID(t *testing.T) {
-	got := snapshotConfig(&App{Exit: true, ID: testAppID})
-	if !got.Exit {
+// TestSnapshotConfigCarriesExit verifies that App.Exit is committed into the
+// settings snapshot: Exit ends the process when the last window closes (the
+// default keeps it alive until App.Quit).
+func TestSnapshotConfigCarriesExit(t *testing.T) {
+	if !snapshotConfig(&App{Exit: true}).Exit {
 		t.Fatal("snapshot Exit = false, want the committed true")
 	}
-	if got.ID != testAppID {
-		t.Fatalf("snapshot ID = %q, want the committed id", got.ID)
-	}
-	zero := snapshotConfig(&App{})
-	if zero.Exit {
+	if snapshotConfig(&App{}).Exit {
 		t.Fatal("snapshot Exit should default to false")
-	}
-	if zero.ID != "" {
-		t.Fatalf("snapshot ID should default to empty, got %q", zero.ID)
 	}
 }
 
@@ -629,93 +618,6 @@ func TestSortedMapKeys(t *testing.T) {
 	m := map[string]int{"b": 2, "a": 1, "c": 3}
 	if got, want := sortedMapKeys(m), []string{"a", "b", "c"}; len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("sortedMapKeys = %v, want %v", got, want)
-	}
-}
-
-// --- Autostart -------------------------------------
-
-// TestAutostartSlug pins the artefact-name sanitization: ASCII alphanumerics,
-// '.', '_' and '-' survive, uppercase ASCII is lower-cased, whitespace
-// becomes '-', everything else (including the empty result) falls back
-// to the default slug.
-func TestAutostartSlug(t *testing.T) {
-	cases := map[string]string{
-		"My App":      "my-app",
-		"My  App":     "my--app",
-		"my.app_v1-x": "my.app_v1-x",
-		"Über-App":    "ber-app",
-		"  App  ":     "app",
-		"???":         defaultAutostartSlug,
-		"UPPER":       "upper",
-		"":            defaultAutostartSlug,
-	}
-	for in, want := range cases {
-		if got := autostartSlug(in); got != want {
-			t.Errorf("autostartSlug(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestValidateAutostartIdentifier(t *testing.T) {
-	good := []string{testAppID, "my-app_1.0", "x"}
-	for _, id := range good {
-		if err := validateAutostartIdentifier(id); err != nil {
-			t.Errorf("validateAutostartIdentifier(%q) = %v, want nil", id, err)
-		}
-	}
-	bad := []string{"has space", "has/slash", "emoji😀", strings.Repeat("a", 201)}
-	for _, id := range bad {
-		if err := validateAutostartIdentifier(id); err == nil {
-			t.Errorf("validateAutostartIdentifier(%q) = nil, want error", id)
-		}
-	}
-}
-
-// TestAutostartIdentifier pins the identifier derivation chain: App.ID wins
-// (and is validated, not mangled), then a slug of App.Name, then a slug of
-// the executable name, then the built-in default.
-func TestAutostartIdentifier(t *testing.T) {
-	cases := []struct {
-		name string
-		cfg  appConfig
-		want string
-	}{
-		{"id wins", appConfig{ID: testAppID, Name: testAppName}, testAppID},
-		{"name slug", appConfig{Name: testAppName}, "my-app"},
-		{"name slug strips non-ascii", appConfig{Name: "Über App"}, "ber-app"},
-	}
-	for _, tc := range cases {
-		got, err := autostartIdentifier(tc.cfg)
-		if err != nil || got != tc.want {
-			t.Errorf("%s: autostartIdentifier(%+v) = %q, %v; want %q", tc.name, tc.cfg, got, err, tc.want)
-		}
-	}
-	if _, err := autostartIdentifier(appConfig{ID: "bad id"}); err == nil {
-		t.Error("autostartIdentifier with an invalid App.ID = nil error, want error")
-	}
-	// No ID and no Name: falls back to the executable name, never empty.
-	id, err := autostartIdentifier(appConfig{})
-	if err != nil || id == "" {
-		t.Fatalf("autostartIdentifier(empty cfg) = %q, %v; want a non-empty slug", id, err)
-	}
-}
-
-// TestAutostartNilSafety: a nil *Autostart (never obtained, or a platform
-// without a backend) degrades to "not enabled" / "not registered" instead of
-// panicking; Enable/Disable report the platform as unsupported.
-func TestAutostartNilSafety(t *testing.T) {
-	var a *Autostart
-	if a.Enabled() {
-		t.Error("nil Autostart: Enabled = true")
-	}
-	if a.Path() != "" || a.Backend() != "" {
-		t.Errorf("nil Autostart: Path = %q, Backend = %q, want empty", a.Path(), a.Backend())
-	}
-	if err := a.Enable("--flag"); err == nil {
-		t.Error("nil Autostart: Enable = nil, want ErrAutostartNotSupported")
-	}
-	if err := a.Disable(); err == nil {
-		t.Error("nil Autostart: Disable = nil, want ErrAutostartNotSupported")
 	}
 }
 

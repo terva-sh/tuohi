@@ -32,7 +32,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"io/fs"
 	"net"
 	"net/url"
@@ -203,11 +202,6 @@ type App struct {
 	// is fixed when each view is created.
 	Events string
 
-	// ID uniquely identifies this application - e.g. "com.example.app". The
-	// autostart registration is stored under it (see App.Autostart). Single
-	// instance lives in the tuohi/instance package, which takes its own id.
-	ID string
-
 	// Name is the application name, used where the OS asks for one - most
 	// visibly as the source shown by desktop notifications (App.Notify), and
 	// as the title of a window that has no other (see View.Title).
@@ -374,7 +368,6 @@ type appConfig struct {
 	Exit   bool
 	Tray   *tray.Config
 	Icon   []byte
-	ID     string
 	FS     fs.FS
 	HTTP   bool
 	Debug  bool
@@ -391,7 +384,6 @@ func snapshotConfig(a *App) appConfig {
 		Exit:   a.Exit,
 		Tray:   a.Tray,
 		Icon:   a.Icon,
-		ID:     a.ID,
 		FS:     a.FS,
 		HTTP:   a.HTTP,
 		Debug:  a.Debug || envDebug(),
@@ -1425,259 +1417,4 @@ func statusText(status int) string {
 	default:
 		return "Status " + strconv.Itoa(status)
 	}
-}
-
-// --- Autostart -------------------------------------
-
-// App-scope autostart service: App.Autostart() hands out an *Autostart that
-// registers the application to launch when the user logs in. The mechanism is
-// per platform (a .desktop file under XDG autostart, an HKCU Run registry
-// value, a launchd LaunchAgent plist or - for bundled macOS 13+ apps -
-// SMAppService); every registration points at the running executable and
-// takes effect on the next login, not immediately.
-
-// Autostart backend names, reported by Autostart.Backend for an existing
-// registration (empty when nothing is registered).
-const (
-	autostartBackendSMAppService = "smappservice"  // macOS 13+, bundled .app
-	autostartBackendLaunchAgent  = "launchagent"   // macOS ~/Library/LaunchAgents plist
-	autostartBackendRegistryRun  = "registry-run"  // Windows HKCU …\Run value
-	autostartBackendXDGAutostart = "xdg-autostart" // freedesktop .desktop autostart
-)
-
-// ErrAutostartNotSupported is returned by Autostart methods when the current
-// platform has no autostart backend.
-var ErrAutostartNotSupported = errors.New("appkit: autostart is not supported on this platform")
-
-// Autostart controls whether the application starts at user login. Get it
-// from App.Autostart.
-//
-// A registration points at the running executable and takes effect on the
-// next login, not immediately. Re-enabling overwrites the registration; each
-// platform keeps at most one entry per executable, so a previous registration
-// under a different identifier (e.g. after App.Name changed) is replaced, not
-// duplicated.
-//
-// Enabled, Path and Backend report the CURRENT registration: they scan
-// the platform's registration store for an entry whose command is the running
-// executable, so they work regardless of the identifier used at Enable time.
-type Autostart struct {
-	cfg  appConfig // committed App settings: ID and Name are the identifier source
-	impl autostartBackend
-}
-
-// autostartBackend is one platform's registration mechanism. Implementations
-// live in the per-OS app_autostart files.
-type autostartBackend interface {
-	// enable registers the running executable under the given identifier
-	// with the given login arguments.
-	enable(id string, args []string) error
-	// disable removes the registration for the running executable, if any.
-	disable() error
-	// status reports whether a registration for the running executable
-	// exists, the path of its artefact (registry sub-key path on Windows,
-	// the bundle identifier for SMAppService) and the backend name.
-	status() (enabled bool, path, backend string)
-}
-
-// Autostart returns the application's autostart controller. The identifier a
-// registration is stored under derives from App.ID when set, otherwise from a
-// filesystem-safe slug of App.Name (or of the executable name when App.Name
-// is empty) - see Autostart.Enable.
-func (a *App) Autostart() *Autostart {
-	cfg := snapshotConfig(a)
-	return &Autostart{cfg: cfg, impl: newAutostartBackend(cfg)}
-}
-
-// Enabled reports whether a registration for the running executable exists.
-// It does not verify that a registered entry still points at the running
-// binary; Disable and Enable always reconcile that themselves.
-func (a *Autostart) Enabled() bool {
-	if a == nil || a.impl == nil {
-		return false
-	}
-	enabled, _, _ := a.impl.status()
-	return enabled
-}
-
-// Enable registers the application to launch at login with the given command
-// line arguments (appended after the executable path). It is safe to call
-// repeatedly: an existing registration is overwritten, and a stale entry
-// pointing at this executable under a different identifier is removed first.
-//
-// The registration identifier is App.ID when set; otherwise a slug of
-// App.Name, or of the executable name when App.Name is empty. An App.ID
-// containing characters outside A-Za-z0-9._- is rejected.
-func (a *Autostart) Enable(args ...string) error {
-	if a == nil || a.impl == nil {
-		return ErrAutostartNotSupported
-	}
-	id, err := autostartIdentifier(a.cfg)
-	if err != nil {
-		return err
-	}
-	return a.impl.enable(id, args)
-}
-
-// Disable removes the autostart registration for the running executable. It
-// is a no-op (nil error) when nothing is registered.
-func (a *Autostart) Disable() error {
-	if a == nil || a.impl == nil {
-		return ErrAutostartNotSupported
-	}
-	return a.impl.disable()
-}
-
-// Path returns the path of the registration artefact for the current
-// registration: the .desktop file path on Linux, the registry sub-key path
-// (HKCU\…\Run\<id>) on Windows, the LaunchAgent plist path on macOS, or the
-// bundle identifier for an SMAppService registration. Empty when nothing is
-// registered.
-func (a *Autostart) Path() string {
-	if a == nil || a.impl == nil {
-		return ""
-	}
-	_, path, _ := a.impl.status()
-	return path
-}
-
-// Backend returns the name of the mechanism the current registration uses:
-// "xdg-autostart", "registry-run", "launchagent" or "smappservice". Empty
-// when nothing is registered.
-func (a *Autostart) Backend() string {
-	if a == nil || a.impl == nil {
-		return ""
-	}
-	_, _, backend := a.impl.status()
-	return backend
-}
-
-// autostartIdentifier derives the registration identifier from the committed
-// App settings: App.ID verbatim (validated), else a slug of App.Name, else a
-// slug of the executable's base name, else the built-in fallback.
-func autostartIdentifier(cfg appConfig) (string, error) {
-	if cfg.ID != "" {
-		if err := validateAutostartIdentifier(cfg.ID); err != nil {
-			return "", err
-		}
-		return cfg.ID, nil
-	}
-	if cfg.Name != "" {
-		return autostartSlug(cfg.Name), nil
-	}
-	if exe, err := os.Executable(); err == nil {
-		if id := autostartSlug(filepath.Base(exe)); id != "" && id != defaultAutostartSlug {
-			return id, nil
-		}
-	}
-	return defaultAutostartSlug, nil
-}
-
-// The autostart support below is derived from Wails v3
-// pkg/application/autostart.go (MIT, Copyright (c) 2018-Present Lea Anthony).
-// See NOTICE.
-
-// defaultAutostartSlug is the registration identifier used when the app has
-// neither App.ID nor App.Name and the executable name slugifies to nothing.
-const defaultAutostartSlug = "appkit-app"
-
-// autostartSlug turns a free-form application name into something usable as
-// the basename of a registration artefact (and as a launchd label): ASCII
-// letters, digits, '.', '_' and '-', lower-cased, with whitespace collapsing
-// to '-'. It never returns an empty string for non-empty input; the caller
-// guarantees non-empty input.
-func autostartSlug(name string) string {
-	var b strings.Builder
-	b.Grow(len(name))
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9',
-			r == '.', r == '_', r == '-':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r + ('a' - 'A'))
-		case r == ' ', r == '\t':
-			b.WriteByte('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-._")
-	if out == "" {
-		return defaultAutostartSlug
-	}
-	return out
-}
-
-// validateAutostartIdentifier rejects identifiers that would be unsafe as a
-// filename, registry value name or launchd Label.
-func validateAutostartIdentifier(id string) error {
-	if id == "" {
-		return nil
-	}
-	if len(id) > 200 {
-		return fmt.Errorf("appkit: autostart identifier too long (max 200): %q", id)
-	}
-	for _, r := range id {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
-			r >= '0' && r <= '9',
-			r == '.', r == '_', r == '-':
-		default:
-			return fmt.Errorf("appkit: autostart identifier %q contains invalid character %q (allowed: A-Za-z0-9._-)", id, r)
-		}
-	}
-	return nil
-}
-
-// resolvedExecutable returns os.Executable() after resolving symlinks, so
-// registrations don't break when the binary is installed through a symlink
-// farm (Homebrew, Scoop). Falls back to the unresolved path when symlink
-// resolution fails.
-func resolvedExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("appkit: autostart: get executable path: %w", err)
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved, nil
-	}
-	return exe, nil
-}
-
-// writeFileAtomic writes data to path via a temp file + rename in the same
-// directory, so a partial write never leaves a half-formed plist or .desktop
-// file in place.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
-	// os.File.Write reports short writes as errors, but double-check n ==
-	// len(data) so a future change of writer type cannot silently rename a
-	// truncated artefact into place.
-	n, err := tmp.Write(data)
-	if err == nil && n != len(data) {
-		err = io.ErrShortWrite
-	}
-	if err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		cleanup()
-		return err
-	}
-	return nil
 }

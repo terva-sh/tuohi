@@ -67,6 +67,7 @@ import (
 	"time"
 
 	"github.com/terva-sh/tuohi"
+	"github.com/terva-sh/tuohi/autostart"
 	"github.com/terva-sh/tuohi/dialog"
 	"github.com/terva-sh/tuohi/tray"
 )
@@ -109,8 +110,11 @@ type testReport struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// demoID names the demo's autostart registration.
+const demoID = "tuohi-demo"
+
 // autostartInfo is the JSON payload the page reads to render the Autostart
-// section (see App.Autostart).
+// section (see the tuohi/autostart package).
 type autostartInfo struct {
 	Enabled bool   `json:"enabled"`
 	Backend string `json:"backend"`
@@ -312,11 +316,11 @@ func main() {
 				}
 				return ""
 			},
-			// Autostart (App.Autostart): the page shows the registration state
-			// and toggles it. Binding callbacks run off the UI thread, which is
-			// fine - autostart only writes a file / registry value.
+			// Autostart (tuohi/autostart): the page shows the registration
+			// state and toggles it. Binding callbacks run off the UI thread,
+			// which is fine - autostart only writes a file / registry value.
 			"demoAutostartState": func() autostartInfo {
-				a := d.app.Autostart()
+				a := autostart.New(demoID)
 				return autostartInfo{
 					Enabled: a.Enabled(),
 					Backend: a.Backend(),
@@ -324,7 +328,7 @@ func main() {
 				}
 			},
 			"demoAutostartSet": func(on bool, args []string) error {
-				a := d.app.Autostart()
+				a := autostart.New(demoID)
 				if on {
 					return a.Enable(args...)
 				}
