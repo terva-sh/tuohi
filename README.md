@@ -98,7 +98,7 @@ needs that present: WebView2 on Windows (preinstalled on current Windows
   isolation headers; Linux's registered custom `app://` scheme cannot -
   WebKitGTK can't attach the headers to scheme responses - but the JSC
   option still enables SharedArrayBuffer). macOS always serves over a
-  TEMPORARY loopback `http://localhost` server (WKWebView cannot make a
+  per-view loopback `http://localhost` server (WKWebView cannot make a
   custom scheme a secure context and a long-standing WebKit bug keeps
   SharedArrayBuffer off plain WKWebView pages), and `App.HTTP` opts Linux
   and Windows into that same loopback origin - the loopback and vhost
@@ -590,13 +590,18 @@ origin as a **secure, cross-origin-isolated context**:
   scheme responses, so a scheme-served Linux page is not
   `crossOriginIsolated`; SharedArrayBuffer still works through the JSC
   option).
-- **macOS** always serves over a TEMPORARY per-view loopback
+- **macOS** always serves over a per-view loopback
   `http://localhost` server - WKWebView cannot make a custom scheme a secure
   context, and a long-standing WebKit bug keeps SharedArrayBuffer off plain
   WKWebView pages - while the loopback origin is a secure, isolated context
   by itself. `App.HTTP` opts Linux and Windows into that same loopback
-  origin too. The server is torn down once the view's first page load
-  finishes; nothing is ever exposed beyond the loopback interface.
+  origin too. The server lives as long as its view and listens on
+  127.0.0.1 only. It answers only requests that name its own origin and
+  carry its per-server token, which the view's first navigation exchanges
+  for a cookie, so neither a web page reaching the port through DNS
+  rebinding nor another user's process can read `App.FS` through it. A
+  process running as the same user can read `App.FS` from the binary or
+  from memory anyway, so keep secrets out of it.
 
 Every response - loopback and vhost alike - carries the cross-origin-isolation
 headers (`Cross-Origin-Opener-Policy: same-origin`,
@@ -695,7 +700,7 @@ vhost responses carry the isolation headers. **Linux** serves the same way
 through its registered custom `app://` scheme (WebKitGTK cannot add the
 isolation headers to scheme responses, so a scheme-served Linux page is not
 `crossOriginIsolated`; `SharedArrayBuffer` still works via the JSC option).
-**macOS** always serves over a TEMPORARY loopback `http://localhost`
+**macOS** always serves over a per-view loopback `http://localhost`
 server - WKWebView cannot make a custom scheme a secure, isolated context
 and a long-standing WebKit bug keeps SharedArrayBuffer off plain pages - and
 `App.HTTP` opts Linux and Windows into that same loopback origin, whose
@@ -911,7 +916,7 @@ and open/reveal - every feature in one UI, see the comments in
 
 ```bash
 go run ./demo                      # windowed showcase (custom chrome)
-go run ./demo -http                # same, served over a temporary loopback
+go run ./demo -http                # same, served over a per-view loopback
                                    # http://localhost server (App.HTTP) -
                                    # Linux/Windows opt in; macOS always does
 go run ./demo -tray                # same + a tray menu (Show / Hide / Quit)
@@ -922,7 +927,7 @@ go run ./demo --selftest           # showcase + automated self test (exit 0/1)
 The page is the demo's `App.FS`, loaded from the same uniform `app://index.html`
 URL on every platform - scheme-first on Windows and Linux (Linux's scheme is
 not `crossOriginIsolated`, but SharedArrayBuffer works via the JSC option),
-macOS via the temporary loopback origin (WKWebView SAB bug), with
+macOS via the loopback origin (WKWebView SAB bug), with
 SharedArrayBuffer available everywhere.
 
 The tray is opt-in via `-tray`: by default the windowed showcase keeps its
@@ -989,7 +994,7 @@ go build -ldflags="-H windowsgui" .
   init (`ensureInit` on macOS/Linux, `ensureWinInit`/`ensureCOMInit` on
   Windows) and the per-backend `bridgePostFn`; the per-OS `newView(v *View, serve)`
   window constructor (which registers the `app` scheme serving the app's
-  `App.FS`, starts the temporary loopback server for HTTP-served views and
+  `App.FS`, starts the per-view loopback server for HTTP-served views and
   applies the window settings inline) lives
   here. Nothing engine-independent lives here
 - `view.go` - the view/window API surface: the declarative `View` struct

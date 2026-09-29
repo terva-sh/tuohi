@@ -66,6 +66,7 @@ func TestMain(m *testing.M) {
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
 		resPermissions.Store(permissionsScenario())
+		resLoopbackLate.Store(loopbackLateScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())

@@ -49,7 +49,7 @@ different directions, the loopback consumer wins.
 | Threading | Every exported method is safe from any goroutine on every engine. | TKT-01M3J1H8CPMZX9EJX8R2CQRA6P |
 | Package boundaries | The root package is the window. Desktop services move to subpackages. | TKT-01M3J59M1H9PZ04J2C9JJZ7V13 |
 | `atotto/clipboard` | Replaced by native clipboards. | TKT-01M3J59M2BR91XQBDT1TPPM4G5 |
-| `App.HTTP` loopback server | Kept. It gets a Host check and a per-server token, and its idle shutdown gets tested. | TKT-01M3J59M4EJRPMKHWBS7K4XD3S |
+| `App.HTTP` loopback server | Kept. It has a Host check and a per-server token, and lives as long as its view. | TKT-01M3J59M4EJRPMKHWBS7K4XD3S |
 | `App.Open` | `file:` is dropped. | TKT-01M3J59M32VGK83J7JKYPKSHJE |
 | Borrowed code | Wails autostart kept and credited, with its quoting rewritten. The WebView2 loader is kept and credited. | TKT-01M3J59M535T9QH2RS1ZY6PSJM |
 | Side effects | The GTK3 Wayland desktop-file writing becomes opt-in. | TKT-01M3HWWRYD7GNZEZA2JCGWGDJS |
@@ -255,7 +255,7 @@ call a view's Go bindings) carries out:
   the first URL the engine actually loads, after `resolveURL`. For a loopback
   consumer that is its own `http://127.0.0.1:PORT`, trusted with no
   configuration. For `App.FS` it is `app://` on Linux, `https://app.localhost`
-  on Windows, and the temporary server's `http://localhost:PORT` on macOS or
+  on Windows, and the view's loopback server's `http://localhost:PORT` on macOS or
   under `App.HTTP`. That port changes with every server, so the gate reads it
   from the resolved URL. `View` gets a field to add more origins.
 - **The bridge is installed only in allowed origins.** None of the three
@@ -467,39 +467,46 @@ A view reaches its content in one of three ways:
    first path.
 2. **`App.FS` over the `app://` scheme,** registered natively on Linux and
    served as `https://app.localhost` on Windows.
-3. **`App.FS` over a temporary loopback server,** always on macOS, and on
+3. **`App.FS` over a per-view loopback server,** always on macOS, and on
    Linux and Windows when `App.HTTP` is set. WKWebView cannot make a custom
    scheme a secure context, and a WebKit bug keeps `SharedArrayBuffer` off
    plain WKWebView pages. The server sends COOP, COEP, and CORP headers so
    cross-origin isolation works.
 
 Paths 2 and 3 stay. They are how an application with no server of its own
-ships its interface, and the owner asked for functionality kept. They are not
-free, though:
-
-- **The loopback server checks nothing about who connects.** It reads the
-  Host header only to build URLs (`app.go:1455`). Two different readers can
-  reach `App.FS` while it is up, and each needs its own fix. A web page can
-  reach it through DNS rebinding (INFERRED), and a Host check stops that.
-  Another local process sends whatever Host it likes, so it needs an
-  unguessable per-server token in the URL the view loads. That keeps out
-  other users on the machine. A process running as the same user can read
-  `App.FS` anyway, from the binary or from memory, and the docs should say
-  so rather than claim more.
-- **It shuts down 3 seconds after its last request** (`loopbackIdleTimeout`,
-  `app.go:1306`). That is deliberate, "so it serves exactly the page's initial
-  load". But the page's origin is that server. Reading the code, a lazy
-  `import()` or a `fetch` made after 3 seconds finds no server to answer it.
-  Nobody has run that case yet.
-- **Two comments say it stops at the first load finishing**
-  (`app.go:1273`, `lib_unix.go:1809-1810`). Only `Destroy` and the idle timer
-  stop it.
-
+ships its interface, and the owner asked for functionality kept.
 TKT-01M3J59M4EJRPMKHWBS7K4XD3S (Guard tuohi's loopback server and settle its
-idle shutdown) adds the Host check and the token. It also tests a late fetch and
-settles the lifetime from the result. A consumer that serves its own
-interface never starts this server, and should send its own COOP and COEP
-headers if it wants cross-origin isolation.
+idle shutdown) settled what the loopback server lets through and how long it
+lives:
+
+- **Only its own origin.** A request whose Host header is not
+  `localhost:PORT` or `127.0.0.1:PORT` gets 421. A web page that reached the
+  port through DNS rebinding sends its own host name, so it is refused.
+- **Only with the token.** Each server makes a 256-bit token. The base URL
+  the view navigates under is `http://localhost:PORT/.tuohi/<token>`, so
+  `rewriteAppURL` and the engines needed no change. The server answers that
+  path with a 302 to the same path without the token, setting the cookie
+  `tuohi-PORT=<token>; Path=/; HttpOnly; SameSite=Lax`. Every later request
+  of the page sends the cookie, and any request with neither gets 403. That
+  keeps out other users' processes, which can connect to 127.0.0.1 and send
+  any Host they like. A process running as the same user can read `App.FS`
+  from the binary or from memory anyway, and the docs say so rather than
+  claim more.
+- **`SameSite=Lax`, not `Strict`.** When the page before the app's came from
+  another site, as with a view that starts on a remote URL, WebKit treats
+  the redirected request as cross-site and `Strict` withholds the cookie
+  from it, so the app answered 403. `TestOriginGate` showed it. `Lax` still
+  keeps the cookie off every subresource and fetch another site's page
+  starts; the top-level navigation it allows loads the app into the view and
+  shows the other page nothing.
+- **It lives as long as its view.** It used to shut down 3 seconds after its
+  last request, "so it serves exactly the page's initial load". The page's
+  origin is that server, though. `TestLoopbackLateFetch` fetched from
+  `App.FS` 4.5 seconds after load and both fetches failed, so the idle timer
+  is gone and `Destroy` stops the server.
+
+A consumer that serves its own interface never starts this server, and
+should send its own COOP and COEP headers if it wants cross-origin isolation.
 
 ## Desktop services
 
@@ -622,9 +629,6 @@ GitHub workflow, action pinning, and GUI scenarios on Forgejo.
 
 ## What this review did not settle
 
-- **Whether a page served by `App.HTTP` breaks after the idle timeout.** It is
-  inferred from the code and needs the scenario in
-  TKT-01M3J59M4EJRPMKHWBS7K4XD3S.
 - **Whether WebKitGTK denies an unhandled permission request.** Its
   documentation says so. TKT-01M3HWWRTVWVYSEDPRKSDPE783 makes the question
   moot by handling every request.

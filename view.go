@@ -1231,10 +1231,8 @@ func (w *webview) fireReady() {
 	}
 }
 
-// releaseLoopback shuts down a window's temporary per-view loopback server
-// immediately (the Destroy path), so a window closed while its server is
-// still active does not leak it. A no-op for windows without a temporary
-// server.
+// releaseLoopback shuts down a window's per-view loopback server when the
+// window is destroyed. A no-op for windows without one.
 func (w *webview) releaseLoopback() {
 	if w.transient == nil {
 		return

@@ -1003,7 +1003,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 	// Per-view serving origin (macOS: app content always loads over the
 	// loopback http://localhost origin - WKWebView cannot make a custom
 	// scheme a secure context - see viewContentBase): start the window's
-	// temporary loopback server when App.FS is set, else serve app://
+	// loopback server when App.FS is set, else serve app://
 	// through the custom scheme handler. A server that fails to start
 	// degrades to scheme serving.
 	if base, tr, err := viewContentBase(v, true); err == nil {
@@ -1539,13 +1539,12 @@ func (w *webview) Navigate(url string) {
 		url = "about:blank"
 	}
 	// The uniform content origin is "app://" (see App.FS). While this window
-	// is served over its temporary loopback server (darwin app content always
+	// is served over its loopback server (darwin app content always
 	// is - WKWebView cannot make a custom scheme a secure context), an app://
 	// URL is rewritten to that server's http://localhost base: same path,
-	// query and fragment, served from the app's filesystem. Once the server's
-	// idle timeout has closed it, the dead base is dropped here and later
-	// app:// navigations go to the web view's custom scheme handler
-	// unchanged.
+	// query and fragment, served from the app's filesystem. Should the
+	// server be closed, the dead base is dropped here and later app://
+	// navigations go to the web view's custom scheme handler unchanged.
 	if w.contentBase != "" {
 		if w.transient != nil && w.transient.isClosed() {
 			w.transient = nil
@@ -1637,9 +1636,7 @@ func (w *webview) updateBindings(mutate func(bindings map[string]binding) error)
 // Destroy releases the web view and closes the native window. The AppKit
 // objects must be released in dependency order (see destroyOnUI).
 func (w *webview) Destroy() {
-	// A window closed before its first load finished (blank window, early
-	// close) still owns a temporary loopback server: stop it here - the
-	// load-finished path (fireReady) never ran.
+	// The window's loopback server, if it has one, lives until here.
 	w.releaseLoopback()
 	performOnMain(func() { w.destroyOnUI() })
 }
