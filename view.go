@@ -43,7 +43,7 @@ const (
 	internalWindowCursor         = "__appkitWindowCursor"         // page -> native: force the edge/corner resize cursor (macOS)
 	internalWindowToggleMaximize = "__appkitWindowToggleMaximize" // page -> native: double-click on a drag box toggles maximize (all platforms)
 	internalBindError            = "__appkitBindError"            // page -> native: a live bind/unbind install failed ({name, error})
-	internalOpenExternal         = "__appkitOpenExternal"         // page -> native: hand a navigation leaving the trusted origins to the system (Linux)
+	internalOpenExternal         = "__appkitOpenExternal"         // page -> native: hand a navigation leaving the trusted origins to the system (Linux, Windows)
 )
 
 // appRegion is one draggable (or explicitly non-draggable) box in device

@@ -1618,10 +1618,12 @@ func (w *webview) updateBindings(mutate func(bindings map[string]binding) error)
 	return nil
 }
 
-// interceptOutsideLinks is false: this engine decides a top-level
-// navigation before its request is sent, so the bridge need not (see
-// initOutsideLinks).
-const interceptOutsideLinks = false
+// interceptOutsideLinks: WebView2 decides a top-level navigation in
+// NavigationStarting, but a navigation cancelled there has still been
+// requested from the server (GitHub run 36513098161, runtime 153), so the
+// bridge hands the navigations a page visibly starts to Go first, as on
+// WebKitGTK (see initOutsideLinks).
+const interceptOutsideLinks = true
 
 func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 	switch method {

@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"runtime"
@@ -1811,36 +1810,16 @@ func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 		if w.frameless {
 			w.toggleMaximize()
 		}
-	case internalOpenExternal:
-		var args []string
-		if json.Unmarshal(params, &args) == nil && len(args) == 1 {
-			w.openOutside(args[0])
-		}
 	default:
 		return false
 	}
 	return true
 }
 
-// openOutside hands a navigation the page's bridge caught leaving the trusted
-// origins (internalOpenExternal) to the system. The page's word is not taken
-// for it: only an http or https URL the navigation policy would itself hand
-// over is opened.
-func (w *webview) openOutside(rawurl string) {
-	u, err := url.Parse(rawurl)
-	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) {
-		log.Printf("tuohi: outside link %q refused: not an http or https URL", rawurl)
-		return
-	}
-	if action := w.navigationPolicy(rawurl); action == navExternal {
-		refuseNavigation(rawurl, action)
-	}
-}
-
 // interceptOutsideLinks: WebKitGTK judges a top-level page only at its
 // response (see decidePolicy), after the request has gone out, so the bridge
 // hands the navigations a page visibly starts to Go before they are requested
-// (see initOutsideLinks).
+// (see initOutsideLinks and webview.openOutside).
 const interceptOutsideLinks = true
 
 // bridgePostFn for the WebKit backends (macOS WKWebView, Linux WebKitGTK): the

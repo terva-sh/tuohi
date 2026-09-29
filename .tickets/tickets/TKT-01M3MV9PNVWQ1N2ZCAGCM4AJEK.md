@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T02:28:19Z
+updated_at: 2026-09-29T02:36:27Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -142,3 +142,7 @@ I ran a throwaway probe, not committed; its source is kept in scratch. A tempora
 - **`just ci`**, **`just test-gui`** on both stacks, and **golangci-lint** on three GOOS all pass.
 
 Not verified here: the new scenario on macOS and Windows. They should hand everything over natively, before any request. Whether WKWebView sees a server redirect that fails before any response is the open question, and GitHub CI will answer it.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:36:27Z
+
+GitHub run 36513098161 showed WebView2 (runtime 153) requesting GET /link and GET /assign from the outside server although NavigationStarting cancelled both. They were ordinary requests, with no Sec-Purpose. The intercept is now on for Windows too (interceptOutsideLinks = true in lib_windows.go), and the internalOpenExternal handler moved from lib_unix.go into the shared onMessage (engine.go), so both engines use one implementation. macOS passed the whole scenario, the dead redirect included, and keeps the intercept off. The Windows cause, and redirects on Windows, are filed as a separate ticket (Keep WebView2 from requesting a navigation NavigationStarting cancels). The outside server in the scenario now records each request's target and purpose header, so a failure names them.

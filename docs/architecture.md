@@ -313,9 +313,12 @@ call a view's Go bindings) carries out:
     What the page does not start visibly, a server redirect or a
     `<meta http-equiv=refresh>` to a reachable host, is still requested
     before the response hands it over.
-  - **WebView2** judges the top-level document in `NavigationStarting`,
-    before any request is sent, and marks every `NewWindowRequested`
-    handled.
+  - **WebView2** judges the top-level document in `NavigationStarting` and
+    marks every `NewWindowRequested` handled. A navigation cancelled in
+    `NavigationStarting` has still reached the server, as its ordinary
+    request and not a prefetch (GitHub run 36513098161, runtime 153). So
+    the bridge's outside-link intercept runs here too, as on WebKitGTK. A
+    server redirect to an outside host is still requested first.
   - **WKWebView** judges each navigation in
     `decidePolicyForNavigationAction`, before any request is sent. It uses
     `targetFrame` to tell frames and new windows apart. It judges the main
