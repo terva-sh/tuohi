@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRXMN56AG2GNC3M92GWZ
 title: Decide tuohi's support tiers and make CI match them
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -19,10 +19,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: ci/tiers-and-gui
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-ci
+  commit: eb946e72a7dad4a7992c859249d3cb6efb04d8f6
+  session: null
+  claimed_at: 2026-09-29T21:41:52Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:13:08Z
+updated_at: 2026-09-29T21:41:53Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -53,9 +60,26 @@ Decide tuohi's support tiers and make CI match them.
 
 ## Acceptance criteria
 
-- [ ] Support tiers are documented in the README
-- [ ] Each question in this ticket has a recorded decision
+- [x] Support tiers are documented in the README
+- [x] Each question in this ticket has a recorded decision
 - [ ] Both workflows match the decisions
+
+## Implementation plan
+
+Apply the decisions recorded on 2026-09-30 in one pull request, together with TKT-01M3K439622PRJ1KHC91X4GCMQ, which edits the same Linux job.
+
+1. **GitHub.**
+   - Set workflow-level `CGO_ENABLED=0`, and drop `go test -race`.
+   - Set `TUOHI_REQUIRE_GUI=1` and `-v` on the Linux Xvfb step, the macOS tests, and the Windows tests. Make `requireGUI` on macOS and Windows honour the variable.
+   - Remove the artifact upload and download, so a tag's release carries notes and no binaries.
+2. **Forgejo.**
+   - Add a `gui` job in `golang:1.27-trixie`, through the pull-through path, running the steps of `just test-gui`.
+   - Drop terva-review's `pure/**` exclusion.
+3. **Go minimum.** Set `go.mod` to `go 1.26.0` and make the code build on 1.26.
+4. **Docs.**
+   - README: support tiers, the Go minimum, and glibc.
+   - architecture.md: the settled decisions.
+   - AGENTS.md: the `gui` job, and the no-PR-branches-on-the-mirror rule.
 
 ## Notes
 
@@ -91,3 +115,27 @@ Owner decision, 2026-09-27: macOS and Windows keep being tested after merge only
 - **glibc image versus gcompat for the Alpine job: keep gcompat.** This is the agent's call. The Alpine job tests only the headless paths. The new Debian job gives the glibc and WebKitGTK coverage. Switching the main job's image would change what it runs for no gain.
 
 TKT-01M3K439622PRJ1KHC91X4GCMQ (Fail GitHub CI when the Linux GUI scenarios do not run) lands with this ticket's workflow changes, since both edit the same Linux job.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:41:53Z
+
+### Go 1.26 needed a code change
+
+go.mod said 1.27, and the code had come to need 1.27 in one place. Each engine's constructor set `bindings` and `serve` in the `webview` literal, and those fields are promoted from the embedded `viewCore`. Only Go 1.27 accepts promoted fields in a composite literal. `GOTOOLCHAIN=go1.26.0` found it:
+
+- `go vet` failed on linux (`lib_unix.go:1959`), darwin (`lib_darwin.go:853`), and windows (`lib_windows.go:2427`);
+- `go test -c` failed on four Windows test literals.
+
+The constructors now assign the fields, and the Windows tests name `viewCore`. With `go 1.26.0` in go.mod, even the Go 1.27 toolchain applies 1.26 language rules, so the floor holds everywhere. GitHub's jobs take their Go from go.mod, so they now run on 1.26. golangci-lint v2.13.1 declares `go 1.26.0`, so its install on 1.26 works.
+
+### The Forgejo gui job was run before it was pushed
+
+The job's install and test script ran under podman in `container.local.sothr.com/docker/library/golang:1.27-trixie`, as root in the container, with bubblewrap installed. Both stacks passed: webkitgtk-6.0 in 27.4s, webkit2gtk-4.1 in 34.9s. The image pulls anonymously through the pull-through path.
+
+Forgejo's Docker runner may confine user namespaces differently from rootless podman. If WebKit's bubblewrap sandbox fails there, the first run will show it.
+
+### Checked locally
+
+- `just ci` and `just test-gui` pass on both stacks.
+- golangci-lint reports 0 issues for linux, darwin, windows, and netbsd.
+- actionlint passes on `.github/workflows/ci.yml`. For the Forgejo files it reports only the unknown `docker` runner label.
+- Go 1.26: vet passes for linux, darwin, and windows; `go test -c` builds for darwin and windows; all eight `just cross` targets build.
