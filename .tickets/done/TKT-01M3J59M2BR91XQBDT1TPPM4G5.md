@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M2BR91XQBDT1TPPM4G5
 title: Replace atotto/clipboard with native clipboard access
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -18,17 +18,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: feat/clipboard-linux
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-clip
-  commit: a70d42241decfb5a0ddd6ee569d7c5eb504d159d
-  session: null
-  claimed_at: 2026-09-29T22:21:49Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:21:50Z
+updated_at: 2026-09-29T23:18:24Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -65,8 +58,8 @@ This lands in `tuohi/clipboard` (see TKT-01M3J59M1H9PZ04J2C9JJZ7V13 (Move deskto
 
 ## Acceptance criteria
 
-- [ ] Copy and paste work on GTK3, GTK4, macOS, and Windows without running an external program
-- [ ] github.com/atotto/clipboard is gone from go.mod
+- [x] Copy and paste work on GTK3, GTK4, macOS, and Windows without running an external program
+- [x] github.com/atotto/clipboard is gone from go.mod
 - [x] A GUI scenario round-trips non-ASCII text through the clipboard on both WebKitGTK stacks
 
 ## Implementation plan
@@ -144,3 +137,27 @@ Linux branch `feat/clipboard-linux`, rebased onto main at 669905a. The work was 
 ### Programs that open only a window
 
 `go list -deps` shows no godbus, atotto or clipboard package on linux, darwin or windows.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T23:05:52Z
+
+Linux landed in #43 (merge 166eed5); GitHub run 36642081724 passed every Linux job. macOS landed in #48 (merge d43ded1). The Windows branch feat/clipboard-windows is rebased onto it: it replaces atotto with user32 through x/sys/windows, and go list -m all no longer lists atotto. The Windows test binaries compile for amd64, arm64 and 386, and just ci passes. The Windows round trip runs on GitHub after the merge. If it fails, first check SetClipboardData after OpenClipboard(NULL), which Microsoft documents as able to fail.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T23:11:56Z
+
+Disposition for the terva-review findings at 72991b1, fixed in 37e2df0:
+
+- **Accepted, high: "Open the clipboard with an owner before setting data".** Copy now creates a message-only window (class `STATIC`, parent `HWND_MESSAGE`) for each call and opens the clipboard with it before `EmptyClipboard` and `SetClipboardData`. It destroys the window after `CloseClipboard`. The text is rendered at once, so it stays on the clipboard after its owner is destroyed, and no window is left behind whose thread never pumps messages. Paste only reads, so it still opens without an owner.
+- **Accepted, medium: "Allocate the replacement block before clearing the clipboard".** The `GlobalAlloc`, `GlobalLock` and copy now happen before the clipboard is opened. Every failure after that frees the block.
+
+The package doc, README and architecture.md now say "needs no tuohi window" and describe the per-call owner. `just ci` passes, and the Windows builds and vets pass for amd64, arm64 and 386. The round trip runs on GitHub after the merge.
+
+## Summary
+
+Landed in #43 (GTK, merge 166eed5), #48 (macOS, merge d43ded1) and #50 (Windows, merge b57b14b).
+
+- **GTK 3 and GTK 4:** gtk_clipboard_* and gdk_clipboard_* on the GTK already loaded, reached through internal/toolkit on the UI thread.
+- **macOS:** NSPasteboard with AppKit's NSPasteboardTypeString, on the main thread.
+- **Windows:** user32 through x/sys/windows, opened with a per-call message-only owner window, with the block allocated before the clipboard is emptied.
+- No external program runs, and github.com/atotto/clipboard is gone from go.mod.
+- **Verified.** TestClipboardRoundTrip passes on both WebKitGTK stacks locally and on Forgejo, on GitHub macOS in run 36643306339, and on GitHub Windows in run 36644173009.
+- **Documented cost:** on Wayland, and on X11 without a clipboard manager, copied text lasts only as long as the process.

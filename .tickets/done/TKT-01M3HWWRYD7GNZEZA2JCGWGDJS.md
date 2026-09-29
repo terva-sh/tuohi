@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRYD7GNZEZA2JCGWGDJS
 title: Stop writing desktop files on startup under GTK3 Wayland
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -19,17 +19,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/desktop-entries
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-desktop
-  commit: ff6e0c9380ada27351b08813c316bbfbf275319e
-  session: null
-  claimed_at: 2026-09-29T21:53:07Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:19:44Z
+updated_at: 2026-09-29T23:18:24Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -114,3 +107,13 @@ Disposition for the terva-review finding at 5839755 (run d2daa612), fixed in e24
   - `TestWaylandIdentitySubdirEntry` now installs tuohi's entry first, adds the other entry, and installs twice more. The other entry must be untouched, and nothing of tuohi's may remain. It checks this for both the system and the user directory.
   - Going back to the previous order leaves 3 files beside the user's `vendor/app.desktop`, and the test fails.
   - The `App.DesktopEntry` doc now says tuohi's entry is removed once any such entry appears.
+
+## Summary
+
+Landed in #39 (merge aa5a263).
+
+- The GTK3 Wayland desktop entry and icons are written only when App.DesktopEntry is set.
+- An entry with the same id that tuohi did not write is left alone. That covers one in the user's directory, a system directory from XDG_DATA_DIRS, or a subdirectory of either (vendor/app.desktop is vendor-app). tuohi's own earlier entry and icons are removed once such an entry appears.
+- tuohi recognises its own entries by the X-Tuohi-Generated key in the [Desktop Entry] group.
+- kbuildsycoca is reaped when it exits.
+- Three review rounds, each fixed and tested with mutations.

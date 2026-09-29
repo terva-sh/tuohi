@@ -74,11 +74,11 @@ The root package `tuohi` is the window. It exports `App`, `View`, bindings,
 events, and window state, and it holds `App.Icon`, `App.Open`, `App.Reveal`,
 and serving: `App.FS`, `App.HTTP`, `app://`. Everything hangs off `App` or
 `View`, and `App` is both configuration and runtime, in the style of
-`http.Server`. Of the subpackages it imports only `dialog`. A program that
-opens one window therefore links neither godbus, which the Linux tray and
-notifications use, nor atotto, whose `init` scans PATH for clipboard tools at
-process start. `go list -deps` on such a program shows neither, for Linux,
-macOS, and Windows.
+`http.Server`. Of the subpackages it imports only `dialog`, and
+`internal/toolkit`, which holds no service code. A program that opens one
+window therefore links neither godbus, which the Linux tray and
+notifications use, nor the clipboard. `go list -deps` on such a program
+shows neither, for Linux, macOS, and Windows.
 
 Before the split, the root imported `notify`, `tray`, `dialog`, and
 `github.com/atotto/clipboard`, so every program that opened a window linked
@@ -591,8 +591,12 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
   and Wayland may refuse a copy without recent input on one of its windows.
   On macOS it uses the general `NSPasteboard` through `objc`, on the main
   thread, with AppKit's `NSPasteboardTypeString` looked up from the loaded
-  framework. Windows still wraps atotto, and Win32 replaces it next, in its
-  own pull request: TKT-01M3J59M2BR91XQBDT1TPPM4G5.
+  framework. On Windows it uses user32's clipboard with `CF_UNICODETEXT`,
+  which needs no tuohi window, so the Windows clipboard works in any program
+  and does not use the hook. Copy opens it with a message-only window of its
+  own, created for the call and destroyed after, because emptying a
+  clipboard opened without an owner makes `SetClipboardData` fail. `github.com/atotto/clipboard` is gone from the
+  module: TKT-01M3J59M2BR91XQBDT1TPPM4G5.
 - **Notify, tray, and dialog** were already subpackages and stay as they are.
   The root no longer imports notify or tray. The tray is set up in
   `App.Start`, and its icon is the caller's `tray.Config.Icon`: the root no

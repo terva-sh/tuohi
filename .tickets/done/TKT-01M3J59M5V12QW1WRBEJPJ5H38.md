@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M5V12QW1WRBEJPJ5H38
 title: Make the macOS main-thread rule explicit and enforced
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/macos-main-thread
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-main
-  commit: cdbd8ae9d27641832b5afce08269f21ec48870a1
-  session: null
-  claimed_at: 2026-09-29T22:28:26Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:57:04Z
+updated_at: 2026-09-29T23:18:23Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -54,8 +47,8 @@ On macOS, AppKit must run on the main thread. tuohi locks the thread that first 
 
 ## Acceptance criteria
 
-- [ ] The darwin engine keeps the main goroutine on the main thread
-- [ ] Show and Wait called off the main thread with no loop owner return an error instead of misbehaving
+- [x] The darwin engine keeps the main goroutine on the main thread
+- [x] Show and Wait called off the main thread with no loop owner return an error instead of misbehaving
 - [x] The package docs show a loopback consumer with its server in a goroutine and the window on main
 
 ## Implementation plan
@@ -112,3 +105,24 @@ GitHub run 36641291121 at e6f9406, after #44 merged, failed Test MacOS with 'pan
 **agent:claude-code/t3code-72958710** at 2026-09-29T22:57:04Z
 
 GitHub run 36642081724 at 166eed5, the first macOS run with #47: every macOS scenario passed except TestMultiWindowRefCount ('1->3->1', want '0->2->0'). TestNotMainThread passed, and so did TestNewUnderAnExternalRunLoop, which now checks that startOnUI runs on the main thread. The count was 1 before that scenario started. My hypothesis is a count-down still queued on the main dispatch queue from an earlier scenario. Fix and diagnostics are on fix/macos-window-count. AC1 and AC2 stay unticked until GitHub main is green.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T23:18:23Z
+
+Follow-up to the window-count note: GitHub run 36642939300 at 83fbc7a, with #49's diagnostics, printed 0 windows after offMain, bridge, errorUnbind and richTypes, and 0 again after the drain; TestMultiWindowRefCount passed. The earlier '1->3->1' did not reproduce, so its cause is unconfirmed. The drain stays as protection against a count-down still queued on the main queue.
+
+## Summary
+
+Landed in #44 (merge 8b80b83), with fixes in #47 (b6ed319) and #49 (83fbc7a).
+
+- An init in the darwin engine locks the main goroutine to the main thread.
+- App.Show and App.Wait return ErrNotMainThread when called off the main thread with no run loop running there.
+  - The check runs before the app scope opens and touches no AppKit: it uses pthread_main_np and CFRunLoopCopyCurrentMode(CFRunLoopGetMain()).
+- Under an external loop, Wait's start step runs on the main thread through startOnUI, and Wait leaves events to the loop's owner.
+- The uiIsMain special case is gone.
+- The package doc shows a loopback consumer.
+- Verified on GitHub macOS:
+  - TestNotMainThread and TestNewUnderAnExternalRunLoop, which checks startOnUI, passed in runs 36642081724 and 36642939300.
+  - Every macOS job has been green since #49, most recently run 36644173009.
+- The first run after #44 hit two bugs, both fixed:
+  - a panic from calling NSThread before Foundation was loaded (#47);
+  - a stale window count, which did not reproduce once #49 added diagnostics (#49).
