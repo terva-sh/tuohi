@@ -120,16 +120,18 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	// An entry of this id that tuohi did not write belongs to someone else,
 	// such as a package that installs the application properly. Leave it and
 	// its icon alone: advertising the id is enough for the compositor to use
-	// it. A system entry counts too, because a user entry of the same id
-	// would shadow it; one tuohi wrote before the package arrived is removed,
-	// with its icons, so the package's entry shows through.
+	// it. That covers another user entry with the id, in a subdirectory of
+	// applications, and a system entry, which a user entry of the same id
+	// would shadow. An entry tuohi wrote before the other one arrived is
+	// removed, with its icons, so the other one is the entry the desktop
+	// uses.
 	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
 	old, err := os.ReadFile(desktopPath)
 	ours := err == nil && isGenerated(old)
-	if err == nil && !ours || hasEntry(dataHome, id, desktopPath) {
+	if err == nil && !ours {
 		return id
 	}
-	if systemEntry(id) {
+	if hasEntry(dataHome, id, desktopPath) || systemEntry(id) {
 		if ours {
 			_ = os.Remove(desktopPath)
 			removeOtherIconSizes(dataHome, id, nil)

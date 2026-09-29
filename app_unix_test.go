@@ -336,7 +336,9 @@ func TestWaylandIdentitySystemEntry(t *testing.T) {
 
 // TestWaylandIdentitySubdirEntry checks that an entry whose desktop id comes
 // from a subdirectory (applications/vendor/app.desktop is vendor-app) counts
-// as the same id, in a system directory and in the user's.
+// as the same id, in a system directory and in the user's: the entry and
+// icons tuohi wrote before it arrived are removed, and nothing is written
+// again.
 func TestWaylandIdentitySubdirEntry(t *testing.T) {
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
 	for _, where := range []string{"system", "user"} {
@@ -344,6 +346,9 @@ func TestWaylandIdentitySubdirEntry(t *testing.T) {
 		t.Setenv("XDG_DATA_HOME", data)
 		t.Setenv("XDG_DATA_DIRS", system)
 		t.Setenv("PATH", t.TempDir())
+		if id := installWaylandIdentity("Vendor App", img); id != "vendor-app" || countFiles(t, data) < 2 {
+			t.Fatalf("%s: before the other entry: id %q and %d files, want vendor-app, an entry and icons", where, id, countFiles(t, data))
+		}
 		dir := system
 		if where == "user" {
 			dir = data
@@ -355,8 +360,13 @@ func TestWaylandIdentitySubdirEntry(t *testing.T) {
 		if err := os.WriteFile(entry, []byte("[Desktop Entry]\nType=Application\nName=App\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if id := installWaylandIdentity("Vendor App", img); id != "vendor-app" {
-			t.Fatalf("%s: id %q, want vendor-app", where, id)
+		for range 2 {
+			if id := installWaylandIdentity("Vendor App", img); id != "vendor-app" {
+				t.Fatalf("%s: id %q, want vendor-app", where, id)
+			}
+		}
+		if _, err := os.Stat(entry); err != nil {
+			t.Fatalf("%s: the other entry is gone: %v", where, err)
 		}
 		want := 0
 		if where == "user" {
