@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M535T9QH2RS1ZY6PSJM
 title: Quote desktop-entry Exec lines to the spec
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -13,19 +13,20 @@ assignees: []
 milestone: v0.1.0
 parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
-dependencies: []
+dependencies:
+  - TKT-01M3J59M1H9PZ04J2C9JJZ7V13
 blocks_on: none
 references: []
 moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-27T19:25:58Z
+updated_at: 2026-09-29T21:13:07Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
@@ -51,3 +52,9 @@ Rewrite `Exec` quoting to the Desktop Entry spec, with table tests covering each
 - [ ] Exec quoting doubles percent signs, quotes every reserved character, and applies the string-level backslash escape
 - [ ] Table tests cover each reserved character, percent, backslash, spaces, and non-ASCII
 - [ ] NOTICE says the quoting is rewritten
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:13:06Z
+
+The owner included this in the 2026-09-30 run. It lands after the package split (TKT-01M3J59M1H9PZ04J2C9JJZ7V13) moves the autostart writer into `tuohi/autostart`, so it follows that ticket.

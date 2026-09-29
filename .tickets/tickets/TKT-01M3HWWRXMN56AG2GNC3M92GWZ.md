@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRXMN56AG2GNC3M92GWZ
 title: Decide tuohi's support tiers and make CI match them
 type: task
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -22,12 +22,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-27T20:10:52Z
+updated_at: 2026-09-29T21:13:08Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-92c88910
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
@@ -78,3 +78,16 @@ Tier decision from TKT-01M3HWWRSJC4QVVGPW04H5CQBD (Review tuohi's architecture a
 **agent:claude-code/t3code-92c88910** at 2026-09-27T20:10:52Z
 
 Owner decision, 2026-09-27: macOS and Windows keep being tested after merge only. Pull-request branches are not pushed to the GitHub mirror, so work in progress stays off the public mirror. The cost is accepted: a macOS or Windows regression turns GitHub main red until a fix lands on Forgejo. To keep that window short, new native code for macOS and Windows lands in small pull requests, one engine per pull request where possible. The rejected option was pushing each branch to GitHub and merging only after its macOS and Windows jobs pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:13:06Z
+
+### Owner decisions, 2026-09-30, on the remaining CI questions
+
+- **Test without cgo: yes.** GitHub's Linux jobs drop `go test -race`, which builds with cgo, and test with `CGO_ENABLED=0`, the way consumers build. The race detector is lost on those jobs. This is accepted because the path cgo exercises is not the one that ships.
+- **Stop publishing binaries: yes.** A `v*` tag no longer attaches demo binaries to a GitHub release. A library publishes source. The demo matrix still builds on every run, so a demo that stops compiling is still caught.
+- **GUI scenarios on Forgejo: yes.** Add a Debian job to `.forgejo/workflows/ci.yml` that runs the Linux GUI scenarios under Xvfb and D-Bus on both WebKitGTK stacks, so they gate a pull request before it merges. The image is `container.local.sothr.com/docker/library/golang:*-trixie`, from the registry's Docker Hub pull-through path. terva-sh/tuwunel's CI uses that path for its Debian image, and installs `nodejs` for the checkout action.
+- **Pin actions by SHA: not chosen.** Actions stay pinned by tag.
+- **Pre-merge macOS and Windows testing: stays post-merge only.** The owner reaffirmed the 2026-09-27 decision. Pull-request branches are not pushed to the GitHub mirror. Earlier in this session an agent had pushed some branches there for CI, against that decision. That stops.
+- **glibc image versus gcompat for the Alpine job: keep gcompat.** This is the agent's call. The Alpine job tests only the headless paths. The new Debian job gives the glibc and WebKitGTK coverage. Switching the main job's image would change what it runs for no gain.
+
+TKT-01M3K439622PRJ1KHC91X4GCMQ (Fail GitHub CI when the Linux GUI scenarios do not run) lands with this ticket's workflow changes, since both edit the same Linux job.

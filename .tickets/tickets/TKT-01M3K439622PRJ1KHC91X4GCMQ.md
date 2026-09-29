@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3K439622PRJ1KHC91X4GCMQ
 title: Fail GitHub CI when the Linux GUI scenarios do not run
 type: chore
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -20,12 +20,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T04:24:16Z
-updated_at: 2026-09-28T04:24:16Z
+updated_at: 2026-09-29T21:13:08Z
 created_by:
   id: agent:claude-code/t3code-83e85fc3
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-83e85fc3
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
