@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3K439622PRJ1KHC91X4GCMQ
 title: Fail GitHub CI when the Linux GUI scenarios do not run
 type: chore
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -17,10 +17,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: ci/tiers-and-gui
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-ci
+  commit: eb946e72a7dad4a7992c859249d3cb6efb04d8f6
+  session: null
+  claimed_at: 2026-09-29T21:41:52Z
+  expires_at: null
 archive: null
 created_at: 2026-09-28T04:24:16Z
-updated_at: 2026-09-29T21:13:08Z
+updated_at: 2026-09-29T21:41:53Z
 created_by:
   id: agent:claude-code/t3code-83e85fc3
   name: ""
@@ -55,3 +62,7 @@ GitHub CI must fail when the Linux GUI scenarios do not run, as `just test-gui` 
 
 - [ ] The Linux Xvfb step fails when the GUI probe fails
 - [ ] The GitHub log shows whether each GUI scenario ran
+
+## Implementation plan
+
+Set TUOHI_REQUIRE_GUI=1 and -v on the Linux Xvfb step, and on the macOS and Windows test steps, and make requireGUI on macOS and Windows honour the variable as Linux's does. Lands with TKT-01M3HWWRXMN56AG2GNC3M92GWZ's workflow changes. Windows: fail when WebView2 is unavailable, because the hosted runner always ships it.

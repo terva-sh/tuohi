@@ -850,12 +850,12 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 		ownsWindow: true,
 		firstMouse: v.FirstMouse,
 		frameless:  !v.Frame,
-		bindings:   map[string]binding{},
-		serve:      serve,
 		closed:     make(chan struct{}),
 		lastWidth:  defaultWidth,
 		lastHeight: defaultHeight,
 	}
+	w.bindings = map[string]binding{}
+	w.serve = serve
 	w.app = app
 	w.windowInit(objc.ID(uintptr(v.window)))
 	// Window settings: create the WKWebViewConfiguration, tune its

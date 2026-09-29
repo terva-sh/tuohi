@@ -2429,10 +2429,10 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		ownsWindow:  v.window == nil,
 		frameless:   !v.Frame,
 		fixed:       !v.Frame && v.State == StateFixed,
-		bindings:    map[string]binding{},
 		dispatchMap: map[uintptr]func(){},
-		serve:       serve,
 	}
+	w.bindings = map[string]binding{}
+	w.serve = serve
 	w.id = registerEngine(w)
 	w.hinst = getModuleHandleW(0)
 

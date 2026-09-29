@@ -54,7 +54,7 @@ different directions, the loopback consumer wins.
 | Borrowed code | Wails autostart kept and credited, with its quoting rewritten. The WebView2 loader is kept and credited. | TKT-01M3J59M535T9QH2RS1ZY6PSJM |
 | Side effects | The GTK3 Wayland desktop-file writing becomes opt-in. | TKT-01M3HWWRYD7GNZEZA2JCGWGDJS |
 | Hygiene | Review tags, stale docs, and "appkit" strings go with the rename. | TKT-01M3HWWRWX3D9XTA5RTW5AC26R |
-| Support tiers and testing | Tier 1: Linux, macOS, Windows, tested on the real engine. Tier 2: FreeBSD and NetBSD, cross-built only. CI mechanics stay with their ticket. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
+| Support tiers and testing | Tier 1: Linux, macOS, Windows, tested on the real engine. Tier 2: FreeBSD and NetBSD, cross-built only. Everything is tested without cgo, and the Linux GUI scenarios gate pull requests. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
 | Go minimum | 1.26. | TKT-01M3HWWRXMN56AG2GNC3M92GWZ |
 
 The review also found four defects outside those inputs:
@@ -600,32 +600,51 @@ and decides whether tuohi works around it.
 
 ## Support tiers, CI, and the Go minimum
 
-The review settles the tiers and the Go minimum. TKT-01M3HWWRXMN56AG2GNC3M92GWZ
-(Decide tuohi's support tiers and make CI match them) keeps the CI questions:
-testing macOS and Windows before a merge rather than after, the inherited
-GitHub workflow, action pinning, and GUI scenarios on Forgejo.
+The review settled the tiers and the Go minimum.
+TKT-01M3HWWRXMN56AG2GNC3M92GWZ (Decide tuohi's support tiers and make CI
+match them) settled the CI questions with the owner on 2026-09-30, and made
+both workflows match. The README carries the tiers for consumers.
 
 - **Tier 1 is Linux, macOS, and Windows.** Each is built and tested on its
   real engine on every change to `main`: WebKitGTK 4.1 and 6.0 on amd64 and
-  arm64, WKWebView, and WebView2. That keeps appkit's claim, and CI now
-  matches it.
+  arm64, WKWebView, and WebView2. That keeps appkit's claim, and CI matches
+  it.
 - **Tier 2 is FreeBSD and NetBSD.** They must cross-build, and nothing runs
   them. Dropping them lost, because cross-building costs one CI step and the
   owner asked for functionality kept. Promoting them lost, because no runner
   exists.
-
-- **Go 1.26 is the minimum.** The owner chose it on 2026-09-27. The code needs
-  about Go 1.23: `reflect.TypeFor`, range over int, and
-  `structs.HostLayout`. `golang.org/x/sys` v0.48.0 declares 1.26, which sets
-  the real floor. The inherited `go 1.27` is not needed. git-ticket-canvas
-  moves to 1.26 when it adopts tuohi. Pinning an old `x/sys` to stay at 1.25
-  lost: it holds a security-relevant dependency back to save one consumer a
-  one-time move.
-- **Linux GUI scenarios now run** under `just test-gui` locally and on
-  GitHub's Ubuntu runners, on both WebKitGTK stacks. They do not run on
-  Forgejo CI, whose Alpine container has no WebKitGTK.
-- **GitHub's Linux jobs build with cgo on** and run without `-v`, so they
-  exercise a different path from what ships.
+- **Go 1.26 is the minimum,** and `go.mod` says so. The owner chose it on
+  2026-09-27. `golang.org/x/sys` v0.48.0 declares 1.26, which sets the floor.
+  git-ticket-canvas moves to 1.26 when it adopts tuohi. Pinning an old
+  `x/sys` to stay at 1.25 lost: it holds a security-relevant dependency back
+  to save one consumer a one-time move. The code itself had come to need Go
+  1.27 in one place: each engine's constructor set fields promoted from the
+  embedded `viewCore` in a composite literal. Those now assign the fields,
+  and the GitHub jobs, which take their Go version from `go.mod`, build and
+  test on 1.26.
+- **Everything is built and tested without cgo,** on both forges, because
+  that is how consumers build. GitHub's jobs had inherited `go test -race`,
+  which builds with cgo and so tested a different path from what ships. The
+  race detector is the cost.
+- **The Linux GUI scenarios gate every pull request.** Forgejo CI's `gui` job
+  runs them on Debian, on both WebKitGTK stacks, under Xvfb and D-Bus. GitHub
+  runs them again after the merge on its Ubuntu runners. Both set
+  `TUOHI_REQUIRE_GUI=1`, so a scenario that would skip fails instead, and the
+  GitHub jobs run with `-v`, so the log names every test. macOS and Windows
+  honour the variable too.
+- **macOS and Windows are tested after the merge only.** The owner decided on
+  2026-09-27, and reaffirmed on 2026-09-30, that pull-request branches stay
+  off the public mirror. A regression there turns GitHub `main` red until a
+  fix lands on Forgejo, so new macOS and Windows code lands in small pull
+  requests, one engine per pull request where possible.
+- **A release publishes source.** A `v*` tag makes a GitHub release with
+  generated notes and no binaries. The demo still builds for every target on
+  every run.
+- **Actions stay pinned by tag,** not by SHA.
+- **The Alpine job keeps `gcompat`.** A binary that reaches purego asks for
+  glibc's loader even without cgo, so tuohi targets glibc desktops. The
+  Debian `gui` job covers glibc and WebKitGTK, so the headless job's image
+  stays as it is.
 
 ## What this review did not settle
 
