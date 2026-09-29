@@ -20,6 +20,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/terva-sh/tuohi/dialog"
+	"github.com/terva-sh/tuohi/internal/toolkit"
 )
 
 const (
@@ -1949,11 +1950,18 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		// run] waiting for an applicationDidFinishLaunching that already fired.
 		var w *webview
 		performOnMain(func() { w = newWebView(v, serve, app, loopRunning) })
+		publishToolkit.Do(func() { toolkit.Set(&toolkit.Toolkit{Call: ui.call}) })
 		return w, nil
 	}
 
-	return newWebView(v, serve, app, loopRunning), nil
+	w := newWebView(v, serve, app, loopRunning)
+	publishToolkit.Do(func() { toolkit.Set(&toolkit.Toolkit{Call: ui.call}) })
+	return w, nil
 }
+
+// publishToolkit hands the UI thread to the desktop services
+// (internal/toolkit) once the first window exists and AppKit is loaded.
+var publishToolkit sync.Once
 
 // newWebView builds the webview on the UI thread.
 
