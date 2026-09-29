@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:21:50Z
+updated_at: 2026-09-29T23:05:52Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -144,3 +144,7 @@ Linux branch `feat/clipboard-linux`, rebased onto main at 669905a. The work was 
 ### Programs that open only a window
 
 `go list -deps` shows no godbus, atotto or clipboard package on linux, darwin or windows.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T23:05:52Z
+
+Linux landed in #43 (merge 166eed5); GitHub run 36642081724 passed every Linux job. macOS landed in #48 (merge d43ded1). The Windows branch feat/clipboard-windows is rebased onto it: it replaces atotto with user32 through x/sys/windows, and go list -m all no longer lists atotto. The Windows test binaries compile for amd64, arm64 and 386, and just ci passes. The Windows round trip runs on GitHub after the merge. If it fails, first check SetClipboardData after OpenClipboard(NULL), which Microsoft documents as able to fail.
