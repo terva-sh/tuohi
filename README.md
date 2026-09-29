@@ -251,6 +251,10 @@ system and crashes `gtk_init`.
 - GTK4: `libgtk-4.so.1`, `libwebkitgtk-6.0.so.4`, `libjavascriptcoregtk-6.0.so.1`
 - GTK3: `libgtk-3.so.0`, `libwebkit2gtk-4.1.so.0` (or `libwebkit2gtk-4.0.so.37`), `libjavascriptcoregtk-4.1.so.0` (or `libjavascriptcoregtk-4.0.so.18`)
 
+Either stack needs WebKitGTK 2.40 or newer. The GTK4 stack needs GTK 4.12 or
+newer, and the GTK3 stack GTK 3.20 or newer. An older library fails
+`App.Show` with an error that names every function it lacks.
+
 ### Choosing a stack (`APPKIT_BACKEND`)
 
 The `APPKIT_BACKEND` environment variable pins one of the two stacks before

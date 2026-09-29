@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRW7YGCHHZY4BFEX3A6W
 title: Replace pure/ with upstream ebitengine/purego
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -19,17 +19,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: feat/upstream-purego
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-purego
-  commit: c198cb894390c9708dbb26523ac5f637cb0b67d5
-  session: null
-  claimed_at: 2026-09-29T21:20:29Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:20:29Z
+updated_at: 2026-09-29T21:28:47Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -62,7 +55,7 @@ Replace `pure/`, a modified copy of purego v0.11.0 (7,472 lines), with a depende
 ## Acceptance criteria
 
 - [x] tuohi depends on github.com/ebitengine/purego and pure/ is removed
-- [ ] Every target in just cross still builds, and the GUI scenarios pass
+- [x] Every target in just cross still builds, and the GUI scenarios pass
 - [x] NOTICE and docs/provenance.md reflect the change
 
 ## Implementation plan
@@ -121,3 +114,11 @@ For FreeBSD, golangci-lint also needs the flag, because it type-checks through t
 The Forgejo test-step exception is gone, as the 2026-09-27 note asked. So is `just test-pure`: with no copy in the tree, purego's own suite is upstream's to run.
 
 macOS and Windows are not yet run on the real engines. GitHub CI covers them after the merge, following the post-merge rule.
+
+## Summary
+
+Merged as PR #35 (d2d532f). tuohi depends on `github.com/ebitengine/purego` v0.11.1, and `pure/` is gone.
+
+- **The FreeBSD flag.** A FreeBSD build without cgo passes `-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std`. `just cross`, the Makefile, and both workflows pass it, and the README documents it. golangci-lint needs the flag too, through GOFLAGS.
+- **Verified after the merge.** GitHub run 36633160487 on main passed: the macOS and Windows engine tests, all four Linux GUI jobs, golangci-lint, and all 19 demo builds, FreeBSD amd64 and arm64 included.
+- **Review.** It first overflowed its context on the deleted assembly. It ran clean once `pure/**` was excluded; the exclusion was dispatched from the branch. That `REVIEW_EXCLUDE_PATHS` line now matches nothing. TKT-01M3HWWRXMN56AG2GNC3M92GWZ's workflow changes remove it.
