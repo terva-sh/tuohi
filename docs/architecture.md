@@ -537,9 +537,14 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
   - `Release` never removes the lock file, because removing it, before or
     after unlocking, can give two primaries.
 
-  On Windows the pipe still has default security, drops a launch that
-  arrives while the pipe is busy, and reads any failure to create the pipe
-  as "already running"; the same ticket covers them.
+  On Windows the same ticket gave the pipe an explicit security descriptor,
+  which makes the user its owner and grants only the user access, and
+  rejects remote clients. The pipe name carries the user's SID, so each user
+  on a shared machine gets an instance, and `Send` writes only to a pipe the
+  user owns. A launch that finds the pipe busy retries rather than being
+  dropped, only a name already in use reads as "already running", and the
+  running instance applies the same cap and time limit through overlapped
+  I/O.
 - **Autostart** is `tuohi/autostart`: `New(id)`, where the id is the name
   the registration is stored under, used as given. The fallbacks to a slug of
   `App.Name` or of the executable went with `App.Autostart()`. About 75 to 80
