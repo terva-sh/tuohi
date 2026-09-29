@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M6JQZJWB23HPXXQZVZR
 title: Report missing WebKitGTK symbols as an error, not a panic
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -19,17 +19,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/missing-symbols
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-symbols
-  commit: d4e1e5a9205a6a16957647a506bc1300c88da7f0
-  session: null
-  claimed_at: 2026-09-29T21:31:59Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T21:32:00Z
+updated_at: 2026-09-29T22:31:02Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -89,3 +82,11 @@ Optional functions resolved through `Dlsym` are excluded: `webkit_web_view_evalu
 - `just ci` and `just test-gui` pass on both stacks, and golangci-lint reports 0 issues for linux, freebsd, and netbsd.
 
 A real WebKitGTK older than 2.40 was not run. None is installed, and the unit test covers the mechanism.
+
+## Summary
+
+Landed in PR #36 (merge d142204).
+
+- ensureInit binds every WebKitGTK and GTK symbol through symbols.need. A missing symbol makes it return an error naming the library, the symbol and the minimum versions. A recover guard keeps any panic inside the sync.Once from escaping.
+- TestSymbolsNeed and TestRecoverInit cover it.
+- GitHub main stayed green in every run since, most recently run 36639214688.

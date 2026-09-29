@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRXMN56AG2GNC3M92GWZ
 title: Decide tuohi's support tiers and make CI match them
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -19,17 +19,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: ci/tiers-and-gui
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-ci
-  commit: eb946e72a7dad4a7992c859249d3cb6efb04d8f6
-  session: null
-  claimed_at: 2026-09-29T21:41:52Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:15:43Z
+updated_at: 2026-09-29T22:31:02Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -62,7 +55,7 @@ Decide tuohi's support tiers and make CI match them.
 
 - [x] Support tiers are documented in the README
 - [x] Each question in this ticket has a recorded decision
-- [ ] Both workflows match the decisions
+- [x] Both workflows match the decisions
 
 ## Implementation plan
 
@@ -170,3 +163,13 @@ Post-merge check of PR #37 on GitHub: run 36638027032 at 669905a.
   - Checked locally: `CGO_ENABLED=0 GOOS=linux GOARCH=s390x go build ./demo` succeeds on 1.27.1, and actionlint is clean.
 
 AC3 ("Both workflows match the decisions") stays unticked until this lands and GitHub `main` is green.
+
+## Summary
+
+Landed in PR #37 (merge 669905a) and PR #41 (merge 00f97f6).
+
+- **Support tiers.** Tier 1 is Linux, macOS and Windows, built and tested on the real engines. Tier 2 is FreeBSD and NetBSD, cross-built only. The minimum is Go 1.26, except linux/s390x, which needs 1.27 for purego without cgo. The README's Support tiers section records all of this.
+- **GitHub CI** now tests with CGO_ENABLED=0 and without -race. TUOHI_REQUIRE_GUI=1 and -v are set on Linux, macOS and Windows. The release carries notes only.
+- **Forgejo CI** has a gui job that runs both WebKitGTK stacks on every pull request.
+- **Verified on GitHub main:** run 36639214688 at e78e6b5 is green on every job, including Build (linux_s390x) on Go 1.27.
+- **Left open for the owner:** v0.1.0-alpha.1 still carries the 19 binaries published before this change, and deleting release assets is their call.
