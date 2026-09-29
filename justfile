@@ -52,7 +52,7 @@ test-gui:
     failed=""; \
     for backend in webkitgtk-6.0 webkit2gtk-4.1; do \
         echo "== $backend"; \
-        TUOHI_REQUIRE_GUI=1 APPKIT_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 {{packages}} || failed="$failed $backend"; \
+        TUOHI_REQUIRE_GUI=1 TUOHI_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 {{packages}} || failed="$failed $backend"; \
     done; \
     if [ -n "$failed" ]; then echo "test-gui failed on:$failed" >&2; exit 1; fi
 

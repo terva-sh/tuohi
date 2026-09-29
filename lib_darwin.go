@@ -932,7 +932,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 	// (appkit's one tuned divergence: it enables fullscreen so the demo's
 	// <video> can go fullscreen), deprecated javaEnabled/plugInsEnabled NO -
 	// except developerExtrasEnabled, which tracks the view's resolved Debug
-	// flag (View.Debug OR App.Debug / APPKIT_DEBUG). Every write goes
+	// flag (View.Debug OR App.Debug / TUOHI_DEBUG). Every write goes
 	// through KVC guarded by respondsToSelector: on the property's setter,
 	// so a preference the running macOS does not know (newer or removed
 	// properties, e.g. javaEnabled after 10.15) is skipped instead of
@@ -1967,7 +1967,7 @@ var publishToolkit sync.Once
 
 // platformBackend reports the web-engine backend in use. macOS has a single
 // built-in backend (WKWebView), so there is nothing to detect or override -
-// APPKIT_BACKEND is Linux-only (see lib_unix.go).
+// TUOHI_BACKEND is Linux-only (see lib_unix.go).
 func platformBackend() string { return "WKWebView" }
 
 // --- app-level run loop (App.Wait) -----------------------------------------

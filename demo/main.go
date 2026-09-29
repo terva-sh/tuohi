@@ -50,7 +50,7 @@
 // The demo window needs the platform view (WebKitGTK on Linux, WebView2 on
 // Windows, WKWebView on macOS); on a headless box run it under xvfb-run.
 // Every start logs the web-engine backend in use (appkit's App.Backend), so
-// the run mode and the APPKIT_BACKEND override are visible at a glance.
+// the run mode and the TUOHI_BACKEND override are visible at a glance.
 package main
 
 import (

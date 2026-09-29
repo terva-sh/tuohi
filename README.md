@@ -252,7 +252,7 @@ to bundle, but that runtime must be present:
 
 - **Linux**, **FreeBSD** and **NetBSD** - a system WebKitGTK with GTK4 or 
   GTK3; appkit detects which at runtime, or you can pin one with the 
-  `APPKIT_BACKEND` environment variable ([Choosing a stack](#choosing-a-stack-APPKIT_BACKEND) below).
+  `TUOHI_BACKEND` environment variable ([Choosing a stack](#choosing-a-stack-tuohi_backend) below).
   The exact libraries and how to install or debug them are in 
   [Linux shared libraries](#linux-shared-libraries) below.
 - **Windows** - the Microsoft Edge WebView2 Runtime (preinstalled on current
@@ -348,14 +348,14 @@ Either stack needs WebKitGTK 2.40 or newer. The GTK4 stack needs GTK 4.12 or
 newer, and the GTK3 stack GTK 3.20 or newer. An older library fails
 `App.Show` with an error that names every function it lacks.
 
-### Choosing a stack (`APPKIT_BACKEND`)
+### Choosing a stack (`TUOHI_BACKEND`)
 
-The `APPKIT_BACKEND` environment variable pins one of the two stacks before
+The `TUOHI_BACKEND` environment variable pins one of the two stacks before
 the probe above runs - useful when both are installed and you want to force
 one, or to reproduce a bug against a specific WebKitGTK:
 
-- `APPKIT_BACKEND=webkitgtk-6.0` - the GTK4 stack
-- `APPKIT_BACKEND=webkit2gtk-4.1` - the GTK3 stack (still falls back to the
+- `TUOHI_BACKEND=webkitgtk-6.0` - the GTK4 stack
+- `TUOHI_BACKEND=webkit2gtk-4.1` - the GTK3 stack (still falls back to the
   `-4.0` sonames inside that stack when `-4.1` is absent)
 
 If the pinned backend's libraries cannot be loaded - or the value is anything
@@ -364,6 +364,9 @@ with the auto-detected stack that works. macOS and Windows always use their
 single built-in backend (WKWebView / WebView2) and ignore the variable.
 `App.Backend()` reports the stack that was actually loaded (the demo logs it
 on every start).
+
+The `TUOHI_*` environment variables were named `APPKIT_*` in v0.1.0-alpha.1,
+and the old names are no longer read.
 
 On the GTK4 stack, the file dialogs additionally load `libgio-2.0.so.0` the
 first time a dialog opens (it ships with GLib, so it is present wherever the
@@ -595,7 +598,7 @@ The per-window knobs appkit reads at window creation live directly on the
 
 - `App.Debug` and `View.Debug` (default **false**) - the dev-tools /
   inspector switch. `View.Debug` opens one window's inspector; `App.Debug`
-  applies app-wide; the two OR together, and the `APPKIT_DEBUG=1`
+  applies app-wide; the two OR together, and the `TUOHI_DEBUG=1`
   environment variable forces the tools on for every view no matter what.
   Backend mapping: WebView2 `DevTools`, WebKitGTK
   `enable-developer-extras`, `WKPreferences.developerExtrasEnabled`.

@@ -338,7 +338,7 @@ func TestRichBindingTypes(t *testing.T) {
 	}
 }
 
-// TestLinuxBackendOverride pins down the APPKIT_BACKEND contract: the two
+// TestLinuxBackendOverride pins down the TUOHI_BACKEND contract: the two
 // documented values map to the two stacks, an unset variable means
 // auto-detection, and anything else is ignored (with a warning) rather than
 // failing. Pure env parsing - no display needed.
@@ -354,9 +354,9 @@ func TestLinuxBackendOverride(t *testing.T) {
 		{"WEBKITGTK-6.0", backendAuto}, // values are case-sensitive
 	}
 	for _, c := range cases {
-		t.Setenv("APPKIT_BACKEND", c.env)
+		t.Setenv("TUOHI_BACKEND", c.env)
 		if got := linuxBackendOverride(); got != c.want {
-			t.Errorf("APPKIT_BACKEND=%q: got %d, want %d", c.env, got, c.want)
+			t.Errorf("TUOHI_BACKEND=%q: got %d, want %d", c.env, got, c.want)
 		}
 	}
 }

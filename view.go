@@ -633,7 +633,7 @@ func (a *App) showFirst(view *View) error {
 	cfg := s.cfg
 	// Resolve the effective per-window settings: the view's own View.Debug
 	// ORs over the app-wide App.Debug (which already includes the
-	// APPKIT_DEBUG=1 environment override), so the engine reads one value.
+	// TUOHI_DEBUG=1 environment override), so the engine reads one value.
 	view.Debug = view.Debug || cfg.Debug
 	// The first window creation triggers the one-time application
 	// initialization (the icon); later views are no-ops.
@@ -724,7 +724,7 @@ func (a *App) showFirst(view *View) error {
 type View struct {
 	// Debug turns the platform web inspector / developer tools on for this
 	// window. App.Show ORs it with the app-wide App.Debug - a true on either
-	// side (or the APPKIT_DEBUG=1 environment variable) opens the tools;
+	// side (or the TUOHI_DEBUG=1 environment variable) opens the tools;
 	// nothing can turn them off while that environment variable is set.
 	//
 	// Backend mapping - WebView2 AreDevToolsEnabled (Windows), WebKitGTK

@@ -139,8 +139,8 @@ func boxDownscale(src *image.NRGBA, size int) *image.NRGBA {
 	return dst
 }
 
-// envDebug reports whether APPKIT_DEBUG=1 override-enables the dev tools.
-func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
+// envDebug reports whether TUOHI_DEBUG=1 override-enables the dev tools.
+func envDebug() bool { return os.Getenv("TUOHI_DEBUG") == "1" }
 
 // App configures an appkit application and carries its runtime scope.
 //
@@ -167,7 +167,7 @@ type App struct {
 	// Debug turns the platform web inspector / developer tools on for every
 	// window of this app (the app-wide default for View.Debug): set it once
 	// for "every window is debuggable". A view's own View.Debug ORs over it,
-	// and the APPKIT_DEBUG=1 environment variable forces the tools on for
+	// and the TUOHI_DEBUG=1 environment variable forces the tools on for
 	// every view no matter what.
 	//
 	// Like every App field it is committed when the app scope opens (later
@@ -357,7 +357,7 @@ type appConfig struct {
 }
 
 // snapshotConfig copies an App's exported settings into a plain appConfig.
-// Debug commits App.Debug OR the APPKIT_DEBUG=1 environment override (the
+// Debug commits App.Debug OR the TUOHI_DEBUG=1 environment override (the
 // environment variable forces the dev tools on for every view).
 func snapshotConfig(a *App) appConfig {
 	return appConfig{
@@ -572,7 +572,7 @@ func (s *appScope) requestExit() {
 // after the one-time platform initialization has run:
 //
 //   - "webkitgtk-6.0" or "webkit2gtk-4.1" on Linux - the stack that was
-//     actually loaded, honoring the APPKIT_BACKEND environment variable
+//     actually loaded, honoring the TUOHI_BACKEND environment variable
 //     (see README "Linux shared libraries");
 //   - "WKWebView" on macOS and "WebView2" on Windows, whose single built-in
 //     backend ignores the variable.

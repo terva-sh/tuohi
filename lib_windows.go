@@ -1331,7 +1331,7 @@ func (w *webview) embed(v *View) error {
 	// stay on - appkit's JS bridge posts through it. appkit's tuned
 	// divergences from WebView2's native defaults: the status bar is hidden
 	// (custom chrome) and dev tools open only when the view's resolved Debug
-	// flag is set (View.Debug OR App.Debug / APPKIT_DEBUG). Settings apply
+	// flag is set (View.Debug OR App.Debug / TUOHI_DEBUG). Settings apply
 	// from the next top-level navigation. Each property is written through
 	// the interface that owns its offset, obtained from the Base settings
 	// object by QueryInterface; a Runtime older than that interface skips the
@@ -3003,7 +3003,7 @@ func (w *webview) beginResizeDrag(p dragRequestParams) {
 
 // platformBackend reports the web-engine backend in use. Windows has a single
 // built-in backend (WebView2), so there is nothing to detect or override -
-// APPKIT_BACKEND is Linux-only (see lib_unix.go).
+// TUOHI_BACKEND is Linux-only (see lib_unix.go).
 func platformBackend() string { return "WebView2" }
 
 // --- app-level run loop (App.Wait) -----------------------------------------
