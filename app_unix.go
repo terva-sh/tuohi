@@ -117,12 +117,24 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	if len(sizes) == 0 {
 		return ""
 	}
-	// An entry of this name that tuohi did not write belongs to someone else,
+	// An entry of this id that tuohi did not write belongs to someone else,
 	// such as a package that installs the application properly. Leave it and
 	// its icon alone: advertising the id is enough for the compositor to use
-	// it.
+	// it. A system entry counts too, because a user entry of the same id
+	// would shadow it; one tuohi wrote before the package arrived is removed,
+	// with its icons, so the package's entry shows through.
 	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
-	if old, err := os.ReadFile(desktopPath); err == nil && !bytes.Contains(old, []byte(generatedKey)) {
+	old, err := os.ReadFile(desktopPath)
+	ours := err == nil && isGenerated(old)
+	if err == nil && !ours {
+		return id
+	}
+	if systemEntry(id) {
+		if ours {
+			_ = os.Remove(desktopPath)
+			removeOtherIconSizes(dataHome, id, nil)
+			refreshDesktopDatabase()
+		}
 		return id
 	}
 	// Drop copies an older install left in hicolor size directories outside
@@ -243,6 +255,34 @@ func xdgDataHome() (string, error) {
 	return filepath.Join(home, ".local", "share"), nil
 }
 
+// xdgDataDirs returns the system data directories (XDG_DATA_DIRS, or
+// /usr/local/share and /usr/share), where packages install desktop entries.
+// Relative entries are ignored, as the Base Directory Specification says.
+func xdgDataDirs() []string {
+	v := os.Getenv("XDG_DATA_DIRS")
+	if v == "" {
+		v = "/usr/local/share:/usr/share"
+	}
+	var dirs []string
+	for _, d := range filepath.SplitList(v) {
+		if filepath.IsAbs(d) {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
+}
+
+// systemEntry reports whether a system data directory holds a desktop entry
+// with this id.
+func systemEntry(id string) bool {
+	for _, d := range xdgDataDirs() {
+		if _, err := os.Stat(filepath.Join(d, "applications", id+".desktop")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // encodeAppIconPNG re-encodes the normalized icon as PNG bytes.
 func encodeAppIconPNG(img *image.NRGBA) []byte {
 	var buf bytes.Buffer
@@ -294,7 +334,7 @@ func targetIconSizes(src int) []int {
 
 // removeOtherIconSizes deletes every previously installed copy of the icon
 // that lives in a hicolor size directory outside the sizes being installed
-// now. Icon loaders resolve a name to the closest available size, so an
+// now; with no sizes it deletes every copy. Icon loaders resolve a name to the closest available size, so an
 // outdated copy (written by an earlier appkit version, e.g. the old 256px
 // glyph) would keep being picked over the freshly installed icon.
 func removeOtherIconSizes(dataHome, id string, sizes []int) {
@@ -318,9 +358,33 @@ func removeOtherIconSizes(dataHome, id string, sizes []int) {
 	}
 }
 
-// generatedKey marks a desktop entry installWaylandIdentity wrote, so a later
-// start rewrites it and never touches an entry without it.
-const generatedKey = "X-Tuohi-Generated=true"
+// generatedName is the key that marks a desktop entry installWaylandIdentity
+// wrote, so a later start rewrites it and never touches an entry without it;
+// generatedKey is the line it writes.
+const (
+	generatedName = "X-Tuohi-Generated"
+	generatedKey  = generatedName + "=true"
+)
+
+// isGenerated reports whether a desktop entry sets generatedName to true in
+// its [Desktop Entry] group. The same text in a comment, in another key's
+// value or in another group does not count.
+func isGenerated(entry []byte) bool {
+	group := ""
+	for _, line := range strings.Split(string(entry), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			group = line[1 : len(line)-1]
+		case group == "Desktop Entry" && !strings.HasPrefix(line, "#"):
+			key, value, ok := strings.Cut(line, "=")
+			if ok && strings.TrimSpace(key) == generatedName && strings.TrimSpace(value) == "true" {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func openURL(rawurl string) error {
 	return runXdgOpen(rawurl)

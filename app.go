@@ -180,9 +180,11 @@ type App struct {
 	//
 	// It is false by default, and then opening a window writes nothing under
 	// the user's home directory. It has no effect anywhere but GTK3 on
-	// Wayland. An entry of that name that tuohi did not write, such as one an
-	// installed package ships, is left alone and used as it is. The files
-	// stay after the application exits.
+	// Wayland. An entry of that name that tuohi did not write, in the user's
+	// data directory or a system one (XDG_DATA_DIRS), such as one an
+	// installed package ships, is left alone and used as it is; once a system
+	// entry appears, the one tuohi wrote is removed so it does not shadow it.
+	// The files stay after the application exits.
 	DesktopEntry bool
 
 	// Bind holds the application's declarative bindings: every entry is bound

@@ -115,6 +115,7 @@ func TestDesktopID(t *testing.T) {
 func TestInstallWaylandIdentity(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
 
 	// Simulate an older install that left the icon in a different hicolor
 	// size directory (e.g. the previous 256px demo glyph). Icon loaders pick
@@ -193,6 +194,7 @@ func TestEmbeddedIconIsValidPNG(t *testing.T) {
 func TestInstallWaylandIdentitySizes(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
 
 	img := image.NewNRGBA(image.Rect(0, 0, 512, 512))
 	for i := 0; i < len(img.Pix); i += 4 {
@@ -233,6 +235,7 @@ func TestInstallWaylandIdentitySizes(t *testing.T) {
 func TestWaylandIdentityOptIn(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
 	t.Setenv("WAYLAND_DISPLAY", "wayland-test")
 	t.Setenv("PATH", t.TempDir()) // no kbuildsycoca to start
 	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
@@ -271,12 +274,14 @@ func TestWaylandIdentityOptIn(t *testing.T) {
 func TestWaylandIdentityLeavesForeignEntry(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
 	t.Setenv("PATH", t.TempDir())
 	path := filepath.Join(data, "applications", "packaged.desktop")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	foreign := []byte("[Desktop Entry]\nType=Application\nName=Packaged\nExec=/usr/bin/packaged\nIcon=packaged\n")
+	// The marker text in a comment does not make the entry tuohi's.
+	foreign := []byte("[Desktop Entry]\n# " + generatedKey + "\nType=Application\nName=Packaged\nExec=/usr/bin/packaged\nIcon=packaged\n")
 	if err := os.WriteFile(path, foreign, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -289,6 +294,67 @@ func TestWaylandIdentityLeavesForeignEntry(t *testing.T) {
 	}
 	if n := countFiles(t, filepath.Join(data, "icons")); n != 0 {
 		t.Fatalf("%d icon files written beside a foreign entry, want 0", n)
+	}
+}
+
+// TestWaylandIdentitySystemEntry checks that a system entry of the same id is
+// not shadowed: nothing is written beside it, and an entry and icons tuohi
+// wrote before it appeared are removed.
+func TestWaylandIdentitySystemEntry(t *testing.T) {
+	data, system := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", "relative/ignored:"+system)
+	t.Setenv("PATH", t.TempDir())
+	img := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+
+	// Before the package: tuohi writes its entry and icons.
+	if id := installWaylandIdentity("Packaged", img); id != "packaged" {
+		t.Fatalf("id %q, want packaged", id)
+	}
+	if n := countFiles(t, data); n < 2 {
+		t.Fatalf("%d files written before the package, want an entry and icons", n)
+	}
+
+	// The package installs a system entry: tuohi's copies go, and nothing is
+	// written again.
+	sysEntry := filepath.Join(system, "applications", "packaged.desktop")
+	if err := os.MkdirAll(filepath.Dir(sysEntry), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sysEntry, []byte("[Desktop Entry]\nType=Application\nName=Packaged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if id := installWaylandIdentity("Packaged", img); id != "packaged" {
+			t.Fatalf("id %q, want packaged", id)
+		}
+		if n := countFiles(t, data); n != 0 {
+			t.Fatalf("%d files left under XDG_DATA_HOME beside a system entry, want 0", n)
+		}
+	}
+}
+
+// TestIsGenerated checks that only the key itself, in the [Desktop Entry]
+// group, marks an entry as tuohi's.
+func TestIsGenerated(t *testing.T) {
+	cases := []struct {
+		entry string
+		want  bool
+	}{
+		{"[Desktop Entry]\nName=App\n" + generatedKey + "\n", true},
+		{"[Desktop Entry]\r\nName=App\r\n X-Tuohi-Generated = true \r\n", true},
+		{"[Desktop Entry]\nName=App\n", false},
+		{"[Desktop Entry]\n# " + generatedKey + "\nName=App\n", false},
+		{"[Desktop Entry]\nName=App " + generatedKey + "\n", false},
+		{"[Desktop Entry]\nComment=" + generatedKey + "\n", false},
+		{"[Desktop Entry]\nX-Tuohi-Generated=false\n", false},
+		{"[Desktop Action new]\n" + generatedKey + "\n", false},
+		{generatedKey + "\n[Desktop Entry]\nName=App\n", false},
+	}
+	for _, c := range cases {
+		if got := isGenerated([]byte(c.entry)); got != c.want {
+			t.Errorf("isGenerated(%q) = %v, want %v", c.entry, got, c.want)
+		}
 	}
 }
 

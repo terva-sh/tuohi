@@ -549,8 +549,12 @@ headers if it wants cross-origin isolation.
   write icons and a hidden `.desktop` file into `~/.local/share` and start
   `kbuildsycoca`. That used to happen unasked. It is now the opt-in
   `App.DesktopEntry`, false by default, TKT-01M3HWWRYD7GNZEZA2JCGWGDJS. An
-  entry of that name that tuohi did not write is left alone, `kbuildsycoca`
-  is reaped when it exits, and the files stay after the app does.
+  entry of that name that tuohi did not write is left alone, whether in
+  `~/.local/share` or in a system directory from `XDG_DATA_DIRS`, where a
+  user entry would shadow a package's. tuohi recognises its own entries by
+  an `X-Tuohi-Generated=true` key in the `[Desktop Entry]` group, not by
+  the text appearing anywhere. `kbuildsycoca` is reaped when it exits, and
+  the files stay after the app does.
 
 ## The FFI layer: upstream purego
 
