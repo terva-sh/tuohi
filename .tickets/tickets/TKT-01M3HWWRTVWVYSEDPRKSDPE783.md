@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T05:40:48Z
+updated_at: 2026-09-29T05:54:51Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -211,3 +211,25 @@ GitHub run 36526386848 on def76da passed every job.
    - never granting the clipboard request (`clickread=denied`).
 
 Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T05:54:51Z
+
+### Review disposition for PR #31, round 2 (terva-review run on bc29a89)
+
+The round-1 finding was reported resolved. GitHub run 36527308647 on bc29a89 passed every job.
+
+1. **High: Linux grants camera access to an untrusted delegated frame.** Contract narrowed, not changed in code.
+   - **Why the code cannot fix it.** WebKitGTK's `WebKitUserMediaPermissionRequest` carries no frame or origin, so no handler can tell a frame from its page. A cross-origin frame reaches the request only when the trusted page delegates the feature to it with `allow=`, which is the application's own decision.
+   - **Why a script guard was rejected.** A document-start wrapper around `getUserMedia` in every frame is not a boundary, because a frame can recover the native function from a document the wrapper never ran in.
+   - **What the contract now says.** `View.Permissions` states that on Linux a frame the trusted page delegates a listed permission to receives it, while WebView2 and WKWebView deny it by the frame's own origin. It adds: "Delegate only to frames you would trust with the permission." `docs/architecture.md` records the rejected guard.
+   - The test's `frame=ok` on Linux is that documented behaviour.
+2. **High: an empty policy still permits clipboard reads on macOS.** Contract narrowed.
+   - **What macOS does.** WKWebView never reads the clipboard silently. It shows the system's Paste button, and a read happens only when the user confirms it, which is the user's own paste, like Command-V.
+   - **Why the code does not deny it.** That would need the private `WKUIDelegatePrivate` DOM-paste delegate.
+   - **What the contract now says.** `PermissionClipboard` now covers reads made without the user confirming each one, and states that on macOS it changes nothing and an empty list does not stop a confirmed paste.
+3. **Medium: unknown Linux permission requests fall through to WebKit.** Fixed.
+   - The handler now decides every request. Pointer lock is allowed, because no other engine treats it as a permission (it needs a gesture, and Escape releases it); `View.Permissions` says so. Everything else is denied with a log line naming its GType, including kinds a newer WebKitGTK adds.
+   - The four types resolved only to be denied are gone.
+   - The Linux click step now also requests pointer lock and expects `lock=ok`. With pointer lock falling to the default branch, it reports `lock=error`, which shows the default denies.
+
+Checks after the changes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
