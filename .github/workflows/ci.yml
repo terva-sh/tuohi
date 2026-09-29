@@ -134,9 +134,9 @@ jobs:
         run: |
           sudo apt-get update
           if [ "${{ matrix.stack }}" = "gtk4" ]; then
-            sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-4-1 libwebkitgtk-6.0-4 libjavascriptcoregtk-6.0-1
+            sudo apt-get install -y --no-install-recommends xvfb xauth libxtst6 libgtk-4-1 libwebkitgtk-6.0-4 libjavascriptcoregtk-6.0-1
           else
-            sudo apt-get install -y --no-install-recommends xvfb xauth libgtk-3-0 libgtk-4-1 libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0
+            sudo apt-get install -y --no-install-recommends xvfb xauth libxtst6 libgtk-3-0 libgtk-4-1 libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0
           fi
 
       # Build and vet first (fast checks before heavier tests)

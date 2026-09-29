@@ -202,8 +202,9 @@ trusting a green run: the harness's own availability probe has a bug that
 skips these scenarios wherever bubblewrap is installed.
 
 On Debian 13 the GUI tests need `libwebkit2gtk-4.1-0`, `libwebkitgtk-6.0-4`,
-`xvfb`, and `dbus`. Only the runtime libraries are needed, never `-dev`
-packages, because nothing is compiled against them.
+`xvfb`, `dbus`, and `libxtst6`, which the permissions scenario clicks with.
+Only the runtime libraries are needed, never `-dev` packages, because nothing
+is compiled against them.
 
 ### Pull requests and the GitHub mirror
 

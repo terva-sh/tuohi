@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"runtime"
@@ -183,18 +184,31 @@ var (
 	webkitWebViewGetSettings                      func(webview uintptr) uintptr
 	webkitSettingsSetEnableMediaStream            func(settings uintptr, enabled bool)
 	webkitSettingsSetJavascriptCanAccessClipboard func(settings uintptr, enabled bool)
-	webkitSettingsSetEnableWriteConsoleToStdout   func(settings uintptr, enabled bool)
-	webkitSettingsSetEnableDeveloperExtras        func(settings uintptr, enabled bool)
-	webkitSettingsSetEnableJavascript             func(settings uintptr, enabled bool)
-	webkitWebViewLoadURI                          func(webview uintptr, uri string)
-	webkitWebViewLoadHTML                         func(webview uintptr, html string, baseURI string)
-	webkitWebViewGetURI                           func(webview uintptr) uintptr
-	webkitUserContentManagerRegisterHandler       func(manager uintptr, name string)
-	webkitUserContentManagerAddScript             func(manager, script uintptr)
-	webkitUserContentManagerRemoveAllScripts      func(manager uintptr)
-	webkitUserScriptNew                           func(source string, frames, time int, allow, block uintptr) uintptr
-	webkitUserScriptUnref                         func(script uintptr)
-	webkitJavascriptResultGetJSValue              func(result uintptr) uintptr
+
+	// Permission requests (see webview.permissionRequest). A request type
+	// the loaded WebKitGTK lacks stays nil.
+	gTypeCheckInstanceIsA                       func(instance, gtype uintptr) bool
+	gTypeNameFromInstance                       func(instance uintptr) string
+	webkitPermissionRequestAllow                func(request uintptr)
+	webkitPermissionRequestDeny                 func(request uintptr)
+	webkitUserMediaPermissionIsForAudioDevice   func(request uintptr) bool
+	webkitUserMediaPermissionIsForVideoDevice   func(request uintptr) bool
+	webkitUserMediaPermissionRequestType        func() uintptr
+	webkitDeviceInfoPermissionRequestType       func() uintptr
+	webkitClipboardPermissionRequestType        func() uintptr
+	webkitPointerLockPermissionRequestType      func() uintptr
+	webkitSettingsSetEnableWriteConsoleToStdout func(settings uintptr, enabled bool)
+	webkitSettingsSetEnableDeveloperExtras      func(settings uintptr, enabled bool)
+	webkitSettingsSetEnableJavascript           func(settings uintptr, enabled bool)
+	webkitWebViewLoadURI                        func(webview uintptr, uri string)
+	webkitWebViewLoadHTML                       func(webview uintptr, html string, baseURI string)
+	webkitWebViewGetURI                         func(webview uintptr) uintptr
+	webkitUserContentManagerRegisterHandler     func(manager uintptr, name string)
+	webkitUserContentManagerAddScript           func(manager, script uintptr)
+	webkitUserContentManagerRemoveAllScripts    func(manager uintptr)
+	webkitUserScriptNew                         func(source string, frames, time int, allow, block uintptr) uintptr
+	webkitUserScriptUnref                       func(script uintptr)
+	webkitJavascriptResultGetJSValue            func(result uintptr) uintptr
 
 	// The navigation policy (see decidePolicy).
 	webkitNavigationPolicyDecisionGetNavigationAction func(decision uintptr) uintptr
@@ -229,6 +243,7 @@ var (
 	loadChangedFn    uintptr
 	loadFailedFn     uintptr
 	decidePolicyFn   uintptr
+	permissionFn     uintptr
 
 	// Library handles kept after ensureInit so other files (e.g. the file
 	// dialogs in dialog_unix.go) can lazily resolve extra symbols without
@@ -533,6 +548,22 @@ func ensureInit() error {
 		pure.RegisterLibFunc(&webkitWebViewGetSettings, webkit, "webkit_web_view_get_settings")
 		pure.RegisterLibFunc(&webkitSettingsSetEnableMediaStream, webkit, "webkit_settings_set_enable_media_stream")
 		pure.RegisterLibFunc(&webkitSettingsSetJavascriptCanAccessClipboard, webkit, "webkit_settings_set_javascript_can_access_clipboard")
+		pure.RegisterLibFunc(&gTypeCheckInstanceIsA, gobject, "g_type_check_instance_is_a")
+		pure.RegisterLibFunc(&gTypeNameFromInstance, gobject, "g_type_name_from_instance")
+		pure.RegisterLibFunc(&webkitPermissionRequestAllow, webkit, "webkit_permission_request_allow")
+		pure.RegisterLibFunc(&webkitPermissionRequestDeny, webkit, "webkit_permission_request_deny")
+		pure.RegisterLibFunc(&webkitUserMediaPermissionIsForAudioDevice, webkit, "webkit_user_media_permission_is_for_audio_device")
+		pure.RegisterLibFunc(&webkitUserMediaPermissionIsForVideoDevice, webkit, "webkit_user_media_permission_is_for_video_device")
+		for fn, name := range map[*func() uintptr]string{
+			&webkitUserMediaPermissionRequestType:   "webkit_user_media_permission_request_get_type",
+			&webkitDeviceInfoPermissionRequestType:  "webkit_device_info_permission_request_get_type",
+			&webkitClipboardPermissionRequestType:   "webkit_clipboard_permission_request_get_type",
+			&webkitPointerLockPermissionRequestType: "webkit_pointer_lock_permission_request_get_type",
+		} {
+			if _, e := pure.Dlsym(webkit, name); e == nil {
+				pure.RegisterLibFunc(fn, webkit, name)
+			}
+		}
 		pure.RegisterLibFunc(&webkitSettingsSetEnableWriteConsoleToStdout, webkit, "webkit_settings_set_enable_write_console_messages_to_stdout")
 		pure.RegisterLibFunc(&webkitSettingsSetEnableDeveloperExtras, webkit, "webkit_settings_set_enable_developer_extras")
 		pure.RegisterLibFunc(&webkitSettingsSetEnableJavascript, webkit, "webkit_settings_set_enable_javascript")
@@ -624,6 +655,13 @@ func ensureInit() error {
 		decidePolicyFn = pure.NewCallback(func(_, decision, decisionType, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w == nil || !w.decidePolicy(decision, int(decisionType)) {
+				return 0 // WebKit's default decision
+			}
+			return 1
+		})
+		permissionFn = pure.NewCallback(func(_, request, userData uintptr) uintptr {
+			w := lookupEngine(userData)
+			if w == nil || !w.permissionRequest(request) {
 				return 0 // WebKit's default decision
 			}
 			return 1
@@ -935,6 +973,7 @@ func (w *webview) windowInit(window uintptr) error {
 	gSignalConnectData(w.webview, "load-changed", loadChangedFn, w.id, 0, 0)
 	gSignalConnectData(w.webview, "decide-policy", decidePolicyFn, w.id, 0, 0)
 	gSignalConnectData(w.webview, "load-failed", loadFailedFn, w.id, 0, 0)
+	gSignalConnectData(w.webview, "permission-request", permissionFn, w.id, 0, 0)
 
 	gSignalConnectData(w.manager, "script-message-received::__webview__",
 		messageHandlerFn, w.id, 0, 0)
@@ -1715,6 +1754,64 @@ func (w *webview) Hide() {
 	})
 }
 
+// allows reports whether the application listed p for the view, whatever
+// page asks (see permissionRequest's device labels).
+func (c *viewCore) allows(p Permission) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.permissions[p]
+}
+
+// permissionRequest decides every permission-request, on the UI thread, and
+// reports that it did. Camera and microphone captures, device labels, and
+// clipboard reads are decided by the view's policy (viewCore.permits) for the
+// top-level page: WebKitGTK names no frame, and a frame on another origin
+// cannot ask at all unless the trusted page delegated the feature to it with
+// allow=, in which case it asks as that page (see View.Permissions). A
+// capture that is neither, such as a screen, needs a permission no view can
+// list, and is denied. Pointer lock is allowed, because no other engine
+// treats it as a permission: it needs a user gesture, and Escape releases it.
+// Every other request, geolocation, notifications, DRM key systems, storage
+// access, and any kind a newer WebKitGTK adds, is denied.
+func (w *webview) permissionRequest(request uintptr) bool {
+	is := func(gtype func() uintptr) bool {
+		return gtype != nil && gTypeCheckInstanceIsA(request, gtype())
+	}
+	page := cstr(webkitWebViewGetURI(w.webview))
+	var granted bool
+	switch {
+	case is(webkitUserMediaPermissionRequestType):
+		var perms []Permission
+		if webkitUserMediaPermissionIsForVideoDevice(request) {
+			perms = append(perms, PermissionCamera)
+		}
+		if webkitUserMediaPermissionIsForAudioDevice(request) {
+			perms = append(perms, PermissionMicrophone)
+		}
+		granted = w.permits(page, perms...)
+	case is(webkitDeviceInfoPermissionRequestType):
+		// Device labels, for enumerateDevices: what either capture
+		// permission would show anyway.
+		p := PermissionMicrophone
+		if w.allows(PermissionCamera) {
+			p = PermissionCamera
+		}
+		granted = w.permits(page, p)
+	case is(webkitClipboardPermissionRequestType):
+		granted = w.permits(page, PermissionClipboard)
+	case is(webkitPointerLockPermissionRequestType):
+		granted = true
+	default:
+		log.Printf("tuohi: permission request %s denied", gTypeNameFromInstance(request))
+	}
+	if granted {
+		webkitPermissionRequestAllow(request)
+	} else {
+		webkitPermissionRequestDeny(request)
+	}
+	return true
+}
+
 // Maximize asks the window manager to maximize the window (a desktop may
 // refuse; gtk_window_maximize itself cannot fail).
 func (w *webview) Maximize() {
@@ -1876,16 +1973,21 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	// Window settings: apply appkit's tuned WebKitSettings right after the
 	// web view is created (WebKitSettings changes only take effect on the
 	// next navigation). Page JavaScript is always on (WebKit's native
-	// default). Media-stream and clipboard access are native-OFF in
-	// WebKitGTK; appkit enables them so the page can use
-	// navigator.mediaDevices (getUserMedia / getDisplayMedia) and the
-	// Copy/Paste bindings behave. The debug-driven pair - the dev-tools
+	// default). Media streams are native-OFF in WebKitGTK and turned on, so
+	// navigator.mediaDevices exists as it does on the other engines; each
+	// capture is then decided by permissionRequest. Script access to the
+	// clipboard without a user gesture, copy and paste alike, stays off in
+	// every view: the setting covers the whole view, frames on any origin
+	// included, and with it on any of them can read the clipboard. A page
+	// the view grants PermissionClipboard reads it per request instead
+	// (navigator.clipboard, on a user gesture), and copying on a click works
+	// either way. The debug-driven pair - the dev-tools
 	// switch and console forwarding - tracks the view's resolved Debug flag
 	// (View.Debug OR App.Debug / APPKIT_DEBUG). Every other WebKitSettings
 	// property keeps the loaded library's own compiled-in defaults.
 	st := webkitWebViewGetSettings(w.webview)
 	webkitSettingsSetEnableMediaStream(st, true)
-	webkitSettingsSetJavascriptCanAccessClipboard(st, true)
+	webkitSettingsSetJavascriptCanAccessClipboard(st, false)
 	webkitSettingsSetEnableJavascript(st, true)
 	webkitSettingsSetEnableWriteConsoleToStdout(st, v.Debug)
 	webkitSettingsSetEnableDeveloperExtras(st, v.Debug)

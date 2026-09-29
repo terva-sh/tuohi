@@ -62,6 +62,7 @@ func TestMain(m *testing.M) {
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
+		resPermissions.Store(permissionsScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
 			repeatStatus = repeatDataURL(n)
 		}
@@ -461,3 +462,13 @@ func windowTitle(e engine) string {
 func pageURL(e engine) string {
 	return e.(*webview).committedURI
 }
+
+// enableFakeCapture does nothing on Windows: tuohi creates the WebView2
+// environment through the runtime's internal export, which does not read
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so there is no way to give it fake
+// devices (see TestPermissions).
+func enableFakeCapture(engine) {}
+
+// realClick makes no click on Windows, where a clipboard read needs none (see
+// TestPermissions).
+func realClick(*View) bool { return false }
