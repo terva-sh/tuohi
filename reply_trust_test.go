@@ -83,21 +83,33 @@ window.addEventListener('load', function() {
 		// The blank page's own bridge and listener. The events API may or
 		// may not be installed in about:blank, depending on the engine; the
 		// page listens through it if it is and fakes it if not.
+		// The page leaves for the report only once the reply and the event
+		// have both been tried here: a guarded delivery reads __key, and an
+		// unguarded one is received. Otherwise a late reply could land after
+		// the page left, and the step would pass without testing anything.
 		w.Eval(`window.hits = [];
+var keyReads = 0;
 window.__webview__ = { onReply: function(id, status, result) { hits.push(id === 'control' ? 'control' : 'reply ' + result); } };
-Object.defineProperty(window.__webview__, '__key', { get: function() { return 'guess'; } });
+Object.defineProperty(window.__webview__, '__key', { get: function() { keyReads++; return 'guess'; } });
 if (window.events && window.events.on) {
   window.events.on('ping', function(v) { hits.push('event ' + v); });
 } else {
   window.events = { _dispatch: function(n, a) { hits.push('event ' + a[0]); } };
-}`)
+}
+var waited = 0, timer = setInterval(function() {
+  var tried = hits.filter(function(h) { return h !== 'control'; }).length + keyReads;
+  waited += 50;
+  if ((hits.indexOf('control') >= 0 && tried >= 2) || waited > 10000) {
+    clearInterval(timer);
+    if (tried < 2) { hits.push('untried'); }
+    location.href = '` + trusted + `report#' + encodeURIComponent(hits.join(','));
+  }
+}, 50);`)
 		close(release)
 		_ = w.w.Emit("ping", "secret-event")
 		// Without the guard, as resolve evaluated it before: the harness sees
 		// a delivery when one happens.
 		w.Eval(`window.__webview__.onReply("control", 0, "1")`)
-		time.Sleep(500 * time.Millisecond)
-		w.Eval(`location.href = '` + trusted + `report#' + encodeURIComponent(hits.join(','))`)
 
 		var got []string
 		timeout := time.After(15 * time.Second)
