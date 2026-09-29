@@ -31,7 +31,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T05:16:21Z
+updated_at: 2026-09-29T05:28:41Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -164,3 +164,32 @@ Filed as drafts, out of this ticket's criteria:
 - TKT-01M3NSA8JEDJJEBA47SVA4EZ7T (Decide whether macOS keeps element fullscreen on by default).
 
 The Windows and macOS expectations are unverified until GitHub CI runs them.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T05:28:41Z
+
+### What GitHub CI showed on Windows and macOS (runs 36525394924, 36525792930, 36526107654)
+
+This supersedes the "unverified" line in the previous note.
+
+**No capture devices on the runners.**
+- WebView2 fails every capture with `NotFoundError` before raising `PermissionRequested`.
+- WKWebView fails video with `OverconstrainedError`.
+
+So the camera and microphone grant cannot be seen there.
+
+**No fake devices for WebView2.** Chromium's `--use-fake-device-for-media-stream` cannot reach WebView2: tuohi creates the environment through the runtime's internal `CreateWebViewEnvironmentWithOptionsInternal`, with null options, and `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` is read by the WebView2Loader it skips. Passing browser arguments would need an `ICoreWebView2EnvironmentOptions` COM object, which is not worth building for a test.
+
+**The scenario now reaches every handler.** It also asks for a clipboard read (`navigator.clipboard.readText`) and a notification (`Notification.requestPermission`). A test hook, `permissionDecided`, records every decision `viewCore.permits` makes. Results:
+
+- **Windows**, which passes:
+  - none view: read denied, notify denied, and `asked=clipboard:no`;
+  - clipboard view: `read=ok` and `asked=clipboard:yes`.
+
+  That is the grant path verified on a real WebView2.
+- **macOS**, which passes:
+  - `audio=denied` with `asked=microphone:no`, so the delegate is consulted and denies;
+  - notifications are denied;
+  - grants are not exercised, because of TCC.
+- **Linux** is unchanged: both stacks pass, including the camera grant with mock devices.
+
+**Still unverified on a real engine:** the Windows camera and microphone grant, and the macOS grant. They share `permits`, which `TestPermits` covers, and the per-engine kind mapping.
