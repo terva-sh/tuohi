@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3JYQWZB01CPZ938Y8C24PXX
 title: Deliver binding replies and events only to trusted documents
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/reply-trust
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
-  commit: d14d87fe3b7bc14d11c7167d71c0a83d7cd33054
-  session: null
-  claimed_at: 2026-09-29T04:53:53Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T02:50:41Z
-updated_at: 2026-09-29T05:00:42Z
+updated_at: 2026-09-29T05:05:07Z
 created_by:
   id: agent:claude-code/t3code-83e85fc3
   name: ""
@@ -62,8 +55,8 @@ The call side is closed by TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted orig
 
 ## Acceptance criteria
 
-- [ ] A page on an untrusted origin that defines its own window.__webview__ receives no binding result and no event
-- [ ] The trusted page's calls and events still work across its own reloads
+- [x] A page on an untrusted origin that defines its own window.__webview__ receives no binding result and no event
+- [x] The trusted page's calls and events still work across its own reloads
 
 ## Implementation plan
 
@@ -135,3 +128,21 @@ GitHub run 36523666803 on c9ce209 passed every job, including `TestRepliesOnlyTo
    - With the guard in place and the reply 1.5 s late, the test passes.
 
 Checks after the fix: `just ci` and golangci-lint pass, and the scenario passes on both WebKitGTK stacks.
+
+## Summary
+
+Landed in PR #29 (e66fc6e).
+
+Each view now has a reply key besides its bridge token. The bridge sets it, in trusted top-level documents only, as a `__key` on `window.__webview__` that cannot be changed or removed.
+
+Every script Go evaluates to deliver something is wrapped by `bridgeGuard` in a strict check of that key. That covers a binding's result (`resolve`), an event (`Emit`), and a live bind or unbind. So:
+- An untrusted document receives nothing, even when it defines its own `window.__webview__`. A getter it defines for `__key` learns nothing, and strict mode keeps it from reading the script's source through `caller`.
+- `Emit` no longer reaches every document. Before, the ungated events API meant it did.
+
+The key is kept apart from the token, so a trusted page that leaks it lets a later page receive, but never call Go. The alternatives rejected (a per-document id, reusing the token, refusing Eval on an untrusted URI, and encryption) are in the plan and in `docs/architecture.md`.
+
+Tests:
+- `TestBridgeGuardScript` (Node). Its controls fail without the key check, without strict mode, and with a bridge that lacks the key.
+- `TestRepliesOnlyToTrusted`, a GUI scenario on every engine. about:blank receives neither a held call's result nor an event, including a reply arriving 1.5 s late, which the control catches. Back on a trusted page after a reload, calls and events work.
+
+Not guarded: `View.Eval`, which is the consumer's own script, and the Linux `onAppRegionState` flag, which carries no data.
