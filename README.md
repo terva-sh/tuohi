@@ -251,6 +251,22 @@ to bundle, but that runtime must be present:
   [lib_windows.go](lib_windows.go).
 - **macOS** - nothing extra. The Cocoa/WebKit frameworks ship with the OS.
 
+### Support tiers
+
+- **Tier 1: Linux, macOS and Windows.** Every change to `main` is built and
+  tested on the real engine: WebKitGTK 6.0 and 4.1 on amd64 and arm64 Linux,
+  WKWebView on macOS, and WebView2 on Windows. The Linux GUI scenarios also
+  gate every internal pull request before it merges; macOS and Windows are
+  tested after the merge.
+- **Tier 2: FreeBSD and NetBSD.** They must cross-build on every change, and
+  nothing runs them.
+- **Go 1.26 or newer.**
+- **glibc on Linux.** Even with `CGO_ENABLED=0`, a binary that reaches purego
+  asks for glibc's loader, `/lib64/ld-linux-x86-64.so.2` on amd64, so it runs
+  on glibc desktops. On musl, such as Alpine, it needs `gcompat`.
+
+The other architectures in the table below compile, and nothing tests them.
+
 ### Supported platforms (build targets)
 
 tuohi binds the OS web engine through [purego](https://github.com/ebitengine/purego)

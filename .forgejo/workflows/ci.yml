@@ -3,10 +3,11 @@
 # The steps match `just ci`. The commands are inline because the container
 # does not install just, so a change to one belongs in the other.
 #
-# Everything runs with CGO_ENABLED=0, the way consumers build tuohi. The GUI
-# scenarios skip here because the container has no display or WebKitGTK; the
-# macOS and Windows engines are exercised by .github/workflows/ci.yml on the
-# GitHub mirror. Checkout comes from the Actions-Mirrors org and Go from the
+# Everything runs with CGO_ENABLED=0, the way consumers build tuohi. The check
+# job's Alpine container has no display or WebKitGTK, so its GUI scenarios
+# skip; the gui job runs them on Debian, on both WebKitGTK stacks, so they gate
+# a pull request before it merges. The macOS and Windows engines are exercised
+# by .github/workflows/ci.yml on the GitHub mirror, after the merge. Checkout comes from the Actions-Mirrors org and Go from the
 # internal registry's golang image, as in the other terva-sh repositories.
 name: ci
 
@@ -71,3 +72,39 @@ jobs:
 
       - name: Ticket store
         run: git ticket check --fix --dry-run --strict
+
+  gui:
+    name: GUI scenarios on both WebKitGTK stacks
+    runs-on: docker
+    container:
+      # Docker Hub's Debian image, through the registry's pull-through path:
+      # library/ holds only images pushed by hand. It has no node, which the
+      # checkout action needs.
+      image: container.local.sothr.com/docker/library/golang:1.27-trixie
+    steps:
+      - name: Install dependencies
+        # The runtime libraries only, as AGENTS.md lists them: nothing is
+        # compiled against them. libxtst6 is for the permissions scenario's
+        # real click.
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            nodejs git xvfb xauth dbus libxtst6 \
+            libwebkit2gtk-4.1-0 libwebkitgtk-6.0-4
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Checkout
+        uses: Actions-Mirrors/forgejo-actions-checkout@v6
+
+      # The steps of `just test-gui`. TUOHI_REQUIRE_GUI=1 fails a scenario
+      # that would skip, so the job cannot pass by testing nothing, and both
+      # stacks run even when the first fails.
+      - name: GUI scenarios
+        run: |
+          failed=""
+          for backend in webkitgtk-6.0 webkit2gtk-4.1; do
+            echo "== $backend"
+            TUOHI_REQUIRE_GUI=1 APPKIT_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 ./... || failed="$failed $backend"
+          done
+          if [ -n "$failed" ]; then echo "GUI scenarios failed on:$failed" >&2; exit 1; fi

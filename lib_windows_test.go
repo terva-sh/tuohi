@@ -36,12 +36,18 @@ func guiAvailable() bool {
 	return err == nil
 }
 
-// requireGUI skips a GUI assertion when its scenario did not run.
+// requireGUI skips a GUI assertion when its scenario did not run, or fails it
+// when TUOHI_REQUIRE_GUI=1. GitHub CI sets that, because its runner ships the
+// WebView2 Runtime, so a run there cannot pass by testing nothing.
 func requireGUI(t *testing.T, got string) {
 	t.Helper()
-	if got == "" {
-		t.Skip("Edge WebView2 Runtime not available")
+	if got != "" {
+		return
 	}
+	if os.Getenv("TUOHI_REQUIRE_GUI") == "1" {
+		t.Fatal("GUI scenario did not run, and TUOHI_REQUIRE_GUI=1: Edge WebView2 Runtime not available")
+	}
+	t.Skip("Edge WebView2 Runtime not available")
 }
 
 func TestMain(m *testing.M) {
@@ -349,7 +355,7 @@ func serveDummy() serveFunc { return func(*request) *response { return nil } }
 // rewriteSchemeURL maps a registered scheme's URL to its https vhost and leaves
 // everything else alone. Pure string logic, so it runs headless.
 func TestRewriteSchemeURL(t *testing.T) {
-	w := &webview{serve: serveDummy()}
+	w := &webview{viewCore: viewCore{serve: serveDummy()}}
 
 	cases := []struct {
 		name, in, want string
@@ -385,7 +391,7 @@ func TestRewriteSchemeURLNoContent(t *testing.T) {
 // URL as it does on macOS/Linux.
 func TestCanonicalSchemeURL(t *testing.T) {
 	w := &webview{
-		serve:           serveDummy(),
+		viewCore:        viewCore{serve: serveDummy()},
 		schemeAuthority: "home",
 	}
 	cases := []struct {
@@ -406,7 +412,7 @@ func TestCanonicalSchemeURL(t *testing.T) {
 // Without a recorded authority, canonicalSchemeURL falls back to the scheme
 // name so the URL is still well-formed scheme:// (not the internal vhost).
 func TestCanonicalSchemeURLFallback(t *testing.T) {
-	w := &webview{serve: serveDummy()}
+	w := &webview{viewCore: viewCore{serve: serveDummy()}}
 	got := w.canonicalSchemeURL("https://app.localhost/index.html")
 	want := "app://app/index.html"
 	if got != want {
@@ -417,7 +423,7 @@ func TestCanonicalSchemeURLFallback(t *testing.T) {
 // Navigate rewrite followed by the request-time reconstruction round-trips the
 // authority the app used, so the resolver URL matches the original scheme:// URL.
 func TestSchemeURLRoundTrip(t *testing.T) {
-	w := &webview{serve: serveDummy()}
+	w := &webview{viewCore: viewCore{serve: serveDummy()}}
 	// The app navigates here; rewriteSchemeURL records the "home" authority.
 	w.rewriteSchemeURL("app://home/index.html")
 	// A sub-resource request arrives on the vhost origin and is reconstructed.

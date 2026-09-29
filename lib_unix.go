@@ -2019,9 +2019,9 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	w := &webview{
 		ownsWindow: true,
 		frameless:  !v.Frame,
-		bindings:   map[string]binding{},
-		serve:      serve,
 	}
+	w.bindings = map[string]binding{}
+	w.serve = serve
 	w.id = registerEngine(w)
 	err = w.windowInit(uintptr(v.window))
 	if err != nil {
