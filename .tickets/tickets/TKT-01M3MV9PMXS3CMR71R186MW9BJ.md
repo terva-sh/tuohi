@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T03:57:06Z
+updated_at: 2026-09-29T04:00:09Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -139,3 +139,17 @@ As planned, with these details settled while building it:
 - The untrusted-page guarantee is the bridge gate's, which TestBridgeGate and the origin-gate scenario already cover.
 
 Checks passed: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T04:00:09Z
+
+### Review disposition for PR #28, round 1 (terva-review run on 1ce79c8)
+
+GitHub run 36519419676 on 1ce79c8 passed every job, including `TestWindowTitle` on macOS and Windows.
+
+1. **Medium: observe title elements added outside the head.** Declined. It was already documented on `initPageTitle` and in the implementation note.
+   - **What is covered.** `document.title = ...` rewrites the existing `<title>`. With none, it creates one in `<head>` (HTML's title setter does nothing if there is no head), and the head observer sees that. A `<title>` written in the markup, anywhere, is read at DOMContentLoaded.
+   - **What is missed.** A script inserting a `<title>` element under `<body>` after load, where HTML's content model does not allow a `<title>`.
+   - **Why not fix it.** Catching that case needs a subtree child-list observer on the whole document, which makes the engine create a record for every node a page inserts or removes, for the page's whole life. That cost is what the narrow observers avoid, and git-ticket-canvas re-renders often.
+   - **How bad a miss is.** The window catches up at the next change to the head's, root's or document's child list. An untrusted page still cannot rename the window, so a miss leaves a stale title and nothing worse.
+
+No code change in this round.
