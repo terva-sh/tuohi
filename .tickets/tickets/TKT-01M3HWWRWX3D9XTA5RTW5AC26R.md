@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRWX3D9XTA5RTW5AC26R
 title: Finish renaming appkit to tuohi in prose, env vars, and names
 type: chore
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -20,10 +20,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: chore/rename-appkit
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-rename
+  commit: c7c37e9286096c7e4ba7ddb42b16a777c8f7c09f
+  session: null
+  claimed_at: 2026-09-29T23:25:13Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:13:08Z
+updated_at: 2026-09-29T23:25:13Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -56,9 +63,29 @@ Leave the macOS backend's references to Apple's AppKit framework alone: they are
 
 ## Acceptance criteria
 
-- [ ] No appkit name remains outside NOTICE, docs/provenance.md, and references to Apple's AppKit
-- [ ] Environment variables are TUOHI_*
-- [ ] No review-item labels remain in comments
+- [x] No appkit name remains outside NOTICE, docs/provenance.md, and references to Apple's AppKit
+- [x] Environment variables are TUOHI_*
+- [x] No review-item labels remain in comments
+
+## Implementation plan
+
+Done as nine commits by category on `chore/rename-appkit`, each building on its own. A subagent did the edits and I reviewed them.
+
+### Decisions
+
+- **Environment variables.** `APPKIT_BACKEND` and `APPKIT_DEBUG` become `TUOHI_BACKEND` and `TUOHI_DEBUG`, with no aliases. v0.1.0-alpha.1 is a pre-release, and aliases would keep the old names alive past 1.0. The README has one sentence saying they were renamed. Keeping aliases for one release was the alternative; it lost because no consumer is known to set them.
+- **Strings.** Error and log prefixes say `tuohi:`. The internal page names `__appkit*` become `__tuohi*`, and `validateTopLevel` reserves `__tuohi`. `__webview__` stays.
+- **Internal native names.** The Objective-C classes tuohi registers become `Tuohi*`, and the Win32 window class becomes `tuohi_webview`. `appkitRunsLoop` becomes `tuohiRunsLoop`. None of these is public API.
+- **Apple's AppKit stays AppKit** wherever it means the framework.
+- **History stays.** The fork preamble in the README and AGENTS.md, workflow and justfile headers saying "inherited from appkit", and statements of history in architecture.md.
+- **Makefile.** `build` stays `go build ./...`: the `all` target and the `cross` comment rely on it. The demo cross-build becomes `xdemo`, which the README already named, and the duplicate-target warning is gone. Binaries are `tuohi_*`.
+- **Review labels** such as `(P1)` and `(R2/RE2/E4)` are removed, keeping each sentence.
+- **Doc fixes from the architecture review:**
+  - the package doc describes the source layout inline;
+  - `App.Wait` no longer mentions the unexported `View.Run`;
+  - the repeated `View.Dialog` comment block is gone;
+  - `App.Bind` links to `View.Bind` and says only what differs.
+- **Already gone before this work:** the `appkit-app` autostart slug (`autostart.New` takes the id) and `App.ID`.
 
 ## Notes
 
@@ -73,3 +100,7 @@ Leave the macOS backend's references to Apple's AppKit framework alone: they are
 - `App.Bind` and `View.Bind` carry near-identical 40-line docs (`app.go:256-297`, `view.go:753-795`). Keep one and link it.
 - About 99 string literals say "appkit", mostly error prefixes such as `"appkit: ..."`. They are user-visible, so they belong in this ticket.
 - About 40 review tags such as `(P1)`, `(R2/RE2/E4)`, `(R1(a)/RE4)` remain in comments outside `pure/`, 31 of them in non-test files.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T23:25:13Z
+
+Verified on the branch merged with main at 5e75130. Outside .tickets, handoffs, NOTICE and docs/provenance.md, git grep -i appkit shows only Apple's AppKit and statements of the fork's history. git grep APPKIT_ has one hit, the README sentence on the rename. just ci passes. just test-gui passes on both WebKitGTK stacks. go vet ./... passes for darwin and windows. The subagent also built and vetted each of the nine commits on its own for linux, darwin and windows.
