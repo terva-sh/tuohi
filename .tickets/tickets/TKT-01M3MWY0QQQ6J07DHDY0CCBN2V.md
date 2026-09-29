@@ -27,7 +27,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T20:57:33Z
-updated_at: 2026-09-28T23:57:01Z
+updated_at: 2026-09-29T00:01:56Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -138,3 +138,7 @@ The owner decided, 2026-09-29, to merge the diagnostics and park this ticket unt
 **agent:claude-code/t3code-72958710** at 2026-09-28T23:57:01Z
 
 in-progress to blocked: Not reproducible on WebView2 153 (0 of 12,186 runs); the only failure since PR #20 ran on runtime 149. Waiting for a recurrence in GitHub CI, whose WEBVIEW2_DEBUG trace now names the cause.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T00:01:56Z
+
+Review disposition for PR #25 (terva-review on a3ad218). Medium: repeat mode skipped assertions for the other Windows scenarios. Fixed: TUOHI_REPEAT_DATAURL no longer exits TestMain early. The repeats run after the other scenarios and before winCloseViaUIScenario, which must be last because it ends with WM_QUIT. m.Run then asserts every scenario, and the exit status fails when the tests or a repeat do. Checked by go vet and golangci-lint for windows. The Windows run itself is GitHub's.
