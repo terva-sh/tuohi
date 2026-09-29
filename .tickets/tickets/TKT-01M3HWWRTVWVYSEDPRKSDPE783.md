@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRTVWVYSEDPRKSDPE783
 title: Deny media and clipboard permissions unless the app allows them
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -21,10 +21,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: feat/permissions
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/perm
+  commit: e66fc6e7ea97cf892b1682dafa12762704efb30e
+  session: null
+  claimed_at: 2026-09-29T05:07:44Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-28T21:34:09Z
+updated_at: 2026-09-29T05:07:44Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -50,6 +57,63 @@ Make camera, microphone, clipboard, and similar permissions an explicit policy t
 
 - [ ] No engine grants camera, microphone, or clipboard access without an explicit application policy
 - [ ] The Linux default is verified by a test rather than assumed
+
+## Implementation plan
+
+### Measured first (Linux, both WebKitGTK stacks, xvfb, mock capture devices)
+
+- **Media.** With `enable_media_stream` on and no `permission-request` handler (today), `getUserMedia` for video and for audio is denied (`NotAllowedError`). WebKitGTK's default denies. A handler sees one `WebKitUserMediaPermissionRequest` per call, and `is_for_audio_device`/`is_for_video_device` say which. Allowing the request grants a stream from the mock devices.
+- **Clipboard.** With `javascript_can_access_clipboard` on (today), any page, with no user gesture, can:
+  - copy (`execCommand('copy')` returns true);
+  - paste: `execCommand('paste')` fires a `paste` event whose `clipboardData` holds the system clipboard. It read back `"probe-secret"` that had been copied.
+
+  With the setting off, both fail. A real X click (XTest), however, still copies through `execCommand('copy')` and `navigator.clipboard.writeText`. So turning the setting off does not break a consumer's copy button, and only gesture-less script access is lost. `navigator.clipboard.readText()` without a gesture is refused either way, and no permission request is raised.
+
+### API (decided autonomously; revisit if a consumer needs more)
+
+```go
+type Permission int
+const (
+	PermissionCamera Permission = iota + 1
+	PermissionMicrophone
+	PermissionClipboard
+)
+// View.Permissions []Permission
+```
+
+A permission is granted only when the view lists it **and** the requesting page's origin is one the view trusts. Everything else is denied. The alternatives lost for these reasons:
+- **A callback, `func(origin, Permission) bool`.** Trust already scopes requests to the application's own origins, and View's define-first fields favour a declared list. A callback can be added later without breaking the list.
+- **A per-permission origin list.** The same argument applies.
+
+### Per engine
+
+- **Linux.** `enable_media_stream` stays on, so `navigator.mediaDevices` exists on every engine, and a `permission-request` handler decides:
+  - user media: video needs Camera and audio needs Microphone, for the top-level page's URI. WebKitGTK gives no frame origin, but a cross-origin frame needs the trusted page's `allow=` delegation anyway.
+  - device info: allowed when Camera or Microphone is.
+  - clipboard permission request: Clipboard.
+  - geolocation, notification, media key system and website data access: denied.
+  - pointer lock and anything unknown: left to WebKit.
+
+  `javascript_can_access_clipboard` is on only when the view lists Clipboard. That setting covers the whole view, so the grant also applies to frames; this is documented.
+- **Windows.** Register the `PermissionRequested` handler, which is declared today but unused. Microphone (1), camera (2) and clipboard-read (6) are decided by the policy for the request's `Uri`, which is the requesting frame's origin. Every other kind is set to DENY, so WebView2 shows no prompt of its own.
+- **macOS.** `requestMediaCapturePermission` decides camera, microphone, or both, for the request's security origin (the frame's) instead of granting everything. WKWebView has no clipboard permission, and a script read shows the system Paste callout with a user gesture, so Clipboard changes nothing there.
+
+### Out of scope, filed separately
+
+- macOS `fullScreenEnabled`.
+- The `APPKIT_DEBUG` dev-tools switch in release builds.
+
+Both came up in the architecture review but are not in this ticket's acceptance criteria.
+
+### Tests
+
+- A headless test of the policy decision.
+- A GUI scenario on every engine:
+  - the default view denies camera, microphone and gesture-less paste;
+  - a view listing Camera gets video and is still denied audio;
+  - a view listing Clipboard can paste without a gesture.
+
+  Linux uses WebKitGTK's mock capture devices, and Windows uses Chromium's `--use-fake-device-for-media-stream` through `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`. macOS checks only the denials: granting would make WebKit open a real capture device, which a test binary without camera usage strings is killed for by TCC.
 
 ## Notes
 
