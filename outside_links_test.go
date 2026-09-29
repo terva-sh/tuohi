@@ -69,6 +69,8 @@ func outsideLinksScenario() string {
 		// A link inside a shadow root: the click reaches window retargeted
 		// to the host.
 		{"shadowlink", `var h = document.createElement('div'); document.body.appendChild(h); var r = h.attachShadow({mode: 'open'}); var s = document.createElement('a'); s.href = '` + outside + `shadow'; s.textContent = 'x'; r.appendChild(s); s.click();`, outside + "shadow"},
+		// An SVG link, whose href property is an SVGAnimatedString.
+		{"svglink", `var ns = 'http://www.w3.org/2000/svg'; var svg = document.createElementNS(ns, 'svg'); var sa = document.createElementNS(ns, 'a'); sa.setAttribute('href', '` + outside + `svg'); var t = document.createElementNS(ns, 'text'); t.textContent = 'x'; sa.appendChild(t); svg.appendChild(sa); document.body.appendChild(svg); t.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, composed: true}));`, outside + "svg"},
 		{"unresolvable", `var b = document.createElement('a'); b.href = '` + unresolvable + `'; document.body.appendChild(b); b.click();`, unresolvable},
 		// A trusted URL that redirects to the unresolvable host: the page
 		// sees only the trusted URL, so only the engine can hand it over.
@@ -133,7 +135,7 @@ func outsideLinksScenario() string {
 func TestOutsideLinksNotRequested(t *testing.T) {
 	got, _ := resOutsideLinks.Load().(string)
 	requireGUI(t, got)
-	want := "link=external assign=external shadowlink=external unresolvable=external deadredirect=external requested=0"
+	want := "link=external assign=external shadowlink=external svglink=external unresolvable=external deadredirect=external requested=0"
 	if got != want {
 		t.Fatalf("outside links:\n got %s\nwant %s", got, want)
 	}

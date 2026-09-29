@@ -622,7 +622,9 @@ const win = { crypto: { getRandomValues: function(a) { return a; } },
   addEventListener: function(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
   navigation: { addEventListener: function(type, fn) { if (type === 'navigate') navListeners.push(fn); } } };
 win.top = win;
-function StubFormData(form) { return form.fields; }
+function StubFormData(form) {
+  return { forEach: function(fn) { form.fields.forEach(function(p) { fn(p[1], p[0]); }); } };
+}
 new Function('window', 'posted', 'FormData', bridge)(win, posted, StubFormData);
 function el(attrs, props) {
   return Object.assign({ getAttribute: function(n) { return n in attrs ? attrs[n] : null; },
@@ -669,10 +671,14 @@ const cases = [
   ['page handled it', function() { return click(el({ href: out }, { href: out }), { defaultPrevented: true }); }, null],
   ['mailto', function() { return click(el({ href: 'mailto:a@b.invalid' }, { href: 'mailto:a@b.invalid' })); }, null],
   ['no link', function() { return click(null); }, null],
+  ['outside SVG link', function() { return click(el({ href: out }, { localName: 'a', href: { baseVal: out } })); }, out],
+  ['outside SVG link, xlink:href only', function() { return click(el({ 'xlink:href': out }, { localName: 'a', href: { baseVal: '' } })); }, out],
+  ['trusted SVG link', function() { return click(el({ href: '/x' }, { localName: 'a', href: { baseVal: '/x' } })); }, null],
   ['outside link in a shadow root', function() { return shadowClick(el({ href: out }, { localName: 'a', href: out })); }, out],
   ['trusted link in a shadow root', function() { return shadowClick(el({ href: '/x' }, { localName: 'a', href: 'http://127.0.0.1:8080/x' })); }, null],
   ['anchor without href in a shadow root', function() { return shadowClick(el({}, { localName: 'a' })); }, null],
   ['GET form', function() { return submit(el({ method: 'get' }, { action: 'https://example.com/s', fields: [['q', 'a b']] })); }, 'https://example.com/s?q=a+b'],
+  ['GET form with a file', function() { return submit(el({ method: 'get' }, { action: 'https://example.com/s', fields: [['q', 'x'], ['f', { name: 'a b.txt', size: 3 }]] })); }, 'https://example.com/s?q=x&f=a+b.txt'],
   ['POST form', function() { return submit(el({ method: 'post' }, { action: 'https://example.com/s', fields: [] })); }, null],
   ['trusted GET form', function() { return submit(el({}, { action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],
   ['navigate push', function() { return navigate(out); }, out],

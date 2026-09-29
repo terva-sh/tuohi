@@ -402,9 +402,15 @@ const initOutsideLinks = `
       var path = typeof e.composedPath === 'function' ? e.composedPath() : [], i, n;
       for (i = 0; i < path.length; i++) {
         n = path[i];
-        if (n && (n.localName === 'a' || n.localName === 'area') && n.hasAttribute && n.hasAttribute('href')) { return n; }
+        if (n && (n.localName === 'a' || n.localName === 'area') && n.hasAttribute &&
+            (n.hasAttribute('href') || n.hasAttribute('xlink:href'))) { return n; }
       }
       return e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
+    }
+    function hrefOf(a) {
+      // An SVG link's href is an SVGAnimatedString, and it may use xlink:href.
+      if (typeof a.href === 'string') { return a.href; }
+      return (a.href && a.href.baseVal) || a.getAttribute('href') || a.getAttribute('xlink:href');
     }
     function sameWindow(target) {
       target = (target || '').toLowerCase();
@@ -414,7 +420,7 @@ const initOutsideLinks = `
       if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) { return; }
       var a = linkOf(e);
       if (!a || a.hasAttribute('download') || !sameWindow(a.getAttribute('target'))) { return; }
-      var href = outside(a.href);
+      var href = outside(hrefOf(a));
       if (!href) { return; }
       e.preventDefault();
       handOff(href);
@@ -427,9 +433,13 @@ const initOutsideLinks = `
       if (method.toLowerCase() !== 'get' || !sameWindow(target)) { return; }
       var href = outside((submitter && submitter.formAction) || form.action);
       if (!href) { return; }
-      var u = new URL(href), data;
+      var u = new URL(href), data, pairs = [];
       try { data = new FormData(form, submitter); } catch (err) { data = new FormData(form); }
-      u.search = new URLSearchParams(data).toString();
+      // A GET submission names a file by its file name, as FormData does not.
+      data.forEach(function(value, name) {
+        pairs.push([name, typeof value === 'string' ? value : (value && value.name) || '']);
+      });
+      u.search = new URLSearchParams(pairs).toString();
       e.preventDefault();
       handOff(u.href);
     });
