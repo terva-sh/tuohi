@@ -7,7 +7,7 @@ notification service the OS ships: `NSUserNotificationCenter` on macOS, a
 D-Bus on Linux.
 
 ```go
-import "github.com/malivvan/appkit/notify"
+import "github.com/terva-sh/tuohi/notify"
 
 err := notify.Show("backup", "done", "Snapshot finished at 09:41")
 ```
@@ -131,7 +131,7 @@ go run ./notify/demo
 
 ## Conventions
 
-Part of the appkit module. Public API lives in the tag-free `notify.go`,
+Part of the tuohi module. Public API lives in the tag-free `notify.go`,
 per-platform backends in `notify_{darwin,windows,linux}.go` (icons, urgency,
 beep and the alert sound each live in their platform file), and
 `notify_other.go` returns `ErrUnsupported` so every `GOOS` builds. No
