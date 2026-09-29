@@ -631,7 +631,7 @@ function el(attrs, props) {
     hasAttribute: function(n) { return n in attrs; } }, props);
 }
 function ev(props) {
-  return Object.assign({ defaultPrevented: false, button: 0, cancelled: false,
+  return Object.assign({ defaultPrevented: false, cancelable: true, button: 0, cancelled: false,
     preventDefault: function() { this.defaultPrevented = true; this.cancelled = true; } }, props);
 }
 function click(a, extra) {
@@ -668,6 +668,7 @@ const cases = [
   ['middle button', function() { return click(el({ href: out }, { href: out }), { button: 1 }); }, null],
   ['target _blank', function() { return click(el({ href: out, target: '_blank' }, { href: out })); }, null],
   ['download', function() { return click(el({ href: out, download: '' }, { href: out })); }, null],
+  ['not cancelable', function() { return click(el({ href: out }, { href: out }), { cancelable: false }); }, null],
   ['page handled it', function() { return click(el({ href: out }, { href: out }), { defaultPrevented: true }); }, null],
   ['mailto', function() { return click(el({ href: 'mailto:a@b.invalid' }, { href: 'mailto:a@b.invalid' })); }, null],
   ['no link', function() { return click(null); }, null],
@@ -677,10 +678,15 @@ const cases = [
   ['outside link in a shadow root', function() { return shadowClick(el({ href: out }, { localName: 'a', href: out })); }, out],
   ['trusted link in a shadow root', function() { return shadowClick(el({ href: '/x' }, { localName: 'a', href: 'http://127.0.0.1:8080/x' })); }, null],
   ['anchor without href in a shadow root', function() { return shadowClick(el({}, { localName: 'a' })); }, null],
-  ['GET form', function() { return submit(el({ method: 'get' }, { action: 'https://example.com/s', fields: [['q', 'a b']] })); }, 'https://example.com/s?q=a+b'],
-  ['GET form with a file', function() { return submit(el({ method: 'get' }, { action: 'https://example.com/s', fields: [['q', 'x'], ['f', { name: 'a b.txt', size: 3 }]] })); }, 'https://example.com/s?q=x&f=a+b.txt'],
-  ['POST form', function() { return submit(el({ method: 'post' }, { action: 'https://example.com/s', fields: [] })); }, null],
-  ['trusted GET form', function() { return submit(el({}, { action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],
+  ['GET form', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [['q', 'a b']] })); }, 'https://example.com/s?q=a+b'],
+  ['GET form with a file', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [['q', 'x'], ['f', { name: 'a b.txt', size: 3 }]] })); }, 'https://example.com/s?q=x&f=a+b.txt'],
+  // The browser reports an invalid method as get.
+  ['form with an invalid method', function() { return submit(el({ method: 'bogus' }, { method: 'get', action: 'https://example.com/s', fields: [] })); }, 'https://example.com/s'],
+  ['POST form', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] })); }, null],
+  ['GET form, POST submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'post' }, { formMethod: 'post' }) }); }, null],
+  ['POST form, GET submitter', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'get' }, { formMethod: 'get', formAction: 'https://example.com/s' }) }); }, 'https://example.com/s'],
+  ['submit not cancelable', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { cancelable: false }); }, null],
+  ['trusted GET form', function() { return submit(el({}, { method: 'get', action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],
   ['navigate push', function() { return navigate(out); }, out],
   ['navigate replace', function() { return navigate(out, { navigationType: 'replace' }); }, out],
   ['navigate traverse', function() { return navigate(out, { navigationType: 'traverse' }); }, null],

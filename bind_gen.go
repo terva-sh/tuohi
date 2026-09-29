@@ -417,7 +417,7 @@ const initOutsideLinks = `
       return !target || target === '_self' || target === '_top' || target === '_parent';
     }
     window.addEventListener('click', function(e) {
-      if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) { return; }
+      if (!e.cancelable || e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) { return; }
       var a = linkOf(e);
       if (!a || a.hasAttribute('download') || !sameWindow(a.getAttribute('target'))) { return; }
       var href = outside(hrefOf(a));
@@ -427,10 +427,13 @@ const initOutsideLinks = `
     });
     window.addEventListener('submit', function(e) {
       var form = e.target, submitter = e.submitter || null;
-      if (e.defaultPrevented || !form || !form.getAttribute) { return; }
-      var method = (submitter && submitter.getAttribute('formmethod')) || form.getAttribute('method') || 'get';
+      if (!e.cancelable || e.defaultPrevented || !form || !form.getAttribute) { return; }
+      // The effective method, as the browser reports it: an invalid or
+      // missing value is get, and the submitter's formmethod wins.
+      var method = submitter && submitter.hasAttribute && submitter.hasAttribute('formmethod') ?
+        submitter.formMethod : form.method;
       var target = (submitter && submitter.getAttribute('formtarget')) || form.getAttribute('target');
-      if (method.toLowerCase() !== 'get' || !sameWindow(target)) { return; }
+      if (String(method || 'get').toLowerCase() !== 'get' || !sameWindow(target)) { return; }
       var href = outside((submitter && submitter.formAction) || form.action);
       if (!href) { return; }
       var u = new URL(href), data, pairs = [];
