@@ -31,9 +31,10 @@ to, and why.
 appkit is a pure-Go foundation for building web-based desktop applications. It
 drives the web engine each operating system already ships - WKWebView on
 macOS, WebKitGTK on Linux, WebView2 on Windows - behind a single Go API, and
-adds the desktop services around it: windows and app windows, drag regions,
-custom URL schemes, notifications, clipboard, single-instance,
-URL/file opening and native file dialogs. Everything is cgo-free.
+adds what a window needs around it: windows and app windows, drag regions,
+custom URL schemes, URL/file opening and native file dialogs. Notifications,
+the clipboard, single instance, autostart and the tray live in subpackages
+beside it (see [Desktop services](#desktop-services)). Everything is cgo-free.
 
 ## Why no cgo
 
@@ -73,25 +74,21 @@ needs that present: WebView2 on Windows (preinstalled on current Windows
   WebKitGTK / WebView2)
 - JavaScript ↔ Go binding
 - A single `*App` scope for the app: `App` is both the configuration (like an
-  `http.Server`) and the runtime context; all app-scoped services are
-  methods on it (`View`, `Wait`, `Bind`, `Copy`, `Paste`,
-  `Open`, `Reveal`, ...) and its settings are committed the first
-  time any method is called
+  `http.Server`) and the runtime context; the app-scoped operations are
+  methods on it (`Show`, `Wait`, `Quit`, `Open`, `Reveal`, `Backend`) and its
+  settings are committed the first time any method is called
 - Native file dialogs - a single `View.Dialog(opts dialog.Options)` method and
   the standalone `dialog.Open`, with the panel kind chosen through
   `dialog.Options.Type` - plus opening URLs / revealing files
   (`App.Open` / `App.Reveal`)
 - A declarative system tray with a menu - PNG icons (light/dark/macOS-template
-  variants), checkboxes, submenus, separators (`App.Tray`, or the
-  standalone `tray/` package), desktop notifications (`App.Notify` / the
-  standalone `notify/` package), and a best-effort runtime application icon
-  (`App.Icon`; a no-op on Windows, which reads the icon from the executable's
-  own resources)
-- System clipboard helpers (`App.Copy` / `App.Paste`); Single Instance Mode -
-  set `App.Exec` to enable it: one process per application, and a later
-  launch with the same `App.ID` (required when `App.Exec` is set) hands its
-  arguments to the running process and exits; launch
-  with `--new-instance` to force a fresh instance anyway)
+  variants), checkboxes, submenus, separators (the `tray/` package, set up
+  from `App.Start`), desktop notifications (the `notify/` package), and a
+  best-effort runtime application icon (`App.Icon`; a no-op on Windows, which
+  reads the icon from the executable's own resources)
+- The system clipboard (the `clipboard/` package) and single instance (the
+  `instance/` package: one process per application, and a later launch hands
+  its arguments to the running process)
 - A Go↔JS `Events` bridge built into every view: `w.On` / `w.Off` / `w.Emit`
   (Go side) with `window.events` on the page (the events global's name is
   configurable through `App.Events`)
@@ -109,9 +106,9 @@ needs that present: WebView2 on Windows (preinstalled on current Windows
   **SharedArrayBuffer is available on every platform**. Nothing is ever
   exposed beyond the loopback interface. The URL an app uses never changes
   per platform.
-- Launch at login from Go: `App.Autostart()` returns an `*Autostart` -
+- Launch at login from Go: `autostart.New(id)` returns an `*Autostart` -
   `Enable(args...)` registers the running executable to start with the user
-  session (identifier from `App.ID` or `App.Name`), `Enabled`/`Path`/
+  session under `id`, `Enabled`/`Path`/
   `Backend` report the current registration and `Disable` removes it. The
   backend is per platform: XDG autostart `.desktop` file, `HKCU\…\Run`
   registry value, macOS LaunchAgent plist (or `SMAppService` for bundled
@@ -150,20 +147,83 @@ needs that present: WebView2 on Windows (preinstalled on current Windows
 
 ## Desktop services
 
-appkit stays focused on the window and the view; more platform-specific OS
-features live either on `*App` or in small subpackages on the same cgo-free
-foundation. The system tray is `tray/`, desktop notifications are `notify/`
-(with the `App.Notify` method), and native dialogs are
-`dialog/`. Opening URLs or revealing files lives on the app scope
-(`App.Open` / `App.Reveal`), as does clipboard access (`App.Copy` /
-`App.Paste`, over github.com/atotto/clipboard). Single Instance Mode is
-enabled by `App.Exec` (keyed on the application's `App.ID`, which becomes
-required) and the runtime application icon is
-`App.Icon`. `App.Backend()` reports which web engine the app runs on -
+The root package `github.com/terva-sh/tuohi` is the window: `App`, `View`,
+bindings, events, serving (`App.FS`, `App.HTTP`), the runtime icon
+(`App.Icon`), and opening URLs or revealing files (`App.Open` /
+`App.Reveal`). `App.Backend()` reports which web engine the app runs on -
 `webkitgtk-6.0`/`webkit2gtk-4.1` on Linux, `WKWebView` on macOS,
-`WebView2` on Windows. Where a platform cannot support
-something cleanly, the API returns a clear `ErrUnsupported` instead of
-shipping something flaky.
+`WebView2` on Windows.
+
+The desktop services live in subpackages on the same cgo-free foundation.
+None of them imports the root, and the root imports none of them except
+`dialog`, so a program that only opens a window links none of their
+dependencies: neither godbus (the Linux tray and notifications) nor
+github.com/atotto/clipboard. Where a platform cannot support something
+cleanly, the API returns a clear `ErrUnsupported` instead of shipping
+something flaky.
+
+Each service that used to hang off `App` has moved:
+
+| Was | Is now |
+|---|---|
+| `App.ID` and `App.Exec` (Single Instance Mode) | [`instance/`](instance/): `instance.Acquire(id, onMessage)`, `Lock.Release`, `instance.Send(id, args)` |
+| `App.Autostart()` | [`autostart/`](autostart/): `autostart.New(id)`, with the same `Enable`/`Disable`/`Enabled`/`Path`/`Backend` |
+| `App.Copy` / `App.Paste` | [`clipboard/`](clipboard/): `clipboard.Copy(text)` / `clipboard.Paste()`, on strings rather than bytes |
+| `App.Notify` | [`notify/`](notify/): `notify.Show(app.Name, title, message)` |
+| `App.Tray` | [`tray/`](tray/): `tray.Set(cfg)` from `App.Start`, `tray.Remove()` after `Wait` |
+
+`View.Dialog` stays on the view, because a dialog needs its parent window;
+the panels themselves are the [`dialog/`](dialog/) package.
+
+**Single instance.** The first process to `Acquire` an id holds the lock;
+a later one gets `instance.ErrAlreadyRunning`, hands its arguments over and
+exits. The package does not exit for you, and the old `--new-instance`
+override went with `App.Exec`: check your own arguments before `Acquire` if
+you want one.
+
+```go
+const id = "com.example.app"
+lock, err := instance.Acquire(id, func(m instance.Message) {
+	// Runs on its own goroutine. m.Args is untrusted input.
+})
+if errors.Is(err, instance.ErrAlreadyRunning) {
+	if err := instance.Send(id, os.Args[1:]); err != nil {
+		log.Fatal(err)
+	}
+	return
+}
+if err != nil {
+	log.Fatal(err)
+}
+defer lock.Release()
+```
+
+**Autostart.** `autostart.New(id)` stores the registration under exactly
+`id`, which must be 1-200 characters from `A-Za-z0-9._-`. It no longer falls
+back to a name derived from `App.Name` or the executable. `Enable` replaces
+an entry an older build registered under another name, because it removes
+any entry that points at the same executable. The exception is a bundled
+`.app` on macOS 13 and later: it registers itself through SMAppService as
+its own login item, named by its bundle identifier, so `id` and the
+arguments to `Enable` are not used there.
+
+**Tray.** `App.Start` runs on the UI thread when `Wait` starts, before its
+loop dispatches any event, which is where `tray.Set` must be called. An
+error from it ends `Wait`. The tray icon is no longer derived from
+`App.Icon`: pass your own `tray.Config.Icon`.
+
+```go
+cfg := tray.Config{
+	Icon:    trayPNG,
+	Tooltip: "my app",
+	Items: []tray.Item{
+		{Label: "Quit", OnClick: app.Quit},
+	},
+}
+app.Start = func() error { return tray.Set(cfg) }
+err := app.Wait()
+tray.Remove()
+```
 
 ## Install
 
@@ -223,7 +283,7 @@ tuohi binds the OS web engine through [purego](https://github.com/ebitengine/pur
   provides: a desktop GTK/WebKitGTK with the sonames appkit probes
   ([shared libraries](#linux-shared-libraries) - a BSD port may name them
   differently), a session D-Bus for the tray/notify/dialog backends, and
-  working `flock`/Unix sockets for single-instance mode. Some helpers are
+  working `flock`/Unix sockets for the `instance` package. Some helpers are
   Linux-specific at runtime (e.g. the `xdg-open` opener and the console-bell
   fallback in `notify`) and degrade or report unsupported elsewhere. Other
   GOOSes (OpenBSD, DragonFly, Solaris, AIX, Plan 9, js) have no lib-family
@@ -460,10 +520,12 @@ lifecycle around the windows you spawn. Windows are declarative - define a
 Then block with `App.Wait`, which runs the platform UI loop:
 
 - The first `App.Show` (or `App.Wait`) performs the one-time app
-  initialization: platform init, Single Instance Mode when `App.Exec` is set
-  (keyed on the required `App.ID`) and the best-effort runtime icon
+  initialization: platform init and the best-effort runtime icon
   (`App.Icon`). Content serving starts per window, later: each view is
   served from `App.FS` through the platform's `app` scheme.
+- `App.Start`, when set, runs on the UI thread as `Wait` starts, before the
+  loop dispatches any event. Set up services that need the UI thread there,
+  such as the tray; an error from it ends `Wait`.
 - `Wait` returns when `App.Quit` is called, or when the last window spawned
   with `App.Show` closes and `App.Exit` is true. `Exit` defaults to false, so
   an app keeps running after its windows are gone (tray/menu-bar
@@ -767,20 +829,21 @@ macOS menu-bar recoloring), tooltip, tray-level `OnClick`/`OnDoubleClick`/
 `Separator`, `Submenu` and per-item `Icon` entries:
 
 ```go
-app := &appkit.App{
+app := &tuohi.App{
 	Name: "my app",
 	Exit: true, // end the process when the last window closes
-	Tray: &tray.Config{
-		Icon:    appIconPNG,
-		Tooltip: "my app",
-		Items: []tray.Item{
-			{Label: "Open", OnClick: openUI},
-			{Separator: true},
-			{Label: "Quit", OnClick: app.Quit},
-		},
+}
+cfg := tray.Config{
+	Icon:    trayPNG,
+	Tooltip: "my app",
+	Items: []tray.Item{
+		{Label: "Open", OnClick: openUI},
+		{Separator: true},
+		{Label: "Quit", OnClick: app.Quit},
 	},
 }
-view := &appkit.View{
+app.Start = func() error { return tray.Set(cfg) } // on the UI thread, before the loop
+view := &tuohi.View{
 	Width:  1024,
 	Height: 768,
 }
@@ -788,22 +851,20 @@ if err := app.Show(view); err != nil {
 	log.Fatal(err)
 }
 view.Navigate("https://example.com")
-if err := app.Wait(); err != nil { // App.Wait runs the loop; the tray lives for its whole duration
+err := app.Wait() // runs the loop, which dispatches the tray's menu events
+tray.Remove()
+if err != nil {
 	log.Fatal(err)
 }
 ```
 
-`tray.Set`/`tray.Remove` are the same pair without a window: show the icon
-from the UI thread and let your own loop dispatch the menu events. A menu
-item's `OnClick` runs on the UI thread; keep it short or hand the work to a
-goroutine. `App.Tray` wires exactly this up around `App.Wait`.
+`tray.Set`/`tray.Remove` show and hide the icon without owning the loop:
+call `Set` from the UI thread and let your own loop dispatch the menu
+events, which is what `App.Start` and `App.Wait` give you. A menu item's
+`OnClick` runs on the UI thread; keep it short or hand the work to a
+goroutine.
 
-When an app sets `App.Tray` but leaves the tray config's `Icon` unset,
-appkit fills it in at app init: it takes `App.Icon` - falling back to the
-embedded appkit mark, which is unexported and applied by appkit itself - and
-downscales it to a tray-sized PNG (the resize helper lives in the appkit
-package; apps do not need their own). Set an explicit `tray.Config.Icon` to
-override the glyph.
+The tray does not take its icon from `App.Icon`: set `tray.Config.Icon`.
 
 Only one tray may be active per process; a second `Set`/`Run` returns
 `ErrAlreadyRunning`. `tray.Bounds` reports the icon's on-screen rectangle
@@ -822,21 +883,19 @@ the plain notification: `ShowOpts` attaches a custom icon and an urgency,
 `Alert` posts a critical notification with the platform's attention sound, and
 `Beep` sounds a tone directly (PC speaker on Linux, kernel beep on Windows,
 system beep on macOS).
-From the main package the entry point is the `App.Notify` method, named
-after `App.Name` and safe from any goroutine once the app scope is open:
+`App` has no notification method; call the package directly. It names the
+source per call, `notify.Show(name, title, message)`, where an empty name
+falls back to the executable's name, and it is safe from any goroutine:
 
 ```go
-app := &appkit.App{Name: "backup tool"}
-if err := app.Notify("Backup finished", "Snapshot complete"); err != nil {
+app := &tuohi.App{Name: "backup tool"}
+if err := notify.Show(app.Name, "Backup finished", "Snapshot complete"); err != nil {
 	// errors.Is(err, notify.ErrUnsupported) on unsupported platforms
 }
 ```
 
-The standalone `notify` package names the source per call:
-`notify.Show(name, title, message)`, where an empty name falls back to the
-executable's name. `App.Notify` passes no options - reach for
-`notify.ShowOpts`/`notify.Alert`/`notify.Beep` when you need icons, urgency or
-a sound. See
+Reach for `notify.ShowOpts`/`notify.Alert`/`notify.Beep` when you need icons,
+urgency or a sound. See
 [notify/README.md](notify/README.md) and [notify/demo](notify/demo/) for a
 runnable example.
 
@@ -939,13 +998,12 @@ go build -ldflags="-H windowsgui" .
   marshalling, the View `Dialog`
   method (over `dialog/`), the internal content request/response types, and
   the CSS drag-region machinery
-- `app.go` (+ `app_{darwin,linux,windows}.go`) - the whole
+- `app.go` (+ `app_{darwin,unix,windows}.go`) - the whole
   application scope and app-scoped code: the `App` type (configuration +
-  runtime scope with lazy commit and one-time `ensureInit`), `App.Wait`/`Show`,
-  single-instance handling, the app services (`Notify`, `Copy`/`Paste`,
-  `Open`/`Reveal`, icon, instance internals, `Autostart`), the `serveAppFS`
-  content resolver for `App.FS` and the remaining framework glue (the
-  per-view events bridge `On`/`Off`/`Emit`, the app-wide `App.Bind` map)
+  runtime scope with lazy commit and one-time `ensureInit`), `App.Wait`/`Show`
+  and the `App.Start` hook, `Open`/`Reveal`, the runtime icon, the
+  `serveAppFS` content resolver for `App.FS` and the remaining framework glue
+  (the per-view events bridge `On`/`Off`/`Emit`, the app-wide `App.Bind` map)
 - `demo/` - the single showcase application: one borderless, cross-platform
   window (custom chrome, UI served by `App.FS`, JS bridge + events,
   clipboard, native dialogs, notifications, open/reveal) with a
@@ -953,8 +1011,10 @@ go build -ldflags="-H windowsgui" .
 - `tray/` - the standalone declarative system-tray package; macOS/Windows/
   Linux backends, `tray/demo/` inside
 - `notify/` - the standalone desktop-notification package: plain `Show`,
-  `ShowOpts` with icon/urgency, `Alert` and `Beep`
-  (the `App.Notify` method lives in `app.go`); `notify/demo/` inside
+  `ShowOpts` with icon/urgency, `Alert` and `Beep`; `notify/demo/` inside
+- `instance/` - single instance: `Acquire`, `Lock.Release` and `Send`
+- `autostart/` - launch at login: `New(id)` and the per-platform backends
+- `clipboard/` - text `Copy` and `Paste`
 - `dialog/` - the standalone native file-dialog package; `dialog/demo/` inside
 
 appkit loads the OS view framework directly and bundles or extracts no native

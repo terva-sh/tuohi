@@ -631,10 +631,8 @@ func (a *App) showFirst(view *View) error {
 	// APPKIT_DEBUG=1 environment override), so the engine reads one value.
 	view.Debug = view.Debug || cfg.Debug
 	// The first window creation triggers the one-time application
-	// initialization (single instance, icon); later views are no-ops.
-	if err := a.start(s); err != nil {
-		return err
-	}
+	// initialization (the icon); later views are no-ops.
+	a.start(s)
 	// The engine stays private to showFirst until it is fully set up: only
 	// then is it published on the View, so a Close from another goroutine
 	// cannot tear it down while it is still being configured. A Close that

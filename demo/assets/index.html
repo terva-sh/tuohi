@@ -125,7 +125,7 @@
       </section>
 
       <section id="section-clipboard" class="card" hidden>
-        <h1>Clipboard - App.Copy / App.Paste</h1>
+        <h1>Clipboard - clipboard.Copy / clipboard.Paste</h1>
         <div class="row">
           <button id="clipCopy" class="secondary">copy a text</button>
           <button id="clipPaste" class="primary">paste</button>
@@ -152,7 +152,7 @@
       </section>
 
       <section id="section-autostart" class="card" hidden>
-        <h1>Autostart - launch at login (App.Autostart)</h1>
+        <h1>Autostart - launch at login (tuohi/autostart)</h1>
         <div class="row">
           <button id="auEnable" class="primary">Enable at login</button>
           <button id="auDisable" class="secondary">Disable</button>
@@ -164,8 +164,9 @@
         </div>
         <p class="muted small">
           Registers this demo binary to start with your user session. The
-          registration identifier comes from <code>App.Name</code>
-          (<code>App.ID</code> when set); <code>Enabled</code> /
+          registration identifier is the id passed to
+          <code>autostart.New</code>, here <code>tuohi-demo</code>;
+          <code>Enabled</code> /
           <code>Path</code> / <code>Backend</code> report the current
           registration (per platform: XDG <code>.desktop</code> file,
           Windows <code>Run</code> registry value, macOS LaunchAgent /

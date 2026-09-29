@@ -14,8 +14,10 @@ Wails  (autostart support)
 https://github.com/wailsapp/wails, v3 pkg/application/autostart*.go
 MIT License. Copyright (c) 2018-Present Lea Anthony
 
-The autostart helpers in app.go, app_unix.go, app_darwin.go and
-app_windows.go are derived from Wails v3's autostart implementation.
+The autostart package in autostart/ (autostart.go, autostart_xdg.go,
+autostart_darwin.go, autostart_windows.go and file.go) is derived from Wails
+v3's autostart implementation. It was moved there from the root package's
+app.go, app_unix.go, app_darwin.go and app_windows.go.
 
 ------------------------------------------------------------------------------
 webview  (WebView2 loader)

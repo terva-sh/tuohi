@@ -70,37 +70,48 @@ The review also found four defects outside those inputs:
 
 ## The root package is the window
 
-Today the root package `tuohi` is everything. It exports 62 identifiers and no
-package-level functions. Everything hangs off `App` or `View`, and `App` is
-both configuration and runtime, in the style of `http.Server`. The root
-imports `notify`, `tray`, `dialog`, and `github.com/atotto/clipboard`
-(`app.go:51-53`, `view.go:10`). A program that opens one window therefore
-links godbus for the tray and notifications, and atotto, whose `init` scans
-PATH for clipboard tools at process start.
+The root package `tuohi` is the window. It exports `App`, `View`, bindings,
+events, and window state, and it holds `App.Icon`, `App.Open`, `App.Reveal`,
+and serving: `App.FS`, `App.HTTP`, `app://`. Everything hangs off `App` or
+`View`, and `App` is both configuration and runtime, in the style of
+`http.Server`. Of the subpackages it imports only `dialog`. A program that
+opens one window therefore links neither godbus, which the Linux tray and
+notifications use, nor atotto, whose `init` scans PATH for clipboard tools at
+process start. `go list -deps` on such a program shows neither, for Linux,
+macOS, and Windows.
 
-The owner chose on 2026-09-27 to split the services out. The target layout:
+Before the split, the root imported `notify`, `tray`, `dialog`, and
+`github.com/atotto/clipboard`, so every program that opened a window linked
+both. The owner chose on 2026-09-27 to split the services out, and
+TKT-01M3J59M1H9PZ04J2C9JJZ7V13 (Move desktop services out of the root
+package) did it. The layout:
 
 | Package | Holds |
 |---|---|
-| `tuohi` | `App`, `View`, bindings, events, window state, `App.Icon`, `App.Open`, `App.Reveal`, and serving: `App.FS`, `App.HTTP`, `app://` |
+| `tuohi` | `App`, `View`, bindings, events, window state, `App.Icon`, `App.Open`, `App.Reveal`, `App.Start`, and serving: `App.FS`, `App.HTTP`, `app://` |
 | `tuohi/dialog` | file and folder dialogs. `View.Dialog` stays as a helper, because a dialog needs its parent window. |
-| `tuohi/instance` | single instance, taken from `App.ID` and `App.Exec` |
-| `tuohi/autostart` | launch at login, taken from `App.Autostart()` |
-| `tuohi/clipboard` | native clipboard, taken from `App.Copy` and `App.Paste` |
-| `tuohi/notify` | notifications. It exists already, and `App.Notify` goes. |
-| `tuohi/tray` | tray icon and menu. It exists already, and `App.Tray` goes. |
+| `tuohi/instance` | single instance: `Acquire(id, onMessage)` and `Send`, in place of `App.ID` and `App.Exec` |
+| `tuohi/autostart` | launch at login: `New(id)`, in place of `App.Autostart()` |
+| `tuohi/clipboard` | the clipboard: `Copy` and `Paste`, in place of `App.Copy` and `App.Paste` |
+| `tuohi/notify` | notifications. It existed already; `App.Notify` is gone, and callers use `notify.Show`. |
+| `tuohi/tray` | tray icon and menu. It existed already; `App.Tray` is gone, and callers set the tray up in `App.Start`. |
 
-None of the subpackages imports the root today, and that direction stays.
-Where a service needs the UI thread, such as the macOS tray or a GTK
-clipboard, the subpackage reaches it through a hook that `tuohi` exports.
-`tuohi` does not import the subpackage.
+None of the subpackages imports the root, and that direction stays. Where a
+service needs the UI thread, `tuohi` exports a hook and does not import the
+service. The hook today is `App.Start`: it runs on the UI thread when `Wait`
+starts, before its loop dispatches any event, and an error from it ends
+`Wait`. The tray is set up there, since `tray.Set` must run on the UI thread
+and the loop that follows dispatches its menu events. Services with UI-thread
+needs of their own, the native clipboard next
+(TKT-01M3J59M2BR91XQBDT1TPPM4G5), will reach the UI thread through a hook
+`tuohi` exports in the same way, without importing the root.
 
 Keeping one package was the alternative. It keeps appkit's single-`App`
 design, which is pleasant for an application that wants everything. It loses
 because every consumer pays for every service, and the consumers tuohi exists
-for want a window and little else. Single instance is a clean example. It is
-about 490 lines across four files, touches no `App` state, and its only
-coupling is a key derived from `App.ID`.
+for want a window and little else. Single instance was a clean example. It
+was about 490 lines across four files, touched no `App` state, and its only
+coupling was a key derived from `App.ID`.
 
 `App.Open` and `App.Reveal` stay in the root. They are small, need no
 dependency, and are what the navigation policy calls to send a link to the
@@ -492,9 +503,12 @@ headers if it wants cross-origin isolation.
 
 ## Desktop services
 
-- **Single instance** moves to `tuohi/instance` as
-  `Acquire(id, onMessage)` and `Send`. The Unix and darwin copies are
-  near-identical and merge. TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 (Harden the
+- **Single instance** is `tuohi/instance`: `Acquire(id, onMessage)`,
+  `Lock.Release`, and `Send`. The Unix and darwin copies merged into one file
+  built for `unix`. The package is the primitive: the consumer decides what a
+  later launch does, so the `--new-instance` flag and the quiet `os.Exit(0)`
+  went with `App.Exec`, and the README shows the pattern. A forwarded message
+  is untrusted input. TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 (Harden the
   single-instance channel against other local users) already lists the
   hardening: no `/tmp` fallback, a 0700 directory, peer credentials, a size
   cap, and a pipe security descriptor. The review adds four defects:
@@ -503,20 +517,27 @@ headers if it wants cross-origin isolation.
   - Windows drops a launch that arrives while the pipe is busy;
   - the working directory is not forwarded;
   - the Unix read has no deadline.
-- **Autostart** moves to `tuohi/autostart`. About 75 to 80 percent of its
-  1,130 lines are derived from Wails v3, credited in NOTICE and at the code.
-  The SMAppService binding is appkit's own. The review keeps it credited
-  rather than rewriting it: MIT with credit costs nothing, and a rewrite would
-  come out much the same. What it does rewrite is the `.desktop` `Exec`
-  quoting. That quoting was copied from Wails, and it neither doubles `%` nor
-  quotes the reserved characters: TKT-01M3J59M535T9QH2RS1ZY6PSJM.
-- **Clipboard** moves to `tuohi/clipboard` and drops atotto for native calls:
-  GTK3, GTK4, `NSPasteboard`, and Win32. TKT-01M3J59M2BR91XQBDT1TPPM4G5. On
-  Linux, atotto runs `wl-copy`, `xclip`, or `xsel` and has no clipboard
-  without one of them. GTK is already in the process. The one awkward piece
-  is GTK4 paste, which is asynchronous.
-- **Notify, tray, and dialog** are already subpackages and stay as they are.
-  Only the root's imports of them go. Two limits to know about:
+- **Autostart** is `tuohi/autostart`: `New(id)`, where the id is the name
+  the registration is stored under, used as given. The fallbacks to a slug of
+  `App.Name` or of the executable went with `App.Autostart()`. About 75 to 80
+  percent of its 1,130 lines are derived from Wails v3, credited in NOTICE and
+  at the code. The SMAppService binding is appkit's own. The review keeps it
+  credited rather than rewriting it: MIT with credit costs nothing, and a
+  rewrite would come out much the same. What it does rewrite is the
+  `.desktop` `Exec` quoting. That quoting was copied from Wails, and it
+  neither doubles `%` nor quotes the reserved characters:
+  TKT-01M3J59M535T9QH2RS1ZY6PSJM.
+- **Clipboard** is `tuohi/clipboard`: `Copy` and `Paste` on text. It still
+  wraps atotto, and drops it for native calls next: GTK3, GTK4,
+  `NSPasteboard`, and Win32. TKT-01M3J59M2BR91XQBDT1TPPM4G5. On Linux, atotto
+  runs `wl-copy`, `xclip`, or `xsel` and has no clipboard without one of them.
+  GTK is already in the process. The one awkward piece is GTK4 paste, which is
+  asynchronous. GTK calls belong on the UI thread, which the package will
+  reach through a hook the root exports.
+- **Notify, tray, and dialog** were already subpackages and stay as they are.
+  The root no longer imports notify or tray. The tray is set up in
+  `App.Start`, and its icon is the caller's `tray.Config.Icon`: the root no
+  longer derives a tray glyph from `App.Icon`. Two limits to know about:
   - The Linux tray is a StatusNotifierItem over D-Bus. It needs a watcher,
     which GNOME ships only as an extension. INFERRED.
   - The Linux dialog uses `GtkFileChooserNative`, so it goes through the

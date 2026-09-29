@@ -1,15 +1,18 @@
-// Package appkit is a pure-Go foundation for web-based desktop applications:
+// Package tuohi is a pure-Go foundation for web-based desktop applications:
 // it embeds the platform View (WKWebView on macOS, WebKitGTK on Linux,
-// WebView2 on Windows) behind a single Go API and layers desktop services on
-// top of it - windowing and app windows, drag regions, custom URL schemes,
-// notifications, clipboard, single-instance, opening URLs and native file
-// dialogs - all cgo-free.
+// WebView2 on Windows) behind a single Go API - windowing and app windows,
+// drag regions, custom URL schemes, bindings and events, opening URLs and
+// native file dialogs - all cgo-free.
+//
+// The package is the window. The desktop services live in subpackages that
+// do not import it: tuohi/instance (single instance), tuohi/autostart (launch
+// at login), tuohi/clipboard, tuohi/notify and tuohi/tray. A service that
+// needs the UI thread, such as the tray, is set up in App.Start.
 //
 // Source layout: the package is split into three file families. app*.go
 // holds the application scope - the App type (configuration + runtime
-// context), its app-scope methods (Show, Wait, Copy/Paste,
-// Open/Reveal, Notify) and the per-OS app internals
-// (single-instance, app icon); view*.go holds the view/window
+// context), its app-scope methods (Show, Wait, Open/Reveal, Backend) and the
+// per-OS app internals (app icon, Open/Reveal); view*.go holds the view/window
 // API surface (the define-first View struct and its methods, the geometry +
 // State/Config types, scheme types, App.Show glue, the View Dialog method,
 // drag regions); the binding/events machinery may be split further into
@@ -26,15 +29,9 @@ package tuohi
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
-	"image/png"
-	"io"
 	"io/fs"
 	"net"
 	"net/url"
@@ -48,72 +45,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/atotto/clipboard"
-	"github.com/terva-sh/tuohi/notify"
-	"github.com/terva-sh/tuohi/tray"
-
 	_ "embed"
 )
 
 //go:embed app.png
 
-// _icon is the embedded appkit mark: the PNG bytes of the application icon
+// _icon is the embedded mark: the PNG bytes of the application icon
 // (app.png). It is the DEFAULT process icon, unexported on purpose - when the
-// consumer leaves App.Icon (or the tray's own Icon) unset, appkit applies
-// _icon itself: setAppIcon receives it so every appkit app shows the appkit
-// face unless it brings its own, and the tray glyph is downscaled from it.
+// consumer leaves App.Icon unset, tuohi applies _icon itself: setAppIcon
+// receives it so every tuohi app shows that face unless it brings its own.
 var _icon []byte
-
-// trayGlyphSize is the side length, in pixels, of the tray icon appkit
-// derives from App.Icon when a configured tray leaves its own Icon unset.
-const trayGlyphSize = 32
-
-// resizePNG downscales a square PNG to size×size with a box filter and
-// returns the result as PNG bytes, or nil when pngData is not a decodable
-// image. The box average runs over straight (non-premultiplied) color, so
-// translucent edges keep their hue. It is appkit's shared resizer for icon
-// paths that need a smaller copy of a PNG - the tray glyph derived from
-// App.Icon (or the embedded default) when the tray config sets no icon.
-func resizePNG(pngData []byte, size int) []byte {
-	if size <= 0 {
-		return nil
-	}
-	src, err := png.Decode(bytes.NewReader(pngData))
-	if err != nil {
-		return nil
-	}
-	sb := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, size, size))
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			x0, x1 := x*sb.Dx()/size, (x+1)*sb.Dx()/size
-			y0, y1 := y*sb.Dy()/size, (y+1)*sb.Dy()/size
-			if x1 <= x0 || y1 <= y0 { // size exceeds the source: degenerate box
-				x1, y1 = x0+1, y0+1
-			}
-			var r, g, b, a uint64
-			for yy := y0; yy < y1; yy++ {
-				for xx := x0; xx < x1; xx++ {
-					c := color.NRGBAModel.Convert(src.At(xx, yy)).(color.NRGBA)
-					r += uint64(c.R)
-					g += uint64(c.G)
-					b += uint64(c.B)
-					a += uint64(c.A)
-				}
-			}
-			n := uint64((y1 - y0) * (x1 - x0))
-			if n == 0 {
-				n = 1
-			}
-			dst.SetRGBA(x, y, color.RGBA{R: uint8(r / n), G: uint8(g / n), B: uint8(b / n), A: uint8(a / n)})
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, dst); err != nil {
-		return nil
-	}
-	return buf.Bytes()
-}
 
 // boxDownscale averages a square straight-RGBA image down to size×size with a
 // box filter (each destination pixel is the mean of its source box). Straight
@@ -169,7 +110,7 @@ func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
 // App configures an appkit application and carries its runtime scope.
 //
 // It is the single application-scoped object: the exported fields hold the
-// application settings (content filesystem, tray, icon, single-instance, ...)
+// application settings (content filesystem, icon, the Start hook, ...)
 // and unexported fields hold the state of the scope (committed settings and
 // the one-time platform initialization). It is conceptually similar to how
 // http.Server holds configuration and context together.
@@ -181,10 +122,12 @@ func envDebug() bool { return os.Getenv("APPKIT_DEBUG") == "1" }
 // that opens the scope should come from the goroutine that will own the UI
 // (the main goroutine).
 //
-// All app-scoped services are methods on *App (Show, Wait, Copy, Open,
-// Paste, Reveal, Notify, ...); App.Bind is a declarative map instead
-// of a method - see its field doc. This is a deliberate design
-// choice: the App scope is never hidden from the consumer.
+// The app-scoped operations are methods on *App (Show, Wait, Quit, Open,
+// Reveal, Backend); App.Bind is a declarative map instead of a method - see
+// its field doc. This is a deliberate design choice: the App scope is never
+// hidden from the consumer. The desktop services - single instance,
+// autostart, clipboard, notifications and the tray - are not part of App;
+// they live in their own subpackages (see the package doc).
 type App struct {
 	// Debug turns the platform web inspector / developer tools on for every
 	// window of this app (the app-wide default for View.Debug): set it once
@@ -205,31 +148,10 @@ type App struct {
 	// is fixed when each view is created.
 	Events string
 
-	// ID uniquely identifies this application - e.g.
-	// "com.github.malivvan.appkit" - the key the single-instance rule locks
-	// on. It is optional outside Single Instance Mode: with App.Exec nil it is
-	// unused and several instances of the same binary run side by side. When
-	// App.Exec is set (Single Instance Mode is on), ID is REQUIRED: a later
-	// launch of an app whose ID matches an already-running primary forwards
-	// its command-line arguments to that primary (see Exec) and exits
-	// quietly. Launching the binary with "--new-instance" in its arguments
-	// always starts a fresh instance, even in single-instance mode.
-	ID string
-
-	// Exec, when non-nil, ENABLES Single Instance Mode: only one process of
-	// this application runs at a time, and every later launch is redirected to
-	// it instead of starting a new process. App.ID must then uniquely identify
-	// the application (see the ID doc). With Exec nil (the default),
-	// single-instance mode is off and every launch runs its own process.
-	//
-	// Exec is invoked on the primary instance with the command-line arguments
-	// of each redirected later launch. It runs on its own goroutine, so hand
-	// the arguments to the UI thread if you touch UI state.
-	Exec func(args []string)
-
-	// Name is the application name, used where the OS asks for one - most
-	// visibly as the source shown by desktop notifications (App.Notify), and
-	// as the title of a window that has no other (see View.Title).
+	// Name is the application name, used where the OS asks for one: as the
+	// title of a window that has no other (see View.Title), and under GTK3 on
+	// Wayland as the name of the desktop entry the icon is installed under
+	// (see Icon).
 	Name string
 
 	// Icon is a PNG image for the running application, applied on a
@@ -238,10 +160,7 @@ type App struct {
 	// app scope opens and before the first window exists. When Icon is unset
 	// the embedded appkit mark is used instead (unexported; appkit applies it
 	// itself), so an appkit application always has a process face unless it
-	// brings its own. App.Icon is ALSO the source of the tray glyph when the
-	// app configures a tray (App.Tray) whose own Icon is unset: appkit
-	// downscales App.Icon (or the embedded mark) to a tray-sized PNG at app
-	// init. Unlike the per-window page icon it sets the face of the PROCESS; a
+	// brings its own. Unlike the per-window page icon it sets the face of the PROCESS; a
 	// stable, runtime process icon is intentionally a best-effort feature
 	// because it is hard to keep identical across all platforms. An unset icon
 	// is silently ignored; so are environments that cannot take a runtime icon
@@ -345,40 +264,18 @@ type App struct {
 	// returns only when App.Quit is called.
 	Exit bool
 
-	// Tray optionally puts an icon with a menu in the system tray / menu bar
-	// for the life of the application. When set, the icon appears as App.Wait
-	// starts running the platform UI loop (that loop dispatches the tray's
-	// menu events) and is removed when Wait returns. It is the app-scoped,
-	// declarative form of the tray subpackage's Set/Remove pair; see the tray
-	// package for the full API.
+	// Start, when set, runs on the UI thread when Wait starts, before its
+	// loop dispatches any event. It is where a service that needs the UI
+	// thread is set up, such as a tray icon:
 	//
-	// The Config is read once when the app scope opens - icon (PNG, plus
-	// dark-mode and macOS template variants), tooltip, tray-level click
-	// handlers and the whole menu tree (checkboxes, submenus, separators,
-	// per-item icons). When the config leaves its Icon unset, appkit derives
-	// the tray glyph at app init from App.Icon - falling back to the embedded
-	// appkit mark - downscaled to a tray-sized PNG (see the Icon doc). The
-	// tray is a launcher, not a live dashboard: the menu
-	// stays fixed for its lifetime, so there is no runtime update machinery.
+	//	app.Start = func() error { return tray.Set(cfg) }
 	//
-	// A menu item's OnClick runs on the UI thread; keep it short or hand the
-	// work to a goroutine. A typical use ends the app from the menu:
+	// and tear it down after Wait returns (tray.Remove). An error from
+	// Start ends Wait, which returns it.
 	//
-	//	Tray: &tray.Config{
-	//		Icon:    iconPNG,
-	//		Tooltip: "my app",
-	//		Items: []tray.Item{
-	//			{Label: "Open", OnClick: openUI},
-	//			{Label: "Quit", OnClick: app.Quit},
-	//		},
-	//	}
-	//
-	// On macOS the tray switches the application to the accessory (menu-bar)
-	// activation policy, so the app's Dock icon disappears while the tray is
-	// up; that is the tray package's behavior for standalone use too. A
-	// configured tray that cannot be created (for example a second tray in
-	// the same process) makes Wait fail with the tray package's error.
-	Tray *tray.Config
+	// Like every App field it is committed when the app scope opens (later
+	// edits have no effect).
+	Start func() error
 
 	// --- internal scope state; see the App doc ---
 	scopeOnce sync.Once
@@ -391,10 +288,8 @@ type App struct {
 type appConfig struct {
 	Name   string
 	Exit   bool
-	Tray   *tray.Config
+	Start  func() error
 	Icon   []byte
-	ID     string
-	Exec   func(args []string)
 	FS     fs.FS
 	HTTP   bool
 	Debug  bool
@@ -409,10 +304,8 @@ func snapshotConfig(a *App) appConfig {
 	return appConfig{
 		Name:   a.Name,
 		Exit:   a.Exit,
-		Tray:   a.Tray,
+		Start:  a.Start,
 		Icon:   a.Icon,
-		ID:     a.ID,
-		Exec:   a.Exec,
 		FS:     a.FS,
 		HTTP:   a.HTTP,
 		Debug:  a.Debug || envDebug(),
@@ -427,19 +320,17 @@ type appScope struct {
 	cfg     appConfig // committed settings snapshot
 	initErr error
 
-	// Lifecycle state. startOnce guards the one-time app start (single
-	// instance + icon, see (*App).start); windows counts the
+	// Lifecycle state. startOnce guards the one-time app start (the icon,
+	// see (*App).start); windows counts the
 	// live windows created through App.Show (owned windows only);
 	// exitOnce/exitFlag end the Wait run loop (App.Quit, or the last window
 	// closing when App.Exit is set). No app-scope web server exists: the
 	// loopback servers (macOS always, Linux and Windows under App.HTTP) are
 	// per-view, temporary, and owned by the engine (see viewContentBase).
-	startOnce   sync.Once
-	startErr    error
-	releaseInst func()
-	windows     int32
-	exitOnce    sync.Once
-	exitFlag    int32
+	startOnce sync.Once
+	windows   int32
+	exitOnce  sync.Once
+	exitFlag  int32
 
 	// views is the set of Views currently shown (and managed) by this App,
 	// each with the engine App.Show created for it. App.Show registers a View
@@ -525,29 +416,19 @@ func (a *App) Wait() error {
 	if err != nil {
 		return fmt.Errorf("appkit: wait: %w", err)
 	}
-	if err := a.start(s); err != nil {
-		return err
-	}
-	// A configured tray shows its icon before the loop runs - Wait runs on the
-	// UI thread, which is where tray.Set must be called - and the loop below
-	// dispatches the tray's menu events. Remove hides the icon when the loop
-	// ends; it leaves the (now-finished) loop alone and is safe to call on
-	// every platform.
-	if s.cfg.Tray != nil {
-		if err := tray.Set(*s.cfg.Tray); err != nil {
-			return fmt.Errorf("appkit: tray: %w", err)
+	a.start(s)
+	// App.Start sets up the services that need the UI thread - Wait runs on
+	// it - before the loop below dispatches their events.
+	if s.cfg.Start != nil {
+		if err := s.cfg.Start(); err != nil {
+			return fmt.Errorf("tuohi: start: %w", err)
 		}
-		defer tray.Remove()
 	}
 	ui.enterLoop()
 	for atomic.LoadInt32(&s.exitFlag) == 0 {
 		appUIWait()
 	}
 	ui.exitLoop()
-	if s.releaseInst != nil {
-		s.releaseInst()
-		s.releaseInst = nil
-	}
 	return nil
 }
 
@@ -562,24 +443,17 @@ func (a *App) Quit() {
 	s.requestExit()
 }
 
-// start performs the one-time application initialization: the single-instance
-// rule (enabled by App.Exec, keyed on App.ID) and the best-effort runtime
-// icon (App.Icon). It runs once - on the first window creation or the first
-// Wait call - which is the single "app initialization" point of the scope;
-// later calls are no-ops. App.Show and Wait both call it, so the order does
+// start performs the one-time application initialization: the best-effort
+// runtime icon (App.Icon). It runs once - on the first window creation or
+// the first Wait call - which is the single "app initialization" point of the
+// scope; later calls are no-ops. App.Show and Wait both call it, so the order does
 // not matter. Content serving is NOT started here: there is no permanently
 // listening web server. App.FS is served per view - through WebView2's https
 // vhost on Windows, or over a TEMPORARY per-view loopback server (macOS and
 // Linux always; Windows when App.HTTP opts in), started at window creation
 // and stopped once the window has been loaded (see viewContentBase).
-func (a *App) start(s *appScope) error {
+func (a *App) start(s *appScope) {
 	s.startOnce.Do(func() {
-		release, err := enforceSingleInstance(&s.cfg)
-		if err != nil {
-			s.startErr = err
-			return
-		}
-		s.releaseInst = release
 		// The process icon: App.Icon when the consumer set one, otherwise the
 		// embedded appkit mark (_icon). setAppIcon is best-effort per platform
 		// (Dock on macOS, GTK window icons on Linux, no-op on Windows) and its
@@ -590,27 +464,12 @@ func (a *App) start(s *appScope) error {
 			icon = _icon
 		}
 		_ = setAppIcon(icon, s.cfg.Name)
-		// Tray icon default: when the app configures a tray but leaves the
-		// tray's own Icon unset, appkit derives the tray glyph from the same
-		// process icon (App.Icon, falling back to the embedded mark) and
-		// downscales it to trayGlyphSize - the resize that used to be
-		// hand-written in the showcase. The derived icon goes on a COPY of
-		// the config, so the consumer's tray.Config is left untouched, and a
-		// PNG that cannot be decoded simply leaves the tray icon unset.
-		if s.cfg.Tray != nil && len(s.cfg.Tray.Icon) == 0 {
-			if glyph := resizePNG(icon, trayGlyphSize); len(glyph) > 0 {
-				cp := *s.cfg.Tray
-				cp.Icon = glyph
-				s.cfg.Tray = &cp
-			}
-		}
 	})
-	return s.startErr
 }
 
 // scopePtr points at the currently active App scope so the per-OS engines can
 // report window close events into it (appWindowClosed). One live application
-// per process is the supported model (matching the single-instance lock).
+// per process is the supported model.
 var scopePtr atomic.Pointer[appScope]
 
 // appWindowClosed is invoked by the per-OS engines when an owned window
@@ -635,60 +494,6 @@ func (s *appScope) requestExit() {
 	})
 }
 
-// Notify displays an OS-level notification with the given title and message,
-// named after the app (App.Name). It delegates to the notify subpackage,
-// which needs no window and no tray icon: each platform binds the
-// notification service the OS ships - NSUserNotificationCenter on macOS, a
-// Shell_NotifyIconW balloon on Windows, org.freedesktop.Notifications on
-// Linux. The App method stays plain (title + message only, no options); for
-// custom icons, urgency or an alert/beep use the notify subpackage's
-// ShowOpts/Alert/Beep directly.
-//
-// It is safe to call from any goroutine once the App scope is open and
-// returns the notify package's ErrUnsupported on platforms without a backend
-// (anything but macOS, Windows and Linux). On macOS it can return
-// ErrUnavailable when the process has no notification center - the deprecated
-// NSUserNotificationCenter needs a bundled .app the user granted Notification
-// permission (see the notify package docs); check with errors.Is.
-func (a *App) Notify(title, message string) error {
-	s, err := a.begin()
-	if err != nil {
-		return err
-	}
-	return notify.Show(s.cfg.Name, title, message)
-}
-
-// Copy puts b onto the system clipboard, replacing whatever was there. It is
-// an App method over github.com/atotto/clipboard (which reads the platform
-// clipboard through pbcopy/pbpaste on macOS, xclip/xsel/wl-copy on Linux and
-// the Win32 API on Windows). Safe to call from any goroutine once the App
-// scope is open.
-//
-// The platform backends are text clipboards, so Copy is binary-safe only
-// opportunistically: arbitrary bytes round-trip where the backend preserves
-// them verbatim (the command-line tools treat the payload as opaque), while
-// Windows maps the payload through its text clipboard and may not preserve
-// non-text bytes. It returns an error when no clipboard backend is available
-// (for example a headless Linux box without xclip/xsel/wl-copy).
-func (a *App) Copy(b []byte) error {
-	if _, err := a.begin(); err != nil {
-		return err
-	}
-	return clipboard.WriteAll(string(b))
-}
-
-// Paste returns the current clipboard content as raw bytes. Text copied from
-// other applications arrives as its UTF-8 encoding. An empty clipboard yields
-// an empty slice with a nil error; an error is returned only when no
-// clipboard backend is available.
-func (a *App) Paste() ([]byte, error) {
-	if _, err := a.begin(); err != nil {
-		return nil, err
-	}
-	s, err := clipboard.ReadAll()
-	return []byte(s), err
-}
-
 // Backend reports which web-engine backend the App scope uses for its views,
 // after the one-time platform initialization has run:
 //
@@ -706,114 +511,6 @@ func (a *App) Backend() string {
 		return ""
 	}
 	return platformBackend()
-}
-
-// errAlreadyRunning is returned by the internal single-instance machinery when
-// another process holds the lock for the requested id.
-var errAlreadyRunning = errors.New("appkit: another instance is already running")
-
-// instanceLock is a held single-instance lock. Single-instance handling is
-// deliberately exposed only through App (Exec / ID) - there is no
-// public manual API. Release relinquishes the lock and stops listening for
-// hand-offs; it is safe to call more than once (later calls are no-ops
-// returning the first result).
-type instanceLock struct {
-	once    sync.Once
-	relErr  error
-	release func() error
-}
-
-// Release relinquishes the lock. See instanceLock.
-func (l *instanceLock) Release() error {
-	l.once.Do(func() { l.relErr = l.release() })
-	return l.relErr
-}
-
-// acquireInstance tries to become the single instance identified by id (a
-// stable application identifier such as "com.example.app"). It returns the
-// owning lock when no instance is running, or errAlreadyRunning when one
-// already is. onMessage, when non-nil, receives the arguments of later
-// launches that were redirected to this primary.
-func acquireInstance(id string, onMessage func([]string)) (*instanceLock, error) {
-	return acquire(id, onMessage)
-}
-
-// sendInstance delivers args to the instance already running under id, for use
-// after acquireInstance returned errAlreadyRunning. It returns an error when no
-// instance is listening.
-func sendInstance(id string, args []string) error { return send(id, args) }
-
-// instanceKey derives a short, filesystem- and pipe-name-safe key from an arbitrary
-// id, so the lock/socket/pipe names stay bounded in length and collision-free.
-func instanceKey(id string) string {
-	sum := sha256.Sum256([]byte(id))
-	return hex.EncodeToString(sum[:8])
-}
-
-// enforceSingleInstance applies the single-instance rule. It is only active
-// when App.Exec is set (a non-nil Exec enables Single Instance Mode): with a
-// nil Exec every launch runs its own process. When active, App.ID names the
-// application the rule locks on - with Exec set and an empty ID it returns an
-// error, because a single instance needs a stable identifier to lock. When
-// active, this process becomes the primary instance (its Release is returned
-// so the caller defers it); a second launch forwards its arguments to the
-// primary and terminates the process quietly (os.Exit(0)). The rule is also
-// skipped when the binary was started with the "--new-instance" override flag
-// (which always starts a fresh instance) or when this process already holds
-// the primary lock.
-func enforceSingleInstance(opts *appConfig) (func(), error) {
-	if opts.Exec == nil || hasNewInstanceFlag(os.Args) {
-		return func() {}, nil
-	}
-	id := opts.ID
-	if id == "" {
-		return nil, errors.New("appkit: App.ID is required when App.Exec enables single-instance mode")
-	}
-	if instanceHeld() {
-		return func() {}, nil
-	}
-	inst, err := acquireInstance(id, opts.Exec)
-	if errors.Is(err, errAlreadyRunning) {
-		// Another instance owns the lock: hand it our arguments and go away.
-		_ = sendInstance(id, os.Args[1:])
-		os.Exit(0)
-	}
-	if err != nil {
-		return nil, err
-	}
-	setInstanceHeld(true)
-	return func() {
-		setInstanceHeld(false)
-		_ = inst.Release()
-	}, nil
-}
-
-// hasNewInstanceFlag reports whether the process was started with the
-// "--new-instance" override, which always starts a fresh instance.
-func hasNewInstanceFlag(args []string) bool {
-	for _, a := range args {
-		if a == "--new-instance" {
-			return true
-		}
-	}
-	return false
-}
-
-var (
-	instanceMu  sync.Mutex
-	primaryHeld bool
-)
-
-func instanceHeld() bool {
-	instanceMu.Lock()
-	defer instanceMu.Unlock()
-	return primaryHeld
-}
-
-func setInstanceHeld(v bool) {
-	instanceMu.Lock()
-	primaryHeld = v
-	instanceMu.Unlock()
 }
 
 // binder is the surface bindEntry writes every declarative entry onto: the
@@ -1570,259 +1267,4 @@ func statusText(status int) string {
 	default:
 		return "Status " + strconv.Itoa(status)
 	}
-}
-
-// --- Autostart -------------------------------------
-
-// App-scope autostart service: App.Autostart() hands out an *Autostart that
-// registers the application to launch when the user logs in. The mechanism is
-// per platform (a .desktop file under XDG autostart, an HKCU Run registry
-// value, a launchd LaunchAgent plist or - for bundled macOS 13+ apps -
-// SMAppService); every registration points at the running executable and
-// takes effect on the next login, not immediately.
-
-// Autostart backend names, reported by Autostart.Backend for an existing
-// registration (empty when nothing is registered).
-const (
-	autostartBackendSMAppService = "smappservice"  // macOS 13+, bundled .app
-	autostartBackendLaunchAgent  = "launchagent"   // macOS ~/Library/LaunchAgents plist
-	autostartBackendRegistryRun  = "registry-run"  // Windows HKCU …\Run value
-	autostartBackendXDGAutostart = "xdg-autostart" // freedesktop .desktop autostart
-)
-
-// ErrAutostartNotSupported is returned by Autostart methods when the current
-// platform has no autostart backend.
-var ErrAutostartNotSupported = errors.New("appkit: autostart is not supported on this platform")
-
-// Autostart controls whether the application starts at user login. Get it
-// from App.Autostart.
-//
-// A registration points at the running executable and takes effect on the
-// next login, not immediately. Re-enabling overwrites the registration; each
-// platform keeps at most one entry per executable, so a previous registration
-// under a different identifier (e.g. after App.Name changed) is replaced, not
-// duplicated.
-//
-// Enabled, Path and Backend report the CURRENT registration: they scan
-// the platform's registration store for an entry whose command is the running
-// executable, so they work regardless of the identifier used at Enable time.
-type Autostart struct {
-	cfg  appConfig // committed App settings: ID and Name are the identifier source
-	impl autostartBackend
-}
-
-// autostartBackend is one platform's registration mechanism. Implementations
-// live in the per-OS app_autostart files.
-type autostartBackend interface {
-	// enable registers the running executable under the given identifier
-	// with the given login arguments.
-	enable(id string, args []string) error
-	// disable removes the registration for the running executable, if any.
-	disable() error
-	// status reports whether a registration for the running executable
-	// exists, the path of its artefact (registry sub-key path on Windows,
-	// the bundle identifier for SMAppService) and the backend name.
-	status() (enabled bool, path, backend string)
-}
-
-// Autostart returns the application's autostart controller. The identifier a
-// registration is stored under derives from App.ID when set, otherwise from a
-// filesystem-safe slug of App.Name (or of the executable name when App.Name
-// is empty) - see Autostart.Enable.
-func (a *App) Autostart() *Autostart {
-	cfg := snapshotConfig(a)
-	return &Autostart{cfg: cfg, impl: newAutostartBackend(cfg)}
-}
-
-// Enabled reports whether a registration for the running executable exists.
-// It does not verify that a registered entry still points at the running
-// binary; Disable and Enable always reconcile that themselves.
-func (a *Autostart) Enabled() bool {
-	if a == nil || a.impl == nil {
-		return false
-	}
-	enabled, _, _ := a.impl.status()
-	return enabled
-}
-
-// Enable registers the application to launch at login with the given command
-// line arguments (appended after the executable path). It is safe to call
-// repeatedly: an existing registration is overwritten, and a stale entry
-// pointing at this executable under a different identifier is removed first.
-//
-// The registration identifier is App.ID when set; otherwise a slug of
-// App.Name, or of the executable name when App.Name is empty. An App.ID
-// containing characters outside A-Za-z0-9._- is rejected.
-func (a *Autostart) Enable(args ...string) error {
-	if a == nil || a.impl == nil {
-		return ErrAutostartNotSupported
-	}
-	id, err := autostartIdentifier(a.cfg)
-	if err != nil {
-		return err
-	}
-	return a.impl.enable(id, args)
-}
-
-// Disable removes the autostart registration for the running executable. It
-// is a no-op (nil error) when nothing is registered.
-func (a *Autostart) Disable() error {
-	if a == nil || a.impl == nil {
-		return ErrAutostartNotSupported
-	}
-	return a.impl.disable()
-}
-
-// Path returns the path of the registration artefact for the current
-// registration: the .desktop file path on Linux, the registry sub-key path
-// (HKCU\…\Run\<id>) on Windows, the LaunchAgent plist path on macOS, or the
-// bundle identifier for an SMAppService registration. Empty when nothing is
-// registered.
-func (a *Autostart) Path() string {
-	if a == nil || a.impl == nil {
-		return ""
-	}
-	_, path, _ := a.impl.status()
-	return path
-}
-
-// Backend returns the name of the mechanism the current registration uses:
-// "xdg-autostart", "registry-run", "launchagent" or "smappservice". Empty
-// when nothing is registered.
-func (a *Autostart) Backend() string {
-	if a == nil || a.impl == nil {
-		return ""
-	}
-	_, _, backend := a.impl.status()
-	return backend
-}
-
-// autostartIdentifier derives the registration identifier from the committed
-// App settings: App.ID verbatim (validated), else a slug of App.Name, else a
-// slug of the executable's base name, else the built-in fallback.
-func autostartIdentifier(cfg appConfig) (string, error) {
-	if cfg.ID != "" {
-		if err := validateAutostartIdentifier(cfg.ID); err != nil {
-			return "", err
-		}
-		return cfg.ID, nil
-	}
-	if cfg.Name != "" {
-		return autostartSlug(cfg.Name), nil
-	}
-	if exe, err := os.Executable(); err == nil {
-		if id := autostartSlug(filepath.Base(exe)); id != "" && id != defaultAutostartSlug {
-			return id, nil
-		}
-	}
-	return defaultAutostartSlug, nil
-}
-
-// The autostart support below is derived from Wails v3
-// pkg/application/autostart.go (MIT, Copyright (c) 2018-Present Lea Anthony).
-// See NOTICE.
-
-// defaultAutostartSlug is the registration identifier used when the app has
-// neither App.ID nor App.Name and the executable name slugifies to nothing.
-const defaultAutostartSlug = "appkit-app"
-
-// autostartSlug turns a free-form application name into something usable as
-// the basename of a registration artefact (and as a launchd label): ASCII
-// letters, digits, '.', '_' and '-', lower-cased, with whitespace collapsing
-// to '-'. It never returns an empty string for non-empty input; the caller
-// guarantees non-empty input.
-func autostartSlug(name string) string {
-	var b strings.Builder
-	b.Grow(len(name))
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9',
-			r == '.', r == '_', r == '-':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r + ('a' - 'A'))
-		case r == ' ', r == '\t':
-			b.WriteByte('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-._")
-	if out == "" {
-		return defaultAutostartSlug
-	}
-	return out
-}
-
-// validateAutostartIdentifier rejects identifiers that would be unsafe as a
-// filename, registry value name or launchd Label.
-func validateAutostartIdentifier(id string) error {
-	if id == "" {
-		return nil
-	}
-	if len(id) > 200 {
-		return fmt.Errorf("appkit: autostart identifier too long (max 200): %q", id)
-	}
-	for _, r := range id {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
-			r >= '0' && r <= '9',
-			r == '.', r == '_', r == '-':
-		default:
-			return fmt.Errorf("appkit: autostart identifier %q contains invalid character %q (allowed: A-Za-z0-9._-)", id, r)
-		}
-	}
-	return nil
-}
-
-// resolvedExecutable returns os.Executable() after resolving symlinks, so
-// registrations don't break when the binary is installed through a symlink
-// farm (Homebrew, Scoop). Falls back to the unresolved path when symlink
-// resolution fails.
-func resolvedExecutable() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("appkit: autostart: get executable path: %w", err)
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved, nil
-	}
-	return exe, nil
-}
-
-// writeFileAtomic writes data to path via a temp file + rename in the same
-// directory, so a partial write never leaves a half-formed plist or .desktop
-// file in place.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
-	// os.File.Write reports short writes as errors, but double-check n ==
-	// len(data) so a future change of writer type cannot silently rename a
-	// truncated artefact into place.
-	n, err := tmp.Write(data)
-	if err == nil && n != len(data) {
-		err = io.ErrShortWrite
-	}
-	if err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		cleanup()
-		return err
-	}
-	return nil
 }

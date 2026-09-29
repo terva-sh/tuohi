@@ -107,18 +107,16 @@ Check the unsupported/unavailable cases with `errors.Is(err, notify.ErrUnsupport
 
 ## App integration
 
-The main appkit package exposes plain notifications as the `App.Notify` method,
-which supplies the name from `App.Name`:
+tuohi's `App` has no notification method, and the root package does not
+import this one, so a program that opens a window without notifying does not
+link it. Call `notify.Show` directly and pass `App.Name` as the source:
 
 ```go
-app := &appkit.App{Name: "backup tool"}
-if err := app.Notify("Backup finished", "Snapshot complete"); err != nil {
+app := &tuohi.App{Name: "backup tool"}
+if err := notify.Show(app.Name, "Backup finished", "Snapshot complete"); err != nil {
 	// errors.Is(err, notify.ErrUnsupported) on unsupported platforms
 }
 ```
-
-`App.Notify` passes no options - use the standalone `notify` functions above
-when you need icons, urgency or an alert/beep.
 
 ## Example
 

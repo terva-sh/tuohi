@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
-	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,191 +16,41 @@ import (
 	"unsafe"
 
 	"github.com/terva-sh/tuohi/dialog"
-	"github.com/terva-sh/tuohi/tray"
 )
 
-// uniqueID keeps parallel CI jobs and reruns from colliding on the same lock.
-func uniqueID(name string) string {
-	return fmt.Sprintf("native-instance-test-%s-%d", name, os.Getpid())
-}
-
-// TestSnapshotConfigCarriesTray verifies that App.Tray is part of the
-// committed settings snapshot: it is a declarative, read-once config that Wait
-// applies around its run loop (tray.Set before the loop, Remove after). Only
-// the snapshot is asserted here - showing the icon needs a live tray backend
-// (status bar / session D-Bus), which unit tests must not touch.
-func TestSnapshotConfigCarriesTray(t *testing.T) {
-	cfg := &tray.Config{Tooltip: "snapshot-test"}
-	got := snapshotConfig(&App{Name: "snapshot-test", Tray: cfg})
-	if got.Tray != cfg {
-		t.Fatalf("snapshot Tray = %v, want the committed config pointer", got.Tray)
+// TestSnapshotConfigCarriesStart verifies that App.Start is part of the
+// committed settings snapshot, which Wait calls before its run loop. Calling
+// it needs a live UI thread; the GUI scenarios cover that.
+func TestSnapshotConfigCarriesStart(t *testing.T) {
+	called := false
+	got := snapshotConfig(&App{Start: func() error { called = true; return nil }})
+	if got.Start == nil {
+		t.Fatal("snapshot Start = nil, want the committed hook")
 	}
-	if snapshotConfig(&App{}).Tray != nil {
-		t.Fatal("snapshot Tray should be nil when App.Tray is unset")
+	if err := got.Start(); err != nil || !called {
+		t.Fatalf("snapshot Start() = %v, called = %v; want the committed hook", err, called)
+	}
+	if snapshotConfig(&App{}).Start != nil {
+		t.Fatal("snapshot Start should be nil when App.Start is unset")
 	}
 }
 
 // Shared fixtures for the tests below.
 const (
-	testAppID   = "com.example.app"
-	testAppName = "My App"
 	testIndex   = "index.html"
 	testCSSBody = "body{}"
 	testHTML    = "<h1>hi</h1>"
 )
 
-// TestSnapshotConfigCarriesExitIDAndExec verifies that App.Exit, App.ID and
-// App.Exec are committed into the settings snapshot: Exit ends the
-// process when the last window closes (the default keeps it alive until
-// App.Quit); ID is the app's unique identifier, optional outside Single
-// Instance Mode; Exec is the callback that ENABLES Single Instance Mode.
-func TestSnapshotConfigCarriesExitIDAndExec(t *testing.T) {
-	call := func([]string) {}
-	got := snapshotConfig(&App{Exit: true, ID: testAppID, Exec: call})
-	if !got.Exit {
+// TestSnapshotConfigCarriesExit verifies that App.Exit is committed into the
+// settings snapshot: Exit ends the process when the last window closes (the
+// default keeps it alive until App.Quit).
+func TestSnapshotConfigCarriesExit(t *testing.T) {
+	if !snapshotConfig(&App{Exit: true}).Exit {
 		t.Fatal("snapshot Exit = false, want the committed true")
 	}
-	if got.ID != testAppID {
-		t.Fatalf("snapshot ID = %q, want the committed id", got.ID)
-	}
-	if got.Exec == nil {
-		t.Fatal("snapshot Exec = nil, want the committed callback")
-	}
-	zero := snapshotConfig(&App{})
-	if zero.Exit {
+	if snapshotConfig(&App{}).Exit {
 		t.Fatal("snapshot Exit should default to false")
-	}
-	if zero.ID != "" {
-		t.Fatalf("snapshot ID should default to empty, got %q", zero.ID)
-	}
-	if zero.Exec != nil {
-		t.Fatal("snapshot Exec should default to nil (single-instance mode off)")
-	}
-}
-
-// TestSingleInstanceDisabledWithoutExec pins the activation contract of
-// Single Instance Mode: it is enabled by App.Exec, NOT by App.ID. With Exec
-// nil - with or without an ID - the rule is disabled: a no-op release is
-// returned, no lock is taken, and several instances of the same binary run
-// side by side.
-func TestSingleInstanceDisabledWithoutExec(t *testing.T) {
-	for _, cfg := range []*appConfig{
-		{},
-		{ID: testAppID}, // an ID alone must NOT enable the rule
-	} {
-		release, err := enforceSingleInstance(cfg)
-		if err != nil {
-			t.Fatalf("enforceSingleInstance(%+v): unexpected error %v", cfg, err)
-		}
-		if release == nil {
-			t.Fatalf("enforceSingleInstance(%+v): nil release", cfg)
-		}
-		release()
-	}
-}
-
-// TestSingleInstanceExecRequiresID pins that App.ID is required exactly when
-// App.Exec enables Single Instance Mode: Exec set with an empty ID fails fast
-// (before any lock is taken) with a clear error.
-func TestSingleInstanceExecRequiresID(t *testing.T) {
-	release, err := enforceSingleInstance(&appConfig{Exec: func([]string) {}})
-	if err == nil {
-		t.Fatal("enforceSingleInstance with Exec set and empty ID: expected error")
-	}
-	if !strings.Contains(err.Error(), "App.ID is required") {
-		t.Fatalf("error = %v, want the ID-required message", err)
-	}
-	if release != nil {
-		t.Fatal("ID-required failure must not return a release")
-	}
-}
-
-// TestSingleInstanceEnabledByExec pins the positive contract: Exec set with an
-// ID names the application, this process becomes the primary (takes the lock),
-// and a second acquire of the same ID is rejected while the mode is active.
-func TestSingleInstanceEnabledByExec(t *testing.T) {
-	id := uniqueID("callmode")
-	release, err := enforceSingleInstance(&appConfig{ID: id, Exec: func([]string) {}})
-	if err != nil {
-		t.Fatalf("enforceSingleInstance with Exec set: %v", err)
-	}
-	if release == nil {
-		t.Fatal("enforceSingleInstance with Exec set: nil release")
-	}
-	defer release()
-	if _, err := acquireInstance(id, nil); !errors.Is(err, errAlreadyRunning) {
-		t.Fatalf("second acquire under active Exec mode = %v, want errAlreadyRunning", err)
-	}
-}
-
-// TestAcquireSendRoundTrip exercises the internal single-instance machinery end
-// to end in one process: the first acquireInstance wins, a second is rejected
-// with errAlreadyRunning, and sendInstance forwards arguments that arrive at
-// the primary's onMessage. flock denies a second lock even from the same
-// process (it is per open file description), and a Windows named pipe with
-// FILE_FLAG_FIRST_PIPE_INSTANCE likewise rejects the second create - so the
-// round trip is fully exercised on CI without spawning a child.
-func TestAcquireSendRoundTrip(t *testing.T) {
-	id := uniqueID("roundtrip")
-	got := make(chan []string, 1)
-
-	inst, err := acquireInstance(id, func(args []string) {
-		select {
-		case got <- args:
-		default:
-		}
-	})
-	if err != nil {
-		t.Fatalf("acquireInstance (primary): %v", err)
-	}
-	defer func() { _ = inst.Release() }()
-
-	second, err := acquireInstance(id, nil)
-	if !errors.Is(err, errAlreadyRunning) {
-		if second != nil {
-			_ = second.Release()
-		}
-		t.Fatalf("second acquireInstance = %v, want errAlreadyRunning", err)
-	}
-
-	want := []string{"open", "/tmp/a b.txt", "café ✓"}
-	if err := sendInstance(id, want); err != nil {
-		t.Fatalf("sendInstance: %v", err)
-	}
-	select {
-	case args := <-got:
-		if !slices.Equal(args, want) {
-			t.Fatalf("forwarded args = %v, want %v", args, want)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for forwarded args")
-	}
-}
-
-// TestReleaseAllowsReacquire confirms Release frees the lock so a later
-// acquireInstance succeeds again.
-func TestReleaseAllowsReacquire(t *testing.T) {
-	id := uniqueID("reacquire")
-	inst, err := acquireInstance(id, nil)
-	if err != nil {
-		t.Fatalf("first acquireInstance: %v", err)
-	}
-	if err := inst.Release(); err != nil {
-		t.Fatalf("Release: %v", err)
-	}
-	again, err := acquireInstance(id, nil)
-	if err != nil {
-		t.Fatalf("re-acquire after Release: %v", err)
-	}
-	_ = again.Release()
-}
-
-// TestSendWithoutInstance reports an error rather than blocking when nothing is
-// listening.
-func TestSendWithoutInstance(t *testing.T) {
-	id := uniqueID("noinstance")
-	if err := sendInstance(id, []string{"x"}); err == nil {
-		t.Fatal("sendInstance with no running instance should fail")
 	}
 }
 
@@ -770,93 +618,6 @@ func TestSortedMapKeys(t *testing.T) {
 	m := map[string]int{"b": 2, "a": 1, "c": 3}
 	if got, want := sortedMapKeys(m), []string{"a", "b", "c"}; len(got) != 3 || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Fatalf("sortedMapKeys = %v, want %v", got, want)
-	}
-}
-
-// --- Autostart -------------------------------------
-
-// TestAutostartSlug pins the artefact-name sanitization: ASCII alphanumerics,
-// '.', '_' and '-' survive, uppercase ASCII is lower-cased, whitespace
-// becomes '-', everything else (including the empty result) falls back
-// to the default slug.
-func TestAutostartSlug(t *testing.T) {
-	cases := map[string]string{
-		"My App":      "my-app",
-		"My  App":     "my--app",
-		"my.app_v1-x": "my.app_v1-x",
-		"Über-App":    "ber-app",
-		"  App  ":     "app",
-		"???":         defaultAutostartSlug,
-		"UPPER":       "upper",
-		"":            defaultAutostartSlug,
-	}
-	for in, want := range cases {
-		if got := autostartSlug(in); got != want {
-			t.Errorf("autostartSlug(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestValidateAutostartIdentifier(t *testing.T) {
-	good := []string{testAppID, "my-app_1.0", "x"}
-	for _, id := range good {
-		if err := validateAutostartIdentifier(id); err != nil {
-			t.Errorf("validateAutostartIdentifier(%q) = %v, want nil", id, err)
-		}
-	}
-	bad := []string{"has space", "has/slash", "emoji😀", strings.Repeat("a", 201)}
-	for _, id := range bad {
-		if err := validateAutostartIdentifier(id); err == nil {
-			t.Errorf("validateAutostartIdentifier(%q) = nil, want error", id)
-		}
-	}
-}
-
-// TestAutostartIdentifier pins the identifier derivation chain: App.ID wins
-// (and is validated, not mangled), then a slug of App.Name, then a slug of
-// the executable name, then the built-in default.
-func TestAutostartIdentifier(t *testing.T) {
-	cases := []struct {
-		name string
-		cfg  appConfig
-		want string
-	}{
-		{"id wins", appConfig{ID: testAppID, Name: testAppName}, testAppID},
-		{"name slug", appConfig{Name: testAppName}, "my-app"},
-		{"name slug strips non-ascii", appConfig{Name: "Über App"}, "ber-app"},
-	}
-	for _, tc := range cases {
-		got, err := autostartIdentifier(tc.cfg)
-		if err != nil || got != tc.want {
-			t.Errorf("%s: autostartIdentifier(%+v) = %q, %v; want %q", tc.name, tc.cfg, got, err, tc.want)
-		}
-	}
-	if _, err := autostartIdentifier(appConfig{ID: "bad id"}); err == nil {
-		t.Error("autostartIdentifier with an invalid App.ID = nil error, want error")
-	}
-	// No ID and no Name: falls back to the executable name, never empty.
-	id, err := autostartIdentifier(appConfig{})
-	if err != nil || id == "" {
-		t.Fatalf("autostartIdentifier(empty cfg) = %q, %v; want a non-empty slug", id, err)
-	}
-}
-
-// TestAutostartNilSafety: a nil *Autostart (never obtained, or a platform
-// without a backend) degrades to "not enabled" / "not registered" instead of
-// panicking; Enable/Disable report the platform as unsupported.
-func TestAutostartNilSafety(t *testing.T) {
-	var a *Autostart
-	if a.Enabled() {
-		t.Error("nil Autostart: Enabled = true")
-	}
-	if a.Path() != "" || a.Backend() != "" {
-		t.Errorf("nil Autostart: Path = %q, Backend = %q, want empty", a.Path(), a.Backend())
-	}
-	if err := a.Enable("--flag"); err == nil {
-		t.Error("nil Autostart: Enable = nil, want ErrAutostartNotSupported")
-	}
-	if err := a.Disable(); err == nil {
-		t.Error("nil Autostart: Disable = nil, want ErrAutostartNotSupported")
 	}
 }
 

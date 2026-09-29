@@ -67,7 +67,10 @@ import (
 	"time"
 
 	"github.com/terva-sh/tuohi"
+	"github.com/terva-sh/tuohi/autostart"
+	"github.com/terva-sh/tuohi/clipboard"
 	"github.com/terva-sh/tuohi/dialog"
+	"github.com/terva-sh/tuohi/notify"
 	"github.com/terva-sh/tuohi/tray"
 )
 
@@ -77,6 +80,11 @@ import (
 //
 //go:embed assets
 var assetsFS embed.FS
+
+// trayIcon is the -tray icon: the embedded app.png mark downscaled to 32x32.
+//
+//go:embed tray.png
+var trayIcon []byte
 
 func assetsRoot() fs.FS {
 	sub, err := fs.Sub(assetsFS, "assets")
@@ -109,8 +117,11 @@ type testReport struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// demoID names the demo's autostart registration.
+const demoID = "tuohi-demo"
+
 // autostartInfo is the JSON payload the page reads to render the Autostart
-// section (see App.Autostart).
+// section (see the tuohi/autostart package).
 type autostartInfo struct {
 	Enabled bool   `json:"enabled"`
 	Backend string `json:"backend"`
@@ -134,11 +145,9 @@ func main() {
 
 	// Exit true: closing the window (or App.Quit) ends the demo process.
 	// App.Icon is deliberately left unset: the process face (Dock tile on
-	// macOS, GTK window icon on Linux) is appkit's embedded default mark. The
-	// tray's own Icon below is left unset too - at app init appkit derives
-	// the tray glyph from App.Icon (here: the embedded mark) and downscales
-	// it, so the demo no longer ships its own resize code. The Dock icon
-	// stays by default; it disappears only when -tray is requested (the
+	// macOS, GTK window icon on Linux) is tuohi's embedded default mark. The
+	// tray shows trayIcon, the same mark downscaled to 32 pixels. The Dock
+	// icon stays by default; it disappears only when -tray is requested (the
 	// tray package runs the app under the menu-bar "accessory" policy).
 	app := &tuohi.App{Name: "appkit demo x", Exit: true}
 
@@ -146,9 +155,13 @@ func main() {
 	// It is OFF by default (the windowed showcase keeps its Dock/taskbar
 	// icon); pass -tray to showcase View.Show/View.Hide from a menu-bar
 	// (macOS) tray. Skipped under --selftest (runs headless, no tray host).
+	// App.Start puts the icon up on the UI thread as Wait starts, and
+	// tray.Remove takes it down once Wait returns.
 	var w *tuohi.View
-	if *trayFn && !*selftest {
-		app.Tray = &tray.Config{
+	withTray := *trayFn && !*selftest
+	if withTray {
+		cfg := tray.Config{
+			Icon:    trayIcon,
 			Tooltip: "appkit demo",
 			Items: []tray.Item{
 				{Label: "Show", OnClick: func() {
@@ -162,6 +175,7 @@ func main() {
 				{Label: "Quit", OnClick: app.Quit},
 			},
 		}
+		app.Start = func() error { return tray.Set(cfg) }
 	}
 
 	// Serve the app: ONE app-scoped App.FS carries the whole showcase on
@@ -298,25 +312,21 @@ func main() {
 				// notification to the UI).
 				_ = d.w.Emit("demo:goEvent", "from Go: "+msg)
 			},
-			"demoCopyText": func(s string) error { return d.app.Copy([]byte(s)) },
-			"demoPaste": func() (string, error) {
-				b, err := d.app.Paste()
-				return string(b), err
-			},
+			"demoCopyText": func(s string) error { return clipboard.Copy(s) },
+			"demoPaste":    func() (string, error) { return clipboard.Paste() },
 			"demoNotify": func() string {
-				// App.Notify returns the notify package error; unsupported
-				// platforms surface it through
-				// errors.Is(err, notify.ErrUnsupported).
-				if err := d.app.Notify("appkit demo", "Hello from the appkit demo window!"); err != nil {
+				// notify.Show names the source after the app; unsupported
+				// platforms surface errors.Is(err, notify.ErrUnsupported).
+				if err := notify.Show(app.Name, "appkit demo", "Hello from the appkit demo window!"); err != nil {
 					return err.Error()
 				}
 				return ""
 			},
-			// Autostart (App.Autostart): the page shows the registration state
-			// and toggles it. Binding callbacks run off the UI thread, which is
-			// fine - autostart only writes a file / registry value.
+			// Autostart (tuohi/autostart): the page shows the registration
+			// state and toggles it. Binding callbacks run off the UI thread,
+			// which is fine - autostart only writes a file / registry value.
 			"demoAutostartState": func() autostartInfo {
-				a := d.app.Autostart()
+				a := autostart.New(demoID)
 				return autostartInfo{
 					Enabled: a.Enabled(),
 					Backend: a.Backend(),
@@ -324,7 +334,7 @@ func main() {
 				}
 			},
 			"demoAutostartSet": func(on bool, args []string) error {
-				a := d.app.Autostart()
+				a := autostart.New(demoID)
 				if on {
 					return a.Enable(args...)
 				}
@@ -507,7 +517,11 @@ func main() {
 	// report window closes into the App scope (App.Exit is true) - or when
 	// App.Quit is called.
 	code := 0
-	if err := d.app.Wait(); err != nil {
+	err := d.app.Wait()
+	if withTray {
+		tray.Remove()
+	}
+	if err != nil {
 		log.Printf("demo: wait: %v", err)
 		code = 1
 	} else if !d.self.active {
