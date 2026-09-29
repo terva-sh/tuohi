@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M1H9PZ04J2C9JJZ7V13
 title: Move desktop services out of the root package
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: feat/split-services
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-split
-  commit: 03a0219ef0a9a34038a4bbcc6890aba910c31b98
-  session: null
-  claimed_at: 2026-09-29T21:44:35Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T21:52:11Z
+updated_at: 2026-09-29T22:31:02Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -124,3 +117,12 @@ It was fixed in the docs, not the code (e33a035). The package doc, New, and the 
 Rejected alternatives:
 - Falling back to a LaunchAgent whenever the id differs from the bundle identifier. A login item is the registration macOS expects from a bundled app.
 - Refusing the call in that case. Enable would then fail for a correct app over a naming mismatch.
+
+## Summary
+
+Landed in PR #38 (merge e68b5e2).
+
+- The root package is the window. Single instance, autostart and clipboard moved to tuohi/instance, tuohi/autostart and tuohi/clipboard. notify and tray are no longer imported by the root.
+- App.Start runs UI-thread services as Wait starts.
+- The README's Desktop services table says where each feature moved.
+- GitHub main was green after the merge in run 36636493438.

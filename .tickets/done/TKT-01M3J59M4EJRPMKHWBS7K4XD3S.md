@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M4EJRPMKHWBS7K4XD3S
 title: Guard tuohi's loopback server and settle its idle shutdown
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: fix/loopback-guard
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-loop
-  commit: e68b5e29b982e7498129a77e9b529c5482052d50
-  session: null
-  claimed_at: 2026-09-29T22:09:53Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:10:08Z
+updated_at: 2026-09-29T22:31:03Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -93,3 +86,12 @@ Implemented on `fix/loopback-guard`, per the plan.
 ### Not tested here
 
 macOS WKWebView and Windows WebView2 run the new scenario only on GitHub after the merge, as the owner decided. The cookie handling there is standard, but a failure would show up first on GitHub `main`.
+
+## Summary
+
+Landed in PR #40 (merge e78e6b5).
+
+- **Guard.** The per-view loopback server refuses a Host that is not its own with 421. It answers only requests carrying its 256-bit token: first in the path of the view's first navigation, then as the tuohi-PORT cookie (HttpOnly, SameSite=Lax) set by a redirect. Anything else gets 403.
+- **Lifetime.** The server lives until its view is destroyed; the idle timer is gone.
+- **Docs.** They say a same-user process can still read App.FS.
+- **Verified.** TestLoopbackLateFetch passes on both WebKitGTK stacks, and on macOS and Windows in GitHub run 36639214688. So the cookie handshake works on WKWebView and WebView2 too.
