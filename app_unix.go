@@ -17,6 +17,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/terva-sh/tuohi/internal/desktopentry"
 )
 
 // setAppIcon installs the application icon (App.Icon, PNG bytes) when the
@@ -36,12 +38,13 @@ import (
 // has no per-window icon protocol, so the taskbar/switcher icon comes from
 // the .desktop entry the compositor matches to the window's app_id: GTK
 // 4.20+ can push pixels through the xdg-toplevel-icon protocol (GTK4 path),
-// but GTK3 cannot, so on a Wayland session the GTK3 path additionally
-// installs a per-user .desktop entry and a themed icon keyed to the app's
-// name (installWaylandIdentity) and advertises the matching program name -
-// that is the only channel a GTK3 window has on Wayland. Failure at any step
-// is reported but never fatal (App.start ignores the error).
-func setAppIcon(pngData []byte, name string) error {
+// but GTK3 cannot, so on a Wayland session, when the app asks with
+// App.DesktopEntry, the GTK3 path additionally installs a per-user .desktop
+// entry and a themed icon keyed to the app's name (installWaylandIdentity)
+// and advertises the matching program name - that is the only channel a GTK3
+// window has on Wayland. Failure at any step is reported but never fatal
+// (App.start ignores the error).
+func setAppIcon(pngData []byte, name string, desktopEntry bool) error {
 	if len(pngData) == 0 {
 		return errors.New("appkit: the application icon is empty")
 	}
@@ -63,15 +66,23 @@ func setAppIcon(pngData []byte, name string) error {
 	// app_id resolves to that entry. g_set_prgname must run before gtk_init
 	// (the app_id is captured when the first window's surface is created) -
 	// gtk_init happens later, in windowInit/newView.
-	if os.Getenv("WAYLAND_DISPLAY") != "" {
-		if id := installWaylandIdentity(name, img); id != "" && gSetPrgname != nil {
-			gSetPrgname(id)
-		}
+	if id := waylandIdentity(desktopEntry, name, img); id != "" && gSetPrgname != nil {
+		gSetPrgname(id)
 	}
 	return gtk3InstallAppIcon(img.Pix, b.Dx(), b.Dy())
 }
 
 // --- Wayland application identity (GTK3) -----------------------------------
+
+// waylandIdentity installs the GTK3 Wayland identity when the app asked for
+// it with App.DesktopEntry and the session is Wayland, and returns its
+// desktop id; otherwise it writes nothing and returns "".
+func waylandIdentity(desktopEntry bool, name string, img *image.NRGBA) string {
+	if !desktopEntry || os.Getenv("WAYLAND_DISPLAY") == "" {
+		return ""
+	}
+	return installWaylandIdentity(name, img)
+}
 
 // installWaylandIdentity gives the compositor a desktop entry to derive the
 // application icon from. It writes a per-user .desktop file and a themed PNG
@@ -106,6 +117,28 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	if len(sizes) == 0 {
 		return ""
 	}
+	// An entry of this id that tuohi did not write belongs to someone else,
+	// such as a package that installs the application properly. Leave it and
+	// its icon alone: advertising the id is enough for the compositor to use
+	// it. That covers another user entry with the id, in a subdirectory of
+	// applications, and a system entry, which a user entry of the same id
+	// would shadow. An entry tuohi wrote before the other one arrived is
+	// removed, with its icons, so the other one is the entry the desktop
+	// uses.
+	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
+	old, err := os.ReadFile(desktopPath)
+	ours := err == nil && isGenerated(old)
+	if err == nil && !ours {
+		return id
+	}
+	if hasEntry(dataHome, id, desktopPath) || systemEntry(id) {
+		if ours {
+			_ = os.Remove(desktopPath)
+			removeOtherIconSizes(dataHome, id, nil)
+			refreshDesktopDatabase()
+		}
+		return id
+	}
 	// Drop copies an older install left in hicolor size directories outside
 	// the target set (e.g. the old 256px demo glyph): loaders pick the closest
 	// available size, so a stale copy would keep shadowing the new icon.
@@ -138,13 +171,13 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	// Exec pointing at the current binary is a best-effort convenience.
 	desktop := "[Desktop Entry]\n" +
 		"Type=Application\n" +
-		"Name=" + strings.ReplaceAll(displayName, "\n", " ") + "\n" +
+		"Name=" + desktopentry.String(strings.ReplaceAll(displayName, "\n", " ")) + "\n" +
 		"Icon=" + id + "\n" +
-		"Exec=" + desktopQuote(exe) + "\n" +
+		"Exec=" + desktopentry.Exec(exe) + "\n" +
 		"Terminal=false\n" +
 		"Hidden=true\n" +
-		"NoDisplay=true\n"
-	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
+		"NoDisplay=true\n" +
+		generatedKey + "\n"
 	wroteDesktop, err := writeFileIfChanged(desktopPath, []byte(desktop))
 	if err != nil {
 		return ""
@@ -171,10 +204,13 @@ func refreshDesktopDatabase() {
 		if err != nil {
 			continue
 		}
-		// Run detached: the app must not block on (or fail because of) the
-		// desktop's cache rebuild.
+		// Run in the background: the app must not block on (or fail because
+		// of) the desktop's cache rebuild. Wait reaps it when it exits, so it
+		// does not linger as a zombie until the app does.
 		cmd := exec.Command(bin, "--noincremental")
-		_ = cmd.Start()
+		if cmd.Start() == nil {
+			go func() { _ = cmd.Wait() }()
+		}
 		return
 	}
 }
@@ -219,6 +255,60 @@ func xdgDataHome() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".local", "share"), nil
+}
+
+// xdgDataDirs returns the system data directories (XDG_DATA_DIRS, or
+// /usr/local/share and /usr/share), where packages install desktop entries.
+// Relative entries are ignored, as the Base Directory Specification says.
+func xdgDataDirs() []string {
+	v := os.Getenv("XDG_DATA_DIRS")
+	if v == "" {
+		v = "/usr/local/share:/usr/share"
+	}
+	var dirs []string
+	for _, d := range filepath.SplitList(v) {
+		if filepath.IsAbs(d) {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
+}
+
+// systemEntry reports whether a system data directory holds a desktop entry
+// with this id.
+func systemEntry(id string) bool {
+	for _, d := range xdgDataDirs() {
+		if hasEntry(d, id, "") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasEntry reports whether dataDir's applications tree holds a desktop entry
+// with this id, other than the file at skip. The Desktop Entry Specification
+// forms an id from the file's path below applications, with each separator
+// turned into a hyphen, so applications/foo/bar.desktop has the id foo-bar
+// and shadows or is shadowed like applications/foo-bar.desktop.
+func hasEntry(dataDir, id, skip string) bool {
+	root := filepath.Join(dataDir, "applications")
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path == skip {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		stem, ok := strings.CutSuffix(filepath.ToSlash(rel), ".desktop")
+		if ok && strings.ReplaceAll(stem, "/", "-") == id {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // encodeAppIconPNG re-encodes the normalized icon as PNG bytes.
@@ -272,7 +362,7 @@ func targetIconSizes(src int) []int {
 
 // removeOtherIconSizes deletes every previously installed copy of the icon
 // that lives in a hicolor size directory outside the sizes being installed
-// now. Icon loaders resolve a name to the closest available size, so an
+// now; with no sizes it deletes every copy. Icon loaders resolve a name to the closest available size, so an
 // outdated copy (written by an earlier appkit version, e.g. the old 256px
 // glyph) would keep being picked over the freshly installed icon.
 func removeOtherIconSizes(dataHome, id string, sizes []int) {
@@ -296,18 +386,32 @@ func removeOtherIconSizes(dataHome, id string, sizes []int) {
 	}
 }
 
-// desktopQuote quotes a value for a .desktop Exec key when it contains
-// whitespace or quotes (the desktop-entry Exec quoting rules).
-func desktopQuote(s string) string {
-	if s == "" {
-		return `""`
-	}
-	for _, r := range s {
-		if r <= ' ' || r == '"' || r == '\'' || r == '\\' {
-			return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+// generatedName is the key that marks a desktop entry installWaylandIdentity
+// wrote, so a later start rewrites it and never touches an entry without it;
+// generatedKey is the line it writes.
+const (
+	generatedName = "X-Tuohi-Generated"
+	generatedKey  = generatedName + "=true"
+)
+
+// isGenerated reports whether a desktop entry sets generatedName to true in
+// its [Desktop Entry] group. The same text in a comment, in another key's
+// value or in another group does not count.
+func isGenerated(entry []byte) bool {
+	group := ""
+	for _, line := range strings.Split(string(entry), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			group = line[1 : len(line)-1]
+		case group == "Desktop Entry" && !strings.HasPrefix(line, "#"):
+			key, value, ok := strings.Cut(line, "=")
+			if ok && strings.TrimSpace(key) == generatedName && strings.TrimSpace(value) == "true" {
+				return true
+			}
 		}
 	}
-	return s
+	return false
 }
 
 func openURL(rawurl string) error {

@@ -33,16 +33,37 @@
 // someone else, and validate a path or URL in them before acting on it.
 //
 // Each platform uses what it already has. On Unix, including macOS, the lock
-// is flock on a file in XDG_RUNTIME_DIR (or the temporary directory when that
-// is unset or not writable), and the arguments travel over a Unix socket
-// beside it. On Windows one named pipe is both: creating its first instance
-// is the lock, and the arguments are written to it.
+// is flock on a file in a per-user directory, and the arguments travel over a
+// Unix socket beside it. On Windows one named pipe is both: creating its first
+// instance is the lock, and the arguments are written to it.
+//
+// On Unix the channel is closed to other users. The directory is
+// XDG_RUNTIME_DIR/tuohi when XDG_RUNTIME_DIR is a directory that only this
+// user can use, and tuohi under os.UserCacheDir otherwise; there is no
+// fallback to the shared temporary directory, where another user could take
+// the names first. Acquire and Send create the directory with mode 0700 and
+// refuse one that is a symbolic link, belongs to another user, or is open to
+// group or others, and one below a directory that a user other than root
+// owns or that others can write to without the sticky bit, since they could
+// swap it. Once XDG_RUNTIME_DIR holds the directory, a failed check there is
+// an error, never a move to the cache directory, where a second instance
+// could take a lock of its own. The running instance also closes a connection from another
+// user where the system reports the peer's user, which Linux, macOS and
+// FreeBSD do; elsewhere the private directory is the only check. It reads at
+// most 1 MiB per message and gives a sender 5 seconds to finish, so a stalled
+// or oversized send is dropped rather than held. None of this stops a process
+// running as the same user from sending a message: that is how the user's own
+// later launch gets through, and such a process can already do anything the
+// user can.
 package instance
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 )
 
@@ -52,11 +73,24 @@ var ErrAlreadyRunning = errors.New("instance: another instance is already runnin
 // errEmptyID is returned by Acquire and Send for an empty id.
 var errEmptyID = errors.New("instance: empty id")
 
+// maxMessage caps the encoded size of one Message. A megabyte holds any
+// command line macOS allows, since its ARG_MAX of 1 MiB counts the
+// environment too, and any Windows one, which is at most 32,767 UTF-16 units.
+// Only a Linux command line far beyond what a desktop launch passes could
+// exceed it, and a cap this size still bounds what a sender can make the
+// running instance buffer.
+const maxMessage = 1 << 20
+
 // Message is what a later launch hands the running instance.
 type Message struct {
 	// Args are the later launch's command-line arguments, without the program
 	// name.
 	Args []string `json:"args"`
+
+	// Dir is the later launch's working directory, against which a relative
+	// path in Args is resolved. It is empty when the later launch could not
+	// read its working directory. Like Args, it is untrusted input.
+	Dir string `json:"dir"`
 }
 
 // Lock is a held single-instance lock. Get one from Acquire.
@@ -91,13 +125,23 @@ func (l *Lock) Release() error {
 }
 
 // Send delivers args to the instance running under id, for use after Acquire
-// returned ErrAlreadyRunning. It returns an error when no instance is
-// listening. An empty id is an error.
+// returned ErrAlreadyRunning, together with this process's working directory
+// as Message.Dir. It returns an error when no instance is listening, and when
+// the encoded message is over the 1 MiB the running instance accepts. An empty
+// id is an error.
 func Send(id string, args []string) error {
 	if id == "" {
 		return errEmptyID
 	}
-	return send(id, args)
+	dir, _ := os.Getwd()
+	data, err := json.Marshal(Message{Args: args, Dir: dir})
+	if err != nil {
+		return err
+	}
+	if len(data) > maxMessage {
+		return fmt.Errorf("instance: message is %d bytes, over the %d-byte limit", len(data), maxMessage)
+	}
+	return send(id, data)
 }
 
 // key derives a short, filesystem- and pipe-name-safe key from an arbitrary

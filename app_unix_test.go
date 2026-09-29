@@ -77,10 +77,10 @@ func TestLinuxInvokesXdgOpen(t *testing.T) {
 // Linux application icon: garbage is an error before anything touches GTK, so
 // the check is deterministic even on headless CI without an engine.
 func TestSetAppIconRejectsGarbage(t *testing.T) {
-	if err := setAppIcon(nil, "test"); err == nil {
+	if err := setAppIcon(nil, "test", false); err == nil {
 		t.Fatal("setAppIcon(nil) must fail (empty icon)")
 	}
-	if err := setAppIcon([]byte("this is not a png"), "test"); err == nil {
+	if err := setAppIcon([]byte("this is not a png"), "test", false); err == nil {
 		t.Fatal("setAppIcon with non-PNG bytes must fail")
 	}
 }
@@ -115,6 +115,7 @@ func TestDesktopID(t *testing.T) {
 func TestInstallWaylandIdentity(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
 
 	// Simulate an older install that left the icon in a different hicolor
 	// size directory (e.g. the previous 256px demo glyph). Icon loaders pick
@@ -193,6 +194,7 @@ func TestEmbeddedIconIsValidPNG(t *testing.T) {
 func TestInstallWaylandIdentitySizes(t *testing.T) {
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
 
 	img := image.NewNRGBA(image.Rect(0, 0, 512, 512))
 	for i := 0; i < len(img.Pix); i += 4 {
@@ -225,4 +227,212 @@ func TestInstallWaylandIdentitySizes(t *testing.T) {
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("stale icon copy at %s must be removed (err=%v)", stale, err)
 	}
+}
+
+// TestWaylandIdentityOptIn checks that a GTK3 app on Wayland writes nothing
+// under the user's data directory unless it set App.DesktopEntry, and that
+// setting it is what writes the entry.
+func TestWaylandIdentityOptIn(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
+	t.Setenv("WAYLAND_DISPLAY", "wayland-test")
+	t.Setenv("PATH", t.TempDir()) // no kbuildsycoca to start
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+
+	if id := waylandIdentity(false, "Opt App", img); id != "" {
+		t.Fatalf("without DesktopEntry: id %q, want \"\"", id)
+	}
+	if n := countFiles(t, data); n != 0 {
+		t.Fatalf("without DesktopEntry: %d files written under XDG_DATA_HOME, want 0", n)
+	}
+
+	id := waylandIdentity(true, "Opt App", img)
+	if id != "opt-app" {
+		t.Fatalf("with DesktopEntry: id %q, want opt-app", id)
+	}
+	entry, err := os.ReadFile(filepath.Join(data, "applications", "opt-app.desktop"))
+	if err != nil {
+		t.Fatalf("with DesktopEntry: no entry written: %v", err)
+	}
+	if !strings.Contains(string(entry), generatedKey) {
+		t.Errorf("written entry lacks %s:\n%s", generatedKey, entry)
+	}
+
+	// Outside Wayland it writes nothing even when asked.
+	t.Setenv("WAYLAND_DISPLAY", "")
+	other := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", other)
+	if id := waylandIdentity(true, "Opt App", img); id != "" || countFiles(t, other) != 0 {
+		t.Fatalf("outside Wayland: id %q and %d files, want none", id, countFiles(t, other))
+	}
+}
+
+// TestWaylandIdentityLeavesForeignEntry checks that an entry of the same name
+// that tuohi did not write is neither rewritten nor given icons, while its id
+// is still returned so the window matches it.
+func TestWaylandIdentityLeavesForeignEntry(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	path := filepath.Join(data, "applications", "packaged.desktop")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The marker text in a comment does not make the entry tuohi's.
+	foreign := []byte("[Desktop Entry]\n# " + generatedKey + "\nType=Application\nName=Packaged\nExec=/usr/bin/packaged\nIcon=packaged\n")
+	if err := os.WriteFile(path, foreign, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if id := installWaylandIdentity("Packaged", image.NewNRGBA(image.Rect(0, 0, 8, 8))); id != "packaged" {
+		t.Fatalf("id %q, want packaged", id)
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, foreign) {
+		t.Fatalf("foreign entry was rewritten:\n%s", got)
+	}
+	if n := countFiles(t, filepath.Join(data, "icons")); n != 0 {
+		t.Fatalf("%d icon files written beside a foreign entry, want 0", n)
+	}
+}
+
+// TestWaylandIdentitySystemEntry checks that a system entry of the same id is
+// not shadowed: nothing is written beside it, and an entry and icons tuohi
+// wrote before it appeared are removed.
+func TestWaylandIdentitySystemEntry(t *testing.T) {
+	data, system := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("XDG_DATA_DIRS", "relative/ignored:"+system)
+	t.Setenv("PATH", t.TempDir())
+	img := image.NewNRGBA(image.Rect(0, 0, 32, 32))
+
+	// Before the package: tuohi writes its entry and icons.
+	if id := installWaylandIdentity("Packaged", img); id != "packaged" {
+		t.Fatalf("id %q, want packaged", id)
+	}
+	if n := countFiles(t, data); n < 2 {
+		t.Fatalf("%d files written before the package, want an entry and icons", n)
+	}
+
+	// The package installs a system entry: tuohi's copies go, and nothing is
+	// written again.
+	sysEntry := filepath.Join(system, "applications", "packaged.desktop")
+	if err := os.MkdirAll(filepath.Dir(sysEntry), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sysEntry, []byte("[Desktop Entry]\nType=Application\nName=Packaged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if id := installWaylandIdentity("Packaged", img); id != "packaged" {
+			t.Fatalf("id %q, want packaged", id)
+		}
+		if n := countFiles(t, data); n != 0 {
+			t.Fatalf("%d files left under XDG_DATA_HOME beside a system entry, want 0", n)
+		}
+	}
+}
+
+// TestWaylandIdentitySubdirEntry checks that an entry whose desktop id comes
+// from a subdirectory (applications/vendor/app.desktop is vendor-app) counts
+// as the same id, in a system directory and in the user's: the entry and
+// icons tuohi wrote before it arrived are removed, and nothing is written
+// again.
+func TestWaylandIdentitySubdirEntry(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for _, where := range []string{"system", "user"} {
+		data, system := t.TempDir(), t.TempDir()
+		t.Setenv("XDG_DATA_HOME", data)
+		t.Setenv("XDG_DATA_DIRS", system)
+		t.Setenv("PATH", t.TempDir())
+		if id := installWaylandIdentity("Vendor App", img); id != "vendor-app" || countFiles(t, data) < 2 {
+			t.Fatalf("%s: before the other entry: id %q and %d files, want vendor-app, an entry and icons", where, id, countFiles(t, data))
+		}
+		dir := system
+		if where == "user" {
+			dir = data
+		}
+		entry := filepath.Join(dir, "applications", "vendor", "app.desktop")
+		if err := os.MkdirAll(filepath.Dir(entry), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(entry, []byte("[Desktop Entry]\nType=Application\nName=App\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if id := installWaylandIdentity("Vendor App", img); id != "vendor-app" {
+				t.Fatalf("%s: id %q, want vendor-app", where, id)
+			}
+		}
+		if _, err := os.Stat(entry); err != nil {
+			t.Fatalf("%s: the other entry is gone: %v", where, err)
+		}
+		want := 0
+		if where == "user" {
+			want = 1 // the foreign entry itself
+		}
+		if n := countFiles(t, data); n != want {
+			t.Fatalf("%s: %d files under XDG_DATA_HOME beside a vendor/app.desktop entry, want %d", where, n, want)
+		}
+	}
+	// A different id in a subdirectory does not count.
+	system := t.TempDir()
+	t.Setenv("XDG_DATA_DIRS", system)
+	other := filepath.Join(system, "applications", "vendor", "other.desktop")
+	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("[Desktop Entry]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if systemEntry("vendor-app") {
+		t.Fatal("vendor/other.desktop taken for vendor-app")
+	}
+}
+
+// TestIsGenerated checks that only the key itself, in the [Desktop Entry]
+// group, marks an entry as tuohi's.
+func TestIsGenerated(t *testing.T) {
+	cases := []struct {
+		entry string
+		want  bool
+	}{
+		{"[Desktop Entry]\nName=App\n" + generatedKey + "\n", true},
+		{"[Desktop Entry]\r\nName=App\r\n X-Tuohi-Generated = true \r\n", true},
+		{"[Desktop Entry]\nName=App\n", false},
+		{"[Desktop Entry]\n# " + generatedKey + "\nName=App\n", false},
+		{"[Desktop Entry]\nName=App " + generatedKey + "\n", false},
+		{"[Desktop Entry]\nComment=" + generatedKey + "\n", false},
+		{"[Desktop Entry]\nX-Tuohi-Generated=false\n", false},
+		{"[Desktop Action new]\n" + generatedKey + "\n", false},
+		{generatedKey + "\n[Desktop Entry]\nName=App\n", false},
+	}
+	for _, c := range cases {
+		if got := isGenerated([]byte(c.entry)); got != c.want {
+			t.Errorf("isGenerated(%q) = %v, want %v", c.entry, got, c.want)
+		}
+	}
+}
+
+// countFiles counts the regular files under dir; a missing dir holds none.
+func countFiles(t *testing.T, dir string) int {
+	t.Helper()
+	n := 0
+	err := filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return filepath.SkipDir
+			}
+			return err
+		}
+		if d.Type().IsRegular() {
+			n++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

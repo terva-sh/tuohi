@@ -17,7 +17,9 @@ MIT License. Copyright (c) 2018-Present Lea Anthony
 The autostart package in autostart/ (autostart.go, autostart_xdg.go,
 autostart_darwin.go, autostart_windows.go and file.go) is derived from Wails
 v3's autostart implementation. It was moved there from the root package's
-app.go, app_unix.go, app_darwin.go and app_windows.go.
+app.go, app_unix.go, app_darwin.go and app_windows.go. The .desktop Exec
+quoting is not Wails's any more: it was rewritten to the Desktop Entry
+Specification in internal/desktopentry.
 
 ------------------------------------------------------------------------------
 webview  (WebView2 loader)

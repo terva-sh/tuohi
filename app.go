@@ -153,8 +153,7 @@ type App struct {
 
 	// Name is the application name, used where the OS asks for one: as the
 	// title of a window that has no other (see View.Title), and under GTK3 on
-	// Wayland as the name of the desktop entry the icon is installed under
-	// (see Icon).
+	// Wayland as the name of the desktop entry DesktopEntry installs.
 	Name string
 
 	// Icon is a PNG image for the running application, applied on a
@@ -170,11 +169,26 @@ type App struct {
 	// (Windows reads the icon from the executable's own resources). Under an
 	// X11 window manager the icon is pushed per window; under Wayland, where
 	// the protocol has no per-window icons, GTK4 (>= 4.20) sends pixels via
-	// the xdg-toplevel-icon protocol, and the GTK3 stack installs a matching
-	// per-user .desktop entry and themed icon keyed to App.Name so the
-	// compositor's app_id lookup finds it. A PNG that cannot be decoded is
-	// never fatal.
+	// the xdg-toplevel-icon protocol. A GTK3 window on Wayland shows the icon
+	// only through a desktop entry: see DesktopEntry. A PNG that cannot be
+	// decoded is never fatal.
 	Icon []byte
+
+	// DesktopEntry lets tuohi install a hidden desktop entry and a themed
+	// copy of Icon under the user's data directory (XDG_DATA_HOME, by default
+	// ~/.local/share), named after Name, so that a GTK3 window on Wayland
+	// shows the icon. Wayland has no per-window icons, and the compositor
+	// finds a window's icon through the desktop entry that matches its
+	// app_id; GTK3, unlike GTK4, cannot send the pixels itself.
+	//
+	// It is false by default, and then opening a window writes nothing under
+	// the user's home directory. It has no effect anywhere but GTK3 on
+	// Wayland. An entry of that name that tuohi did not write, in the user's
+	// data directory or a system one (XDG_DATA_DIRS), such as one an
+	// installed package ships, is left alone and used as it is; once such an
+	// entry appears, the one tuohi wrote is removed so that it is the one used.
+	// The files stay after the application exits.
+	DesktopEntry bool
 
 	// Bind holds the application's declarative bindings: every entry is bound
 	// onto each view App.Show creates, so one entry here covers all windows.
@@ -298,15 +312,16 @@ type App struct {
 // once when the app scope is opened. It carries no synchronization state so
 // it can be passed by value freely.
 type appConfig struct {
-	Name   string
-	Exit   bool
-	Start  func() error
-	Icon   []byte
-	FS     fs.FS
-	HTTP   bool
-	Debug  bool
-	Events string
-	Bind   map[string]any
+	Name         string
+	Exit         bool
+	Start        func() error
+	Icon         []byte
+	DesktopEntry bool
+	FS           fs.FS
+	HTTP         bool
+	Debug        bool
+	Events       string
+	Bind         map[string]any
 }
 
 // snapshotConfig copies an App's exported settings into a plain appConfig.
@@ -314,15 +329,16 @@ type appConfig struct {
 // environment variable forces the dev tools on for every view).
 func snapshotConfig(a *App) appConfig {
 	return appConfig{
-		Name:   a.Name,
-		Exit:   a.Exit,
-		Start:  a.Start,
-		Icon:   a.Icon,
-		FS:     a.FS,
-		HTTP:   a.HTTP,
-		Debug:  a.Debug || envDebug(),
-		Events: a.Events,
-		Bind:   a.Bind,
+		Name:         a.Name,
+		Exit:         a.Exit,
+		Start:        a.Start,
+		Icon:         a.Icon,
+		DesktopEntry: a.DesktopEntry,
+		FS:           a.FS,
+		HTTP:         a.HTTP,
+		Debug:        a.Debug || envDebug(),
+		Events:       a.Events,
+		Bind:         a.Bind,
 	}
 }
 
@@ -476,7 +492,7 @@ func (a *App) start(s *appScope) {
 		if len(icon) == 0 {
 			icon = _icon
 		}
-		_ = setAppIcon(icon, s.cfg.Name)
+		_ = setAppIcon(icon, s.cfg.Name, s.cfg.DesktopEntry)
 	})
 }
 

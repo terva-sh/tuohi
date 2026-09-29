@@ -1,65 +1,226 @@
 //go:build unix
 
 // Unix backend, macOS included: flock on a lock file is the single-instance
-// lock, and a Unix socket beside it carries the forwarded arguments.
+// lock, and a Unix socket beside it carries the forwarded arguments. Both live
+// in a directory only this user can use, and the running instance also checks
+// the user at the other end of each connection where the system reports it.
 
 package instance
 
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
+	"time"
 )
 
-// runtimeDir picks a per-user directory for the lock and socket.
-// XDG_RUNTIME_DIR is the right place on Linux; elsewhere the temp dir is the
-// portable fallback. A set-but-unusable runtime dir falls back to the temp dir
-// too: containers and sandboxes can mount XDG_RUNTIME_DIR read-only, and the
-// single-instance lock must not fail the whole app start because the runtime
-// dir cannot hold a file. The choice is cached for the process lifetime so all
-// instances of one application agree on where the lock lives.
-var (
-	runtimeDirOnce sync.Once
-	runtimeDirPath string
-)
+// dirName is the directory, inside the per-user base, that holds the lock and
+// socket of every application using this package. Each application's names
+// inside it come from key, so they do not collide.
+const dirName = "tuohi"
 
-func runtimeDir() string {
-	runtimeDirOnce.Do(func() {
-		runtimeDirPath = os.TempDir()
-		if d := os.Getenv("XDG_RUNTIME_DIR"); d != "" && isWritableDir(d) {
-			runtimeDirPath = d
+// ioTimeout bounds how long the running instance waits for a sender to finish
+// its message, and how long Send waits to connect and write. A launch writes
+// its message at once, so the only sender that takes longer is one that has
+// stalled. It is a variable so that tests can shorten it.
+var ioTimeout = 5 * time.Second
+
+// errNoPeerCred is returned by peerUID where the system cannot report the
+// user at the other end of a Unix socket.
+var errNoPeerCred = errors.New("instance: this system does not report a socket peer's user")
+
+// dir returns the directory for the lock and socket, creating it when it is
+// missing. XDG_RUNTIME_DIR is the right place on Linux, and is used when it is
+// an absolute path to a directory of this user's that passes checkBase and can
+// hold ours: a container can mount it read-only, or a session started with su
+// can inherit another user's. Otherwise the base is the user's cache
+// directory, ~/.cache on Linux and the BSDs and ~/Library/Caches on macOS.
+// macOS's per-user TMPDIR would also do, but the system deletes files there
+// that have not been touched for days, and a deleted lock file lets a second
+// process become primary while the first still runs. The shared temporary
+// directory is never used, because another user can create the names there
+// first.
+//
+// Once this user's XDG_RUNTIME_DIR holds our directory, an instance may hold
+// its lock there, so a directory there that fails a check is an error rather
+// than a reason to move to the cache directory: moving would let a second
+// instance lock a different file and become primary too.
+func dir() (string, error) {
+	uid := os.Getuid()
+	if base := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(base) && ownedBy(base, uid) {
+		d := filepath.Join(base, dirName)
+		if _, err := os.Lstat(d); err == nil {
+			if err := checkBase(base, uid); err != nil {
+				return "", err
+			}
+			if err := checkDir(d, uid); err != nil {
+				return "", err
+			}
+			return d, nil
 		}
-	})
-	return runtimeDirPath
+		if checkBase(base, uid) == nil {
+			made, err := makeDir(d, uid)
+			if err == nil {
+				return made, nil
+			}
+			if _, statErr := os.Lstat(d); statErr == nil {
+				return "", err
+			}
+		}
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("instance: no per-user directory for the lock: %w", err)
+	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return "", err
+	}
+	if err := checkAncestors(base, uid); err != nil {
+		return "", err
+	}
+	return makeDir(filepath.Join(base, dirName), uid)
 }
 
-// isWritableDir reports whether dir accepts new files right now, by creating
-// and removing a probe file inside it. CreateTemp fails on a missing or
-// read-only directory.
-func isWritableDir(dir string) bool {
-	f, err := os.CreateTemp(dir, ".tuohi-write-probe-*")
+// ownedBy reports whether path, not following a final symbolic link, belongs
+// to uid.
+func ownedBy(path string, uid int) bool {
+	fi, err := os.Lstat(path)
 	if err != nil {
 		return false
 	}
-	name := f.Name()
-	_ = f.Close()
-	_ = os.Remove(name)
-	return true
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == uid
 }
 
-func paths(id string) (lock, sock string) {
-	stem := filepath.Join(runtimeDir(), "native-si-"+key(id))
-	return stem + ".lock", stem + ".sock"
+// checkBase checks a base directory the way checkDir checks ours, and its
+// ancestors with checkAncestors.
+func checkBase(base string, uid int) error {
+	if err := checkDir(base, uid); err != nil {
+		return err
+	}
+	return checkAncestors(base, uid)
+}
+
+// checkAncestors returns an error unless path and every directory above it,
+// both as written and with symbolic links resolved, belongs to uid or root
+// and cannot be written by anyone else, except where the sticky bit keeps
+// others from renaming what they do not own, as on /tmp. Another user who
+// could write to one of them could move our checked directory aside after
+// the check and put one of their own in its place.
+func checkAncestors(path string, uid int) error {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
+	for _, p := range []string{filepath.Clean(path), resolved} {
+		for {
+			if err := checkAncestor(p, uid); err != nil {
+				return err
+			}
+			parent := filepath.Dir(p)
+			if parent == p {
+				break
+			}
+			p = parent
+		}
+	}
+	return nil
+}
+
+// checkAncestor checks one directory for checkAncestors.
+func checkAncestor(p string, uid int) error {
+	fi, err := os.Stat(p)
+	if err != nil {
+		return err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("instance: cannot read the owner of %s", p)
+	}
+	if int(st.Uid) != uid && st.Uid != 0 {
+		return fmt.Errorf("instance: %s belongs to uid %d, not %d or root", p, st.Uid, uid)
+	}
+	if fi.Mode().Perm()&0o022 != 0 && fi.Mode()&os.ModeSticky == 0 {
+		return fmt.Errorf("instance: %s can be written by group or others", p)
+	}
+	return nil
+}
+
+// makeDir creates d with mode 0700, and its parent when that is missing, and
+// then checks d with checkDir, so a directory that was already there is used
+// only when it is as private as one this function creates.
+func makeDir(d string, uid int) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(d), 0o700); err != nil {
+		return "", err
+	}
+	switch err := os.Mkdir(d, 0o700); {
+	case err == nil:
+		// The umask can clear bits Mkdir asked for; the owner needs all three.
+		if err := os.Chmod(d, 0o700); err != nil {
+			return "", err
+		}
+	case !errors.Is(err, fs.ErrExist):
+		return "", err
+	}
+	if err := checkDir(d, uid); err != nil {
+		return "", err
+	}
+	return d, nil
+}
+
+// checkDir returns an error unless path is a directory, rather than a
+// symbolic link to one, that belongs to uid and grants nothing to group or
+// others. Nobody else can then create, replace or connect to what is inside.
+func checkDir(path string, uid int) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("instance: %s is not a directory", path)
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("instance: cannot read the owner of %s", path)
+	}
+	if int(st.Uid) != uid {
+		return fmt.Errorf("instance: %s belongs to uid %d, not %d", path, st.Uid, uid)
+	}
+	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Errorf("instance: %s has mode %#o, which is open to group or others", path, perm)
+	}
+	return nil
+}
+
+// paths returns the lock file and socket for id. A Unix socket's path must fit
+// in sockaddr_un, 108 bytes on Linux and 104 on macOS and the BSDs counting
+// the terminating NUL, so a longer one is an error here rather than an
+// unexplained one from the kernel.
+func paths(id string) (lock, sock string, err error) {
+	d, err := dir()
+	if err != nil {
+		return "", "", err
+	}
+	stem := filepath.Join(d, key(id))
+	lock, sock = stem+".lock", stem+".sock"
+	if limit := len(syscall.RawSockaddrUnix{}.Path) - 1; len(sock) > limit {
+		return "", "", fmt.Errorf("instance: socket path %s is %d bytes, over the %d-byte limit", sock, len(sock), limit)
+	}
+	return lock, sock, nil
 }
 
 func acquire(id string, onMessage func(Message)) (*Lock, error) {
-	lockPath, sockPath := paths(id)
-	// lockPath is runtimeDir() + a sha256 hex of id, so it cannot traverse out.
+	lockPath, sockPath, err := paths(id)
+	if err != nil {
+		return nil, err
+	}
+	// lockPath is dir() + a sha256 hex of id, so it cannot traverse out.
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304
 	if err != nil {
 		return nil, err
@@ -78,53 +239,106 @@ func acquire(id string, onMessage func(Message)) (*Lock, error) {
 	// We hold the lock: we are the primary. A previous primary that crashed may
 	// have left a stale socket file; since we hold the lock, removing it is safe.
 	_ = os.Remove(sockPath)
-	ln, err := net.Listen("unix", sockPath)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: sockPath, Net: "unix"})
 	if err != nil {
 		_ = syscall.Flock(fd, syscall.LOCK_UN)
 		_ = f.Close()
 		return nil, err
 	}
-	go serve(ln, onMessage)
+	go serve(ln, onMessage, ioTimeout)
 
 	return &Lock{release: func() error {
-		_ = ln.Close() // unblocks the Accept loop and unlinks the socket
-		_ = os.Remove(sockPath)
+		// Closing the listener unblocks the Accept loop and removes the socket.
+		// The lock file stays. A launcher that opened it before a removal could
+		// still lock that file once it is released, while another creates and
+		// locks a new one at the same path, and both would be primary.
+		_ = ln.Close()
 		_ = syscall.Flock(fd, syscall.LOCK_UN)
-		err := f.Close()
-		_ = os.Remove(lockPath)
-		return err
+		return f.Close()
 	}}, nil
 }
 
-func serve(ln net.Listener, onMessage func(Message)) {
+func serve(ln *net.UnixListener, onMessage func(Message), timeout time.Duration) {
+	self := os.Getuid()
 	for {
-		conn, err := ln.Accept()
+		conn, err := ln.AcceptUnix()
 		if err != nil {
 			return // listener closed on Release
 		}
-		go func() {
-			defer func() { _ = conn.Close() }()
-			data, err := io.ReadAll(conn)
-			if err != nil {
-				return
-			}
-			var m Message
-			if json.Unmarshal(data, &m) == nil && onMessage != nil {
-				onMessage(m)
-			}
-		}()
+		go handle(conn, self, timeout, onMessage)
 	}
 }
 
-func send(id string, args []string) error {
-	_, sockPath := paths(id)
-	conn, err := net.Dial("unix", sockPath)
+// handle reads one Message from conn and passes it to onMessage. A connection
+// from another user is closed before anything is read, and one whose sender
+// has not finished within timeout is closed without a message.
+func handle(conn *net.UnixConn, self int, timeout time.Duration, onMessage func(Message)) {
+	defer func() { _ = conn.Close() }()
+	if uid, err := connPeerUID(conn); !peerAllowed(uid, err, self) {
+		return
+	}
+	if conn.SetReadDeadline(time.Now().Add(timeout)) != nil {
+		return
+	}
+	if m, ok := readMessage(conn); ok && onMessage != nil {
+		onMessage(m)
+	}
+}
+
+// connPeerUID returns the user id of the process at the other end of conn.
+func connPeerUID(conn *net.UnixConn) (int, error) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return -1, err
+	}
+	uid, uidErr := -1, error(nil)
+	err = raw.Control(func(fd uintptr) {
+		uid, uidErr = peerUID(int(fd)) // #nosec G115 -- a descriptor fits an int
+	})
+	if err != nil {
+		return -1, err
+	}
+	return uid, uidErr
+}
+
+// peerAllowed reports whether a connection may hand a message to a process
+// running as self, given the uid and error connPeerUID returned for it. Only
+// the same user may, and a peer whose user could not be read is refused. Where
+// the system cannot report the peer at all, the private directory has already
+// kept other users out, so the connection is allowed.
+func peerAllowed(uid int, err error, self int) bool {
+	if errors.Is(err, errNoPeerCred) {
+		return true
+	}
+	return err == nil && uid == self
+}
+
+// readMessage reads one encoded Message from r, which the sender closes once
+// it has written it. It reports false for a message over maxMessage, one that
+// does not decode, and a read that fails, including one a deadline cut short.
+func readMessage(r io.Reader) (Message, bool) {
+	data, err := io.ReadAll(io.LimitReader(r, maxMessage+1))
+	if err != nil || len(data) > maxMessage {
+		return Message{}, false
+	}
+	var m Message
+	if json.Unmarshal(data, &m) != nil {
+		return Message{}, false
+	}
+	return m, true
+}
+
+func send(id string, data []byte) error {
+	_, sockPath, err := paths(id)
+	if err != nil {
+		return err
+	}
+	conn, err := net.DialTimeout("unix", sockPath, ioTimeout)
 	if err != nil {
 		return err // no instance listening (dial refused / socket missing)
 	}
 	defer func() { _ = conn.Close() }()
-	data, err := json.Marshal(Message{Args: args})
-	if err != nil {
+	if err := conn.SetWriteDeadline(time.Now().Add(ioTimeout)); err != nil {
 		return err
 	}
 	_, err = conn.Write(data)

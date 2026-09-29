@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/terva-sh/tuohi/internal/desktopentry"
 )
 
 // The Unix autostart backend: a freedesktop.org autostart .desktop file in
@@ -157,12 +159,8 @@ func buildDesktopEntry(appName, exe string, args []string) string {
 	var b strings.Builder
 	b.WriteString("[Desktop Entry]\n")
 	b.WriteString("Type=Application\n")
-	fmt.Fprintf(&b, "Name=%s\n", escapeDesktopValue(appName))
-	b.WriteString("Exec=" + quoteExec(exe))
-	for _, a := range args {
-		b.WriteString(" " + quoteExec(a))
-	}
-	b.WriteString("\n")
+	fmt.Fprintf(&b, "Name=%s\n", desktopentry.String(escapeDesktopValue(appName)))
+	b.WriteString("Exec=" + desktopentry.Exec(append([]string{exe}, args...)...) + "\n")
 	b.WriteString("X-GNOME-Autostart-enabled=true\n")
 	b.WriteString("Hidden=false\n")
 	b.WriteString("NoDisplay=true\n")
@@ -186,33 +184,6 @@ func validateDesktopExecToken(s string) error {
 	return nil
 }
 
-// quoteExec quotes a single Exec field token per the freedesktop.org spec:
-// reserved characters (" ` $ \) are backslash-escaped, and the token is
-// double-quoted when it contains any reserved character or whitespace.
-func quoteExec(s string) string {
-	needQuote := false
-	var b strings.Builder
-	for _, r := range s {
-		switch r {
-		case '"', '`', '$', '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-			needQuote = true
-		case ' ', '\t':
-			// Newlines are rejected by validateDesktopExecToken before we
-			// get here, so any remaining whitespace is safely quotable.
-			b.WriteRune(r)
-			needQuote = true
-		default:
-			b.WriteRune(r)
-		}
-	}
-	if needQuote {
-		return `"` + b.String() + `"`
-	}
-	return b.String()
-}
-
 // escapeDesktopValue replaces characters that are not allowed raw in Desktop
 // Entry values (newlines) and trims surrounding whitespace.
 func escapeDesktopValue(s string) string {
@@ -221,40 +192,20 @@ func escapeDesktopValue(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// desktopExecPath returns the first Exec= token (quotes honoured) of a
-// .desktop file's contents; empty when the file has no Exec= line.
+// desktopExecPath returns the program of a .desktop file's Exec key, the
+// first argument as desktopentry.SplitExec reads it; empty when the file has
+// no Exec key or its value does not parse.
 func desktopExecPath(contents string) string {
 	for _, line := range strings.Split(contents, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "Exec=") {
 			continue
 		}
-		val := strings.TrimSpace(strings.TrimPrefix(line, "Exec="))
-		if strings.HasPrefix(val, `"`) {
-			end := strings.Index(val[1:], `"`)
-			if end < 0 {
-				return ""
-			}
-			return unescapeDesktopToken(val[1 : 1+end])
+		args, err := desktopentry.SplitExec(strings.TrimPrefix(line, "Exec="))
+		if err != nil || len(args) == 0 {
+			return ""
 		}
-		if i := strings.IndexAny(val, " \t"); i >= 0 {
-			return val[:i]
-		}
-		return val
+		return args[0]
 	}
 	return ""
-}
-
-// unescapeDesktopToken removes the backslash escapes quoteExec adds.
-func unescapeDesktopToken(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			b.WriteByte(s[i+1])
-			i++
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
 }
