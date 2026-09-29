@@ -778,11 +778,19 @@ type View struct {
 
 	// Permissions lists what a page in this view may use that the web engine
 	// would otherwise ask the user for: the camera, the microphone, and
-	// script access to the clipboard (see Permission). Only a page on an
+	// script reads of the clipboard (see Permission). Only a page on an
 	// origin the view trusts (see Origins) receives one, and only if it is
 	// listed here. Everything else a page asks for, such as geolocation or
 	// notifications, is denied, and no engine shows a prompt of its own.
-	// Empty, the default, denies everything.
+	// Empty, the default, denies everything. Pointer lock is not a
+	// permission: every engine allows it on a user gesture.
+	//
+	// A frame on another origin can ask only when the trusted page delegates
+	// the feature to it with the iframe's allow attribute. WebView2 and
+	// WKWebView then decide by the frame's own origin and deny it. WebKitGTK
+	// does not say which frame asks, so on Linux such a frame asks as the
+	// trusted page: delegating a listed permission to a frame grants it
+	// there. Delegate only to frames you would trust with the permission.
 	//
 	// On macOS, a program that lists the camera or the microphone also needs
 	// NSCameraUsageDescription or NSMicrophoneUsageDescription in its

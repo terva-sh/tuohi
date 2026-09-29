@@ -21,11 +21,13 @@ const (
 	PermissionMicrophone
 
 	// PermissionClipboard lets a trusted page read the clipboard from
-	// script, with navigator.clipboard.readText or read. WebKitGTK and
-	// WKWebView allow a read only on a user gesture, and WKWebView then
-	// shows the system's Paste button whatever the view lists, so on macOS
-	// this changes nothing. Copying on a click needs no permission on any
-	// engine, and no engine lets a page paste without a user gesture.
+	// script, with navigator.clipboard.readText or read, without the user
+	// confirming each read. WebKitGTK allows a read only on a user gesture.
+	// WKWebView never reads silently: it shows the system's Paste button,
+	// and a read the user confirms there is the user's own paste, like
+	// Command-V, whatever the view lists. So on macOS this permission changes
+	// nothing, and an empty list does not stop a paste the user confirms.
+	// Copying on a click needs no permission on any engine.
 	PermissionClipboard
 )
 

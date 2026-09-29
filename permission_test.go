@@ -116,8 +116,18 @@ window.addEventListener('load', async function() {
   var layer = document.createElement('div');
   layer.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:9999';
   layer.addEventListener('click', function() {
-    navigator.clipboard.readText().then(function() { window.clicked('clickread=ok'); },
-      function(e) { window.clicked('clickread=' + (e.name === 'NotAllowedError' ? 'denied' : e.name)); });
+    var lock = new Promise(function(resolve) {
+      document.addEventListener('pointerlockchange', function() { resolve(document.pointerLockElement ? 'ok' : 'released'); }, {once: true});
+      document.addEventListener('pointerlockerror', function() { resolve('error'); }, {once: true});
+      try { layer.requestPointerLock(); } catch (e) { resolve(e.name); }
+      setTimeout(function() { resolve('timeout'); }, 3000);
+    });
+    var read = navigator.clipboard.readText().then(function() { return 'ok'; },
+      function(e) { return e.name === 'NotAllowedError' ? 'denied' : e.name; });
+    Promise.all([read, lock]).then(function(r) {
+      if (document.exitPointerLock) { document.exitPointerLock(); }
+      window.clicked('clickread=' + r[0] + ' lock=' + r[1]);
+    });
   });
   document.body.appendChild(layer);
   window.done(out.join(' '));
@@ -220,9 +230,9 @@ func TestPermissions(t *testing.T) {
 	default:
 		// No script paste in any view: the clipboard is read per request,
 		// on the real click, where the clipboard view is granted.
-		want = "none: video=denied audio=denied paste=false read=denied notify=denied frame=denied clickread=denied asked=camera:no,camera:no,clipboard:no,microphone:no; " +
-			"camera: video=ok audio=denied paste=false read=denied notify=denied frame=ok clickread=denied asked=camera:yes,camera:yes,clipboard:no,microphone:no; " +
-			"clipboard: video=denied audio=denied paste=false read=denied notify=denied frame=denied clickread=ok asked=camera:no,camera:no,clipboard:yes,microphone:no"
+		want = "none: video=denied audio=denied paste=false read=denied notify=denied frame=denied clickread=denied lock=ok asked=camera:no,camera:no,clipboard:no,microphone:no; " +
+			"camera: video=ok audio=denied paste=false read=denied notify=denied frame=ok clickread=denied lock=ok asked=camera:yes,camera:yes,clipboard:no,microphone:no; " +
+			"clipboard: video=denied audio=denied paste=false read=denied notify=denied frame=denied clickread=ok lock=ok asked=camera:no,camera:no,clipboard:yes,microphone:no"
 	}
 	if got != want {
 		t.Fatalf("permissions:\n got %s\nwant %s", got, want)

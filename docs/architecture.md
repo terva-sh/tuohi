@@ -409,8 +409,9 @@ Everything else is denied, and no engine shows a prompt of its own.
 
 - **Linux.** A `permission-request` handler decides user media (video needs
   the camera, audio the microphone), device labels, and clipboard requests,
-  for the top-level page. It denies geolocation, notifications, DRM key
-  systems, and storage access, and leaves pointer lock to WebKit.
+  for the top-level page. It allows pointer lock, which no other engine
+  treats as a permission, and denies every other request, including kinds a
+  newer WebKitGTK adds.
   `javascript_can_access_clipboard`, which tuohi used to turn on for every
   view, is now off in every view. Measured on both stacks, with the setting
   on any page could `execCommand('paste')` with no user gesture and read the
@@ -419,14 +420,20 @@ Everything else is denied, and no engine shows a prompt of its own.
   `navigator.clipboard.readText()` on a real click raises a clipboard
   permission request, which the handler decides. A copy made on a click
   works either way. WebKitGTK names no frame, so a frame the trusted page
-  delegates a feature to with `allow=` shares the page's grant.
+  delegates a feature to with `allow=` asks as that page and shares its
+  grant. A script guard in frames was considered and rejected, because a
+  frame can recover the native function from a document the guard never ran
+  in. `View.Permissions` documents the difference instead: on the other
+  engines such a frame is denied by its own origin.
 - **Windows.** A `PermissionRequested` handler decides the microphone, the
   camera, and clipboard reads for the origin asking (a frame's own), and
   denies every other kind.
 - **macOS.** `requestMediaCapturePermission` decides camera and microphone
   requests for the frame's security origin, where it used to grant every
   request. WKWebView has no clipboard permission: a script read always shows
-  the system's Paste button.
+  the system's Paste button, and a read the user confirms there is the
+  user's own paste, which no list can stop. Denying it would need a private
+  WebKit delegate, so the contract says so instead.
 
 Two neighbours of this policy were split out, because the ticket's acceptance
 criteria do not cover them:
