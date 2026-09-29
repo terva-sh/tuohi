@@ -17,7 +17,7 @@ import (
 
 // errUILoopStopped is what a call that waits for the UI thread returns when
 // no loop is running to serve it.
-var errUILoopStopped = errors.New("appkit: the UI loop is not running")
+var errUILoopStopped = errors.New("tuohi: the UI loop is not running")
 
 // Operation states. An operation moves from pending to running on the UI
 // thread, or from pending to cancelled when the loop stops; the two moves are

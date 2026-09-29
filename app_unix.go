@@ -46,11 +46,11 @@ import (
 // (App.start ignores the error).
 func setAppIcon(pngData []byte, name string, desktopEntry bool) error {
 	if len(pngData) == 0 {
-		return errors.New("appkit: the application icon is empty")
+		return errors.New("tuohi: the application icon is empty")
 	}
 	src, err := png.Decode(bytes.NewReader(pngData))
 	if err != nil {
-		return fmt.Errorf("appkit: application icon: %w", err)
+		return fmt.Errorf("tuohi: application icon: %w", err)
 	}
 	b := src.Bounds()
 	// Normalize to straight-alpha NRGBA, the byte layout both the GdkPixbuf

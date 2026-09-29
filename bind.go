@@ -412,7 +412,7 @@ func handleInternalBindError(params json.RawMessage) {
 		return
 	}
 	r := reports[0]
-	log.Printf("appkit: live bind/unbind of %q failed on the page: %q", r.Name, r.Error)
+	log.Printf("tuohi: live bind/unbind of %q failed on the page: %q", r.Name, r.Error)
 }
 
 // serialQueue runs submitted functions one at a time, in submission order,

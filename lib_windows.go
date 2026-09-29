@@ -1616,7 +1616,7 @@ func (w *webview) loadHTML(html string) {
 		return &response{Body: body, MIME: "text/html; charset=utf-8"}
 	})
 	if err != nil {
-		log.Printf("appkit: loadHTML: %v", err)
+		log.Printf("tuohi: loadHTML: %v", err)
 		return
 	}
 	stopLoopback(w.htmlServer.Swap(srv))
@@ -2407,7 +2407,7 @@ type webview struct {
 	dispatchSeq uintptr
 }
 
-var classNamePtr = utf16("appkit_webview")
+var classNamePtr = utf16("tuohi_webview")
 
 // newView creates a window and its web view on Windows. The App.Show method
 // opens the app scope first and then calls this constructor with the

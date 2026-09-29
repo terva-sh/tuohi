@@ -354,7 +354,7 @@ func linuxBackendOverride() int {
 	case envBackendGTK3:
 		return backendGTK3
 	}
-	fmt.Fprintf(os.Stderr, "appkit: warning: TUOHI_BACKEND=%q is not a known value (want %q or %q); using the auto-detected stack\n",
+	fmt.Fprintf(os.Stderr, "tuohi: warning: TUOHI_BACKEND=%q is not a known value (want %q or %q); using the auto-detected stack\n",
 		v, envBackendGTK4, envBackendGTK3)
 	return backendAuto
 }
@@ -456,14 +456,14 @@ func initEngine() (err error) {
 	case backendGTK4:
 		var err error
 		if gtk, webkit, jsc, err = loadGTK4Stack(); err != nil {
-			fmt.Fprintf(os.Stderr, "appkit: warning: TUOHI_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK4, err)
+			fmt.Fprintf(os.Stderr, "tuohi: warning: TUOHI_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK4, err)
 		} else {
 			gtk4 = true
 		}
 	case backendGTK3:
 		var err error
 		if gtk, webkit, jsc, err = loadGTK3Stack(); err != nil {
-			fmt.Fprintf(os.Stderr, "appkit: warning: TUOHI_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK3, err)
+			fmt.Fprintf(os.Stderr, "tuohi: warning: TUOHI_BACKEND=%s is not available on this system (%v); using the auto-detected stack\n", envBackendGTK3, err)
 		}
 	}
 	if gtk == 0 {
@@ -1605,7 +1605,7 @@ func gtk3InstallAppIcon(pix []byte, w, h int) error {
 		int32(w), int32(h), int32(stride), 0, 0) // #nosec G115 -- icon dimensions bounded by image/png
 	if icon == 0 {
 		appIconPix = nil
-		return errors.New("appkit: application icon: gdk_pixbuf_new_from_data failed")
+		return errors.New("tuohi: application icon: gdk_pixbuf_new_from_data failed")
 	}
 	// gtk_window_set_default_icon takes its own reference; the pixbuf handle
 	// and the backing pixels it borrows stay retained for the process lifetime.
@@ -1642,12 +1642,12 @@ func gtk4InstallAppIcon(pix []byte, w, h int) error {
 	// holding our own reference (appIconBytes) keeps the lifetime unambiguous.
 	appIconBytes = gBytesNew(unsafe.Pointer(&premul[0]), uintptr(len(premul)))
 	if appIconBytes == 0 {
-		return errors.New("appkit: application icon: g_bytes_new failed")
+		return errors.New("tuohi: application icon: g_bytes_new failed")
 	}
 	tex := gdkMemoryTextureNew(int32(w), int32(h), gdkMemoryR8G8B8A8Premultiplied, appIconBytes, uintptr(stride)) // #nosec G115 -- icon dimensions bounded by image/png
 	if tex == 0 {
 		appIconBytes = 0
-		return errors.New("appkit: application icon: gdk_memory_texture_new failed")
+		return errors.New("tuohi: application icon: gdk_memory_texture_new failed")
 	}
 	appIconList = gListAppend(appIconList, tex)
 	return nil

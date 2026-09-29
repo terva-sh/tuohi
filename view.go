@@ -603,7 +603,7 @@ type serveFunc func(*request) *response
 // the page loads, so View.On/Off/Emit work immediately.
 func (a *App) Show(view *View) error {
 	if view == nil {
-		return errors.New("appkit: Show requires a non-nil View")
+		return errors.New("tuohi: Show requires a non-nil View")
 	}
 	if w := view.live(); w != nil {
 		// Already shown: reveal the live window (un-minimize, show, focus).
@@ -992,14 +992,14 @@ const (
 func (v *View) mustEngine() engine {
 	w := v.live()
 	if w == nil {
-		panic("appkit: View is not shown: pass it to App.Show first")
+		panic("tuohi: View is not shown: pass it to App.Show first")
 	}
 	return w
 }
 
 // notShown is the error value-returning View methods report before App.Show.
 func notShown() error {
-	return errors.New("appkit: View is not shown: pass it to App.Show first")
+	return errors.New("tuohi: View is not shown: pass it to App.Show first")
 }
 
 // Run is not part of the public View API - the application run loop is owned
@@ -1174,7 +1174,7 @@ func (w *webview) Dialog(opts dialog.Options) ([]string, error) {
 	var paths []string
 	var err error
 	if callErr := ui.call(func() { paths, err = dialog.Open(opts) }); callErr != nil {
-		return nil, fmt.Errorf("appkit: dialog: %w", callErr)
+		return nil, fmt.Errorf("tuohi: dialog: %w", callErr)
 	}
 	return paths, err
 }

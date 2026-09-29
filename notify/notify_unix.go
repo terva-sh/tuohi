@@ -222,7 +222,7 @@ func bytesToRGBA(data []byte) (*image.RGBA, error) {
 func cliIcon(opts Options) (icon string, cleanup func(), err error) {
 	cleanup = func() {}
 	if len(opts.IconData) > 0 {
-		f, err := os.CreateTemp("", "appkit-notify-*.png")
+		f, err := os.CreateTemp("", "tuohi-notify-*.png")
 		if err != nil {
 			return "", cleanup, fmt.Errorf("notify: write Options.IconData to temp file: %w", err)
 		}

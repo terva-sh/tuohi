@@ -441,7 +441,7 @@ func (a *App) unregisterView(v *View, w engine) {
 // scope. Every App method calls begin before running its action.
 func (a *App) begin() (*appScope, error) {
 	if a == nil {
-		return nil, errors.New("appkit: nil *App")
+		return nil, errors.New("tuohi: nil *App")
 	}
 	a.scopeOnce.Do(func() {
 		s := &appScope{cfg: snapshotConfig(a)}
@@ -479,7 +479,7 @@ func (a *App) Wait() error {
 	}
 	s, err := a.begin()
 	if err != nil {
-		return fmt.Errorf("appkit: wait: %w", err)
+		return fmt.Errorf("tuohi: wait: %w", err)
 	}
 	// The icon and App.Start set up what needs the UI thread before the loop
 	// below dispatches its events. Wait normally runs on that thread; on
@@ -625,10 +625,10 @@ type bindRequest struct {
 // encountered. A nil w or a nil value is an error.
 func bindEntry(w binder, name string, v any) ([]string, error) {
 	if w == nil {
-		return nil, fmt.Errorf("appkit: Bind requires a non-nil View")
+		return nil, fmt.Errorf("tuohi: Bind requires a non-nil View")
 	}
 	if v == nil {
-		return nil, fmt.Errorf("appkit: Bind requires a non-nil value")
+		return nil, fmt.Errorf("tuohi: Bind requires a non-nil value")
 	}
 	if err := w.Bind(name, v); err != nil {
 		return nil, fmt.Errorf("binding %s: %w", name, err)
@@ -677,10 +677,10 @@ func applyBinds(w binder, appBinds, viewBinds map[string]any) error {
 	for _, name := range unbinds {
 		u, ok := w.(interface{ Unbind(string) error })
 		if !ok {
-			return fmt.Errorf("appkit: unbinding %s: engine cannot unbind", name)
+			return fmt.Errorf("tuohi: unbinding %s: engine cannot unbind", name)
 		}
 		if err := u.Unbind(name); err != nil {
-			return fmt.Errorf("appkit: unbinding %s: %w", name, err)
+			return fmt.Errorf("tuohi: unbinding %s: %w", name, err)
 		}
 	}
 	return nil
@@ -788,13 +788,13 @@ func validateTopLevel(name, eventsGlobal string) error {
 		top = name[:i]
 	}
 	if top == "__webview__" || strings.HasPrefix(top, "__appkit") {
-		return fmt.Errorf("appkit: binding name %q is reserved for appkit's internal page API", name)
+		return fmt.Errorf("tuohi: binding name %q is reserved for tuohi's internal page API", name)
 	}
 	if top == eventsGlobal {
-		return fmt.Errorf("appkit: binding name %q would replace the page's events API (window.%s)", name, eventsGlobal)
+		return fmt.Errorf("tuohi: binding name %q would replace the page's events API (window.%s)", name, eventsGlobal)
 	}
 	if windowGlobalDenylist[top] {
-		return fmt.Errorf("appkit: binding name %q would replace the page's own window.%s", name, top)
+		return fmt.Errorf("tuohi: binding name %q would replace the page's own window.%s", name, top)
 	}
 	return nil
 }
@@ -814,7 +814,7 @@ func checkDottedPrefixes(names map[string]bool) error {
 	sort.Strings(keys)
 	for i := 1; i < len(keys); i++ {
 		if strings.HasPrefix(keys[i], keys[i-1]+".") {
-			return fmt.Errorf("appkit: binding names %q and %q collide: %q is nested under %q, and a leaf and its namespace cannot both be bound", keys[i], keys[i-1], keys[i], keys[i-1])
+			return fmt.Errorf("tuohi: binding names %q and %q collide: %q is nested under %q, and a leaf and its namespace cannot both be bound", keys[i], keys[i-1], keys[i], keys[i-1])
 		}
 	}
 	return nil
@@ -881,10 +881,10 @@ func (a *App) Reveal(path string) error {
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return fmt.Errorf("appkit: resolve %q: %w", path, err)
+		return fmt.Errorf("tuohi: resolve %q: %w", path, err)
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return fmt.Errorf("appkit: reveal %q: %w", path, err)
+		return fmt.Errorf("tuohi: reveal %q: %w", path, err)
 	}
 	return revealFile(abs)
 }
@@ -894,7 +894,7 @@ func (a *App) Reveal(path string) error {
 func validateScheme(rawurl string) error {
 	u, err := url.Parse(rawurl)
 	if err != nil {
-		return fmt.Errorf("appkit: parse %q: %w", rawurl, err)
+		return fmt.Errorf("tuohi: parse %q: %w", rawurl, err)
 	}
 	if !allowedSchemes[u.Scheme] {
 		return fmt.Errorf("%w: %q (allowed: http, https, mailto)", ErrScheme, u.Scheme)
@@ -919,7 +919,7 @@ var allowedSchemes = map[string]bool{
 var ErrNotMainThread = errors.New("tuohi: on macOS the UI runs on the main thread; call App.Show and App.Wait from main")
 
 // ErrScheme is returned by Open when the URL's scheme is not in the allow-list.
-var ErrScheme = errors.New("appkit: refused URL scheme")
+var ErrScheme = errors.New("tuohi: refused URL scheme")
 
 // serveAppFS returns the content resolver for an App.FS: it maps a request
 // URL's path onto a file in the filesystem and answers it with the matching
@@ -1052,7 +1052,7 @@ func (s *appScope) startViewServer() (*loopbackServer, error) {
 	}
 	srv, _, err := listenLoopbackHTTP(serveAppFS(s.cfg.FS))
 	if err != nil {
-		return nil, fmt.Errorf("appkit: serve App.FS for a view: %w", err)
+		return nil, fmt.Errorf("tuohi: serve App.FS for a view: %w", err)
 	}
 	return srv, nil
 }

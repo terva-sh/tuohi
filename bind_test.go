@@ -215,7 +215,7 @@ func TestValidateBindNameSegmentRules(t *testing.T) {
 			t.Errorf("validateBindName(%q) = nil, want error", name)
 		}
 	}
-	good := []string{"a", "a.b.c", "demo.theme", "appkit", "x1._y"}
+	good := []string{"a", "a.b.c", "demo.theme", "tuohi", "x1._y"}
 	for _, name := range good {
 		if err := validateBindName(name); err != nil {
 			t.Errorf("validateBindName(%q) = %v, want nil", name, err)

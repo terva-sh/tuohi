@@ -37,7 +37,7 @@ var appWindowIconPNG []byte
 // caller runs it before the first window exists.
 func setAppIcon(png []byte, _ string, _ bool) error {
 	if len(png) == 0 {
-		return errors.New("appkit: the application icon is empty")
+		return errors.New("tuohi: the application icon is empty")
 	}
 	appWindowIconPNG = png
 	return nil

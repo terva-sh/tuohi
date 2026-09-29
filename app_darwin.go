@@ -35,7 +35,7 @@ func iconEnsureInit() error {
 		} {
 			_, err := purego.Dlopen(fw, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 			if err != nil {
-				iconInitErr = fmt.Errorf("appkit: load %s: %w", fw, err)
+				iconInitErr = fmt.Errorf("tuohi: load %s: %w", fw, err)
 				return
 			}
 		}
@@ -52,7 +52,7 @@ func iconEnsureInit() error {
 // including a toolkit (Ebitengine, say) that goes on to build its own windows.
 func setAppIcon(png []byte, _ string, _ bool) error {
 	if len(png) == 0 {
-		return errors.New("appkit: the application icon is empty")
+		return errors.New("tuohi: the application icon is empty")
 	}
 	err := iconEnsureInit()
 	if err != nil {
@@ -72,7 +72,7 @@ func setAppIcon(png []byte, _ string, _ bool) error {
 		app.Send(sel("setApplicationIconImage:"), image)
 	})
 	if failed {
-		return errors.New("appkit: the application icon is not an image AppKit can read")
+		return errors.New("tuohi: the application icon is not an image AppKit can read")
 	}
 	lastIcon = png
 	return nil
