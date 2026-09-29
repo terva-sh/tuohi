@@ -145,6 +145,15 @@ type viewCore struct {
 	// document on a trusted origin, and prefixes it to every message, so a
 	// message from any other document or frame lacks it. Guarded by mu.
 	token string
+
+	// replyKey is the view's second secret, made with token and the same
+	// length. The bridge sets it on window.__webview__, and every script Go
+	// evaluates to hand the page something checks it first (bridgeOnly),
+	// so a document that is not trusted receives nothing. It is kept apart
+	// from token because a trusted page's scripts can read it: a leaked
+	// reply key lets a later untrusted page receive, but never lets anyone
+	// call Go. Guarded by mu.
+	replyKey string
 }
 
 func (c *viewCore) core() *viewCore { return c }
@@ -194,21 +203,46 @@ const bridgeTokenLen = 64
 // on first use. Each engine's script rebuild puts it first. Assumes mu is
 // held.
 func (c *viewCore) bridgeScriptLocked(postFn string) string {
-	if c.token == "" {
-		var b [bridgeTokenLen / 2]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			// crypto/rand does not fail on the supported platforms; a view
-			// with no token accepts no message.
-			panic("tuohi: no randomness for the bridge token: " + err.Error())
-		}
-		c.token = hex.EncodeToString(b[:])
-	}
+	c.keysLocked()
 	origins := make([]string, 0, len(c.origins))
 	for o := range c.origins {
 		origins = append(origins, o)
 	}
 	sort.Strings(origins)
-	return createInitScript(postFn, c.token, origins, interceptOutsideLinks)
+	return createInitScript(postFn, c.token, c.replyKey, origins, interceptOutsideLinks)
+}
+
+// keysLocked makes the view's bridge token and reply key the first time
+// either is needed. Assumes mu is held.
+func (c *viewCore) keysLocked() {
+	if c.token == "" {
+		c.token = randomKey()
+	}
+	if c.replyKey == "" {
+		c.replyKey = randomKey()
+	}
+}
+
+// randomKey returns bridgeTokenLen hex characters from crypto/rand.
+func randomKey() string {
+	var b [bridgeTokenLen / 2]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand does not fail on the supported platforms; a view
+		// with no key accepts and receives nothing.
+		panic("tuohi: no randomness for the bridge keys: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// bridgeOnly wraps body so that it runs only in a trusted document of this
+// view (see bridgeGuard). Every script Go evaluates to deliver a binding's
+// result, an event, or a binding goes through it.
+func (c *viewCore) bridgeOnly(body string) string {
+	c.mu.Lock()
+	c.keysLocked()
+	key := c.replyKey
+	c.mu.Unlock()
+	return bridgeGuard(key, body)
 }
 
 // checkToken strips the view's bridge token from the front of body and
@@ -838,8 +872,8 @@ func applyTitle(w engine) {
 
 // resolve delivers a binding call's result to the page, on the UI thread.
 func (w *webview) resolve(id string, status int, resultJSON string) {
-	js := fmt.Sprintf("window.__webview__.onReply(%s, %d, %s)",
-		marshalJSON(id), status, marshalJSON(resultJSON))
+	js := w.bridgeOnly(fmt.Sprintf("w.onReply(%s, %d, %s);",
+		marshalJSON(id), status, marshalJSON(resultJSON)))
 	w.Dispatch(func() { w.Eval(js) })
 }
 
@@ -859,7 +893,9 @@ func (w *webview) BindBatch(batch []bindRequest) error {
 		}
 		return nil
 	})
-	w.Eval(liveBindScript(live))
+	if js := liveBindScript(live); js != "" {
+		w.Eval(w.bridgeOnly(js))
+	}
 	return nil
 }
 
@@ -884,6 +920,6 @@ func (w *webview) Unbind(name string) error {
 	}
 	// Unbinding a name on a frozen namespace throws. liveUnbindJS reports
 	// that failure to Go instead of doing nothing.
-	w.Eval(liveUnbindJS(name))
+	w.Eval(w.bridgeOnly(liveUnbindJS(name)))
 	return nil
 }
