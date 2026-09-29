@@ -756,3 +756,12 @@ func windowTitle(e engine) string {
 	})
 	return title
 }
+
+// pageURL reads the URL of the view's page, on the main thread.
+func pageURL(e engine) string {
+	var u string
+	autorelease(func() {
+		u = cstr(e.(*webview).webView.Send(sel("URL")).Send(sel("absoluteString")).Send(sel("UTF8String")))
+	})
+	return u
+}

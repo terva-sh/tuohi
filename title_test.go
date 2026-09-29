@@ -160,9 +160,15 @@ func titleScenario() string {
 			if st.do != nil {
 				st.do()
 			}
+			if st.name == "blank" {
+				if at := leftForBlank(w, loaded); at != "" {
+					report = append(report, st.name+"="+at)
+					continue
+				}
+			}
 			if st.name == "pageundergo" || st.name == "blank" {
 				// The title must not change, so give a wrong one time to
-				// arrive: the page's report, and about:blank's commit.
+				// arrive.
 				time.Sleep(500 * time.Millisecond)
 			}
 			if got := read(st.want); got == st.want {
@@ -181,6 +187,36 @@ func titleScenario() string {
 		return r
 	default:
 		return "no report"
+	}
+}
+
+// leftForBlank waits until the view shows about:blank and the trusted page's
+// bridge no longer answers, so the blank step checks an untrusted page rather
+// than the trusted one it was leaving. It returns "" once both hold, and what
+// it found otherwise.
+func leftForBlank(w *View, loaded chan string) string {
+	var at string
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		if err := ui.call(func() { at = pageURL(w.w) }); err != nil {
+			return "error " + err.Error()
+		}
+		if at == "about:blank" {
+			break
+		}
+		if time.Now().After(deadline) {
+			return "at " + at
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	for len(loaded) > 0 {
+		<-loaded
+	}
+	w.Eval(`window.loaded && window.loaded('still trusted')`)
+	select {
+	case <-loaded:
+		return "bridge still answers"
+	case <-time.After(time.Second):
+		return ""
 	}
 }
 

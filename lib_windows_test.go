@@ -454,3 +454,9 @@ func windowTitle(e engine) string {
 	n := getWindowTextW(e.(*webview).window, &buf[0], int32(len(buf)))
 	return string(utf16Decode(buf[:n]))
 }
+
+// pageURL reads the URL of the document that last committed in the view, on
+// the UI thread.
+func pageURL(e engine) string {
+	return e.(*webview).committedURI
+}

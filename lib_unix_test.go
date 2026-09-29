@@ -384,3 +384,8 @@ func TestWaitReturnsAfterLastWindowCloses(t *testing.T) {
 func windowTitle(e engine) string {
 	return cstr(gtkWindowGetTitle(e.(*webview).window))
 }
+
+// pageURL reads the URL of the view's page, on the UI thread.
+func pageURL(e engine) string {
+	return cstr(webkitWebViewGetURI(e.(*webview).webview))
+}
