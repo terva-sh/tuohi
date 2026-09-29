@@ -366,7 +366,112 @@ const initBridgeTail = `)(token + message);
     return Webview_;
   })();
   window.__webview__ = new Webview();
-})()`
+`
+
+// initOutsideLinks, appended to the bridge on an engine that decides a
+// top-level navigation only at its response (WebKitGTK; see
+// interceptOutsideLinks), hands a navigation that leaves the view's trusted
+// origins to Go before the view requests it. It runs only in a document the
+// bridge was installed in, a trusted top-level one, and covers what a page
+// can be seen starting: a plain click on a link, a GET form, and, where the
+// engine fires it, the Navigation API's navigate event. Each is cancelled and
+// posted as internalOpenExternal; Go applies the navigation policy again
+// before opening anything. A listener runs after the page's own, so a page
+// that handles a click itself keeps it; the cost is that a page listener
+// that stops the click's propagation without cancelling it hides the click
+// from this one. That, and anything else not caught here, such as a server
+// redirect or a meta refresh, is still decided at its response.
+const initOutsideLinks = `
+  (function() {
+    var bridge = window.__webview__;
+    if (typeof window.addEventListener !== 'function') { return; }
+    function outside(href) {
+      var u;
+      if (typeof href !== 'string') { return ''; }
+      // A relative URL resolves against the document's base, which a <base>
+      // element may move off the page's own origin.
+      var base = (typeof document !== 'undefined' && document.baseURI) || loc.href;
+      try { u = new URL(href, base); } catch (e) { return ''; }
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') { return ''; }
+      if (Object.prototype.hasOwnProperty.call(trusted, u.protocol + '//' + u.host)) { return ''; }
+      return u.href;
+    }
+    function handOff(href) {
+      bridge.post(JSON.stringify({method: METHOD, params: [href]}));
+    }
+    function linkOf(e) {
+      // A click from inside a shadow root reaches window retargeted to its
+      // host, so the link is found on the event's composed path.
+      var path = typeof e.composedPath === 'function' ? e.composedPath() : [], i, n;
+      for (i = 0; i < path.length; i++) {
+        n = path[i];
+        if (n && (n.localName === 'a' || n.localName === 'area') && n.hasAttribute &&
+            (n.hasAttribute('href') || n.hasAttribute('xlink:href'))) { return n; }
+      }
+      return e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
+    }
+    function hrefOf(a) {
+      // An SVG link's href is an SVGAnimatedString, and it may use xlink:href.
+      if (typeof a.href === 'string') { return a.href; }
+      return (a.href && a.href.baseVal) || a.getAttribute('href') || a.getAttribute('xlink:href');
+    }
+    function sameWindow(target) {
+      // With no target of its own, a link or form takes the document's
+      // <base target>, which may name a frame.
+      if (target === null || target === undefined) {
+        var b = typeof document !== 'undefined' && document.querySelector ? document.querySelector('base[target]') : null;
+        target = b ? b.getAttribute('target') : '';
+      }
+      target = (target || '').toLowerCase();
+      return !target || target === '_self' || target === '_top' || target === '_parent';
+    }
+    window.addEventListener('click', function(e) {
+      if (!e.cancelable || e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) { return; }
+      var a = linkOf(e);
+      if (!a || a.hasAttribute('download') || !sameWindow(a.getAttribute('target'))) { return; }
+      var href = outside(hrefOf(a));
+      if (!href) { return; }
+      e.preventDefault();
+      handOff(href);
+    });
+    window.addEventListener('submit', function(e) {
+      var form = e.target, submitter = e.submitter || null;
+      if (!e.cancelable || e.defaultPrevented || !form || !form.getAttribute) { return; }
+      // The effective method, as the browser reports it: an invalid or
+      // missing value is get, and the submitter's formmethod wins.
+      var method = submitter && submitter.hasAttribute && submitter.hasAttribute('formmethod') ?
+        submitter.formMethod : form.method;
+      var target = submitter && submitter.hasAttribute && submitter.hasAttribute('formtarget') ?
+        submitter.getAttribute('formtarget') : form.getAttribute('target');
+      // An image button adds the click's coordinates, which FormData does
+      // not carry, so the engine's own policy decides that submission.
+      if (submitter && submitter.type === 'image') { return; }
+      if (String(method || 'get').toLowerCase() !== 'get' || !sameWindow(target)) { return; }
+      var href = outside((submitter && submitter.formAction) || form.action);
+      if (!href) { return; }
+      var u = new URL(href), data, pairs = [];
+      try { data = new FormData(form, submitter); } catch (err) { data = new FormData(form); }
+      // A GET submission names a file by its file name, as FormData does not.
+      data.forEach(function(value, name) {
+        pairs.push([name, typeof value === 'string' ? value : (value && value.name) || '']);
+      });
+      u.search = new URLSearchParams(pairs).toString();
+      e.preventDefault();
+      handOff(u.href);
+    });
+    var nav = window.navigation;
+    if (nav && typeof nav.addEventListener === 'function') {
+      nav.addEventListener('navigate', function(e) {
+        if (!e.cancelable || e.hashChange || e.formData || e.downloadRequest != null) { return; }
+        if (e.navigationType !== 'push' && e.navigationType !== 'replace') { return; }
+        var href = outside(e.destination && e.destination.url);
+        if (!href) { return; }
+        e.preventDefault();
+        handOff(href);
+      });
+    }
+  })();
+`
 
 // createInitScript returns the document-start bridge. It exposes
 // window.__webview__ with Promise-based call()/onReply(), the binding
@@ -380,16 +485,20 @@ const initBridgeTail = `)(token + message);
 // The bridge is installed only in a top-level document whose origin is one of
 // origins (see initBridgeGate). post() prefixes token to every message, and
 // the Go side drops any message without it (see webview.onMessage).
-func createInitScript(postFn, token string, origins []string) string {
+func createInitScript(postFn, token string, origins []string, outsideLinks bool) string {
 	trusted := make(map[string]bool, len(origins))
 	for _, o := range origins {
 		trusted[o] = true
 	}
 	trustedJSON, _ := json.Marshal(trusted) // a map of strings to bools always marshals
-	return "(function() {\n  'use strict';\n" +
+	script := "(function() {\n  'use strict';\n" +
 		"  var token = " + marshalJSON(token) + ";\n" +
 		"  var trusted = " + string(trustedJSON) + ";\n" +
 		initBridgeGate + initBridgeHead + postFn + initBridgeTail
+	if outsideLinks {
+		script += strings.Replace(initOutsideLinks, "METHOD", marshalJSON(internalOpenExternal), 1)
+	}
+	return script + "})()"
 }
 
 // createBindScript returns the document-start script that installs every

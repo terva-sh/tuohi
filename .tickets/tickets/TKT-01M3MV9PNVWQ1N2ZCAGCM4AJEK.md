@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3MV9PNVWQ1N2ZCAGCM4AJEK
 title: Hand outside links to the browser before requesting them on Linux
 type: bug
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -22,10 +22,17 @@ references:
   - ref: code:lib_unix.go
     path: lib_unix.go
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: fix/linux-outside-links
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-72958710
+  commit: 5d9a4882234c7ee023483714d75736f71278de22
+  session: null
+  claimed_at: 2026-09-28T23:57:39Z
+  expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-28T21:34:09Z
+updated_at: 2026-09-29T03:06:21Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -68,3 +75,149 @@ TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins call a view's Go bindin
 - [ ] On Linux, a link to a non-trusted http or https origin is handed to the system browser without the view requesting it
 - [ ] A link to a host that does not resolve still reaches the system browser on every engine
 - [ ] A GUI scenario on each engine covers the unresolvable-host case
+
+## Implementation plan
+
+### Approach (the owner's choice, 2026-09-29: page intercept plus load-failed)
+
+1. **Page intercept** (`initOutsideLinks` in bind_gen.go), appended to the bridge only where `interceptOutsideLinks` is true. That is WebKitGTK only: WebView2 and WKWebView already decide before any request. It runs only in a document the bridge was installed in, a trusted top-level one. It catches three kinds of navigation that would leave the trusted origins, cancels each, and posts `__appkitOpenExternal`:
+   - a plain left click on `a[href]` or `area[href]` that opens in the same window and is not a download;
+   - a GET form submit;
+   - the Navigation API's `navigate` event, for push and replace navigations, not hash changes or form posts.
+
+   Its listeners are on `window` in the bubble phase, so a page that handled the click itself keeps it.
+2. **Go** (`webview.openOutside`) does not take the page's word for the URL. It opens only an http or https URL for which the navigation policy returns `navExternal`.
+3. **`load-failed`** (`webview.loadFailed`) handles a main-frame load that failed before commit, when the URL is untrusted http(s) and the policy hands it to the system. It hands the URL over and suppresses WebKit's error page. It skips policy errors, including the response-time ignore, and cancelled loads.
+4. **Tests:**
+   - `TestOutsideLinksNotRequested`, a GUI scenario shared by all engines, runs four steps: a link, a `location.href` assignment, an unresolvable link, and a trusted URL that redirects to an unresolvable host. The outside server must receive no request.
+   - `TestOutsideLinksScript` runs the intercept's rules in node.
+
+### Alternatives rejected
+
+- **Cancelling every untrusted http(s) navigation action.** It would also cancel, or hand to the browser, cross-origin iframes, and the action cannot tell them apart (see the measurements note).
+- **The Navigation API alone.** On WebKitGTK 6.0 it does not fire for a link click.
+- **Stopping the load at `load-changed` STARTED.** The request is already on its way by then.
+- **Capture-phase listeners.** They would take clicks that a page's own router handles.
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T00:01:27Z
+
+### Measured on both WebKitGTK stacks (2.52.6, Debian 13), 2026-09-29
+
+I ran a throwaway probe, not committed; its source is kept in scratch. A temporary hook in `decidePolicy` logged every decide-policy signal. The page, on loopback origin A, embedded an iframe from origin B, changed that iframe's `src`, clicked a top-level link to B, and assigned `location.href` to B.
+
+**The navigation action cannot tell a frame from the main frame.** Iframe loads arrive as `NAVIGATION_ACTION` with navigation type OTHER (5), the same as the main frame's own `Navigate`. The only difference is that no `RESPONSE` decision follows for a frame. Neither stack exports anything that names the target frame: `webkit_navigation_action_get_frame_name` reports a link's `target` attribute and nothing else. Cancelling every untrusted http(s) action would therefore also cancel cross-origin iframes, or hand them to the browser.
+
+**The bug reproduces as the ticket describes.** On both stacks, the top-level link click (LINK_CLICKED, 0) reached origin B's server (`GET /top`) before the `RESPONSE` decision handed the URL to `openExternal`.
+
+**The Navigation API does not cover it on both stacks.** `navigation` exists on both, and the `NavigationAPI` feature defaults to on for both.
+
+| Navigation | WebKitGTK 4.1 (GTK3) | WebKitGTK 6.0 (GTK4) |
+|---|---|---|
+| A link click (`a.click()`) | `navigate` fires, `cancelable=true`, and `preventDefault` stops it before any request | `navigate` never fires, 3 runs of 3, and the request is sent |
+| A `location.href` assignment | fires, prevented, no request | fires, prevented, no request |
+
+### Options this leaves
+
+1. **Page-side interception in the bridge script,** which runs in the main frame of trusted pages only. A capture-phase `click` listener on `a[href]`, and a `submit` listener, prevent a main-frame navigation to an untrusted http(s) origin and post an internal message asking Go to hand the URL to the browser. The Navigation API's `navigate` event covers scripted navigations where it fires. What stays at the response, as today: server redirects, `<meta http-equiv=refresh>`, and a link click on 6.0 that no listener catches.
+2. **A `load-failed` fallback** for the unresolvable-host criterion. `load-failed` is main-frame only. When the failing URI is untrusted http(s), hand it to the browser and suppress WebKit's error page. This fixes "a link that does nothing" on its own, without closing the request leak.
+3. **Accept the response-time decision** and document that Linux requests an outside page before handing it over. Macs and Windows do not.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:28:19Z
+
+### Evidence (Linux, both stacks)
+
+- **`TestOutsideLinksNotRequested`** passes on both stacks.
+- **Negative controls:**
+  - With `interceptOutsideLinks = false` it reports `requested=2`: the link and the assignment reached the outside server.
+  - With the `load-failed` handler disconnected it reports `deadredirect=none`.
+  - The unresolvable *link* is caught by the page intercept before any request, so it passes either way. The redirect step is the one that needs `load-failed`.
+- **`TestOutsideLinksScript`** covers 19 cases:
+  - handed to Go: an outside link, `target=_top`, a GET form, and `navigate` push and replace;
+  - left alone: trusted links and forms, modifier clicks, middle clicks, `target=_blank`, `download`, links the page already handled, `mailto:`, POST forms, traversals, hash changes, and navigations that cannot be cancelled.
+
+  With the modifier and already-handled checks removed from the script, it fails on exactly those two cases.
+- **`TestBridgeGate`** runs the platform's real bridge in node, whose stub window has no `addEventListener`. The intercept now returns early in that case.
+- **`just ci`**, **`just test-gui`** on both stacks, and **golangci-lint** on three GOOS all pass.
+
+Not verified here: the new scenario on macOS and Windows. They should hand everything over natively, before any request. Whether WKWebView sees a server redirect that fails before any response is the open question, and GitHub CI will answer it.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:36:27Z
+
+GitHub run 36513098161 showed WebView2 (runtime 153) requesting GET /link and GET /assign from the outside server although NavigationStarting cancelled both. They were ordinary requests, with no Sec-Purpose. The intercept is now on for Windows too (interceptOutsideLinks = true in lib_windows.go), and the internalOpenExternal handler moved from lib_unix.go into the shared onMessage (engine.go), so both engines use one implementation. macOS passed the whole scenario, the dead redirect included, and keeps the intercept off. The Windows cause, and redirects on Windows, are filed as a separate ticket (Keep WebView2 from requesting a navigation NavigationStarting cancels). The outside server in the scenario now records each request's target and purpose header, so a failure names them.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:45:08Z
+
+### Review disposition for PR #26 (terva-review run on 5bed776)
+
+1. **Medium: outside links inside shadow DOM bypass the click intercept.** Fixed. `linkOf` walks `e.composedPath()` for the first `a` or `area` element with an `href`, and falls back to `closest()` where `composedPath` is missing. Tests:
+   - **`TestOutsideLinksScript`** gains three shadow-root cases: an outside link, a trusted link, and an anchor with no `href`. With the old lookup the outside-link case fails.
+   - **`TestOutsideLinksNotRequested`** gains a `shadowlink` step. Controls on WebKitGTK 6.0, both with the `navigate` listener off:
+     - with the old lookup, the outside server received `/shadow`;
+     - with `linkOf`, it did not.
+
+     With `navigate` on, the Navigation API also catches this click on 6.0, even though it misses a plain link click there.
+2. **Medium: stopping click propagation without cancelling it bypasses the hand-off.** Declined, and documented in `initOutsideLinks` and docs/architecture.md.
+   - **Why the bubble phase:** the listener runs there so a page that handles its own clicks keeps them.
+   - **What a capture-phase listener would cost:** it would take every outside click before the page's own handlers had decided. A page that cancels a click itself would then have its link opened anyway.
+   - **Why it's not a policy bypass:** the missed click is still judged at its response and handed to the system, and nothing is shown. What is lost is the "never requested" guarantee, and only when the application's own trusted page stops propagation.
+   - **Tracking:** the case is listed with server redirects and meta refresh as still requested first.
+
+Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:51:13Z
+
+### Review disposition for PR #26, round 2 (terva-review run on febc61a)
+
+The round-1 findings were reported handled: finding 1 resolved, and finding 2 declined, as documented. GitHub run 36514058532 on febc61a passed every job.
+
+1. **Medium: SVG outside links bypass the click intercept.** Fixed.
+   - **The fix:** `hrefOf` reads `href` when it is a string. For an SVG link it reads `href.baseVal`, or the `href` or `xlink:href` attribute. `linkOf` also accepts a link that has only `xlink:href`.
+   - **`TestOutsideLinksScript`** gains three cases: an SVG link, an SVG link with only `xlink:href`, and a trusted SVG link. With the old read, both outside cases fail.
+   - **`TestOutsideLinksNotRequested`** gains an `svglink` step, which dispatches a click on the text inside an SVG `<a>`. On WebKitGTK 6.0 with the `navigate` listener off, the old read let `/svg` reach the server, and `hrefOf` does not.
+2. **Medium: GET forms with file inputs are handed off with a different URL.** Fixed. The query is built pair by pair from the `FormData` entries, and a file value is written as its `name`, as a browser's GET submission does. `URLSearchParams(FormData)` had written `[object File]`. `TestOutsideLinksScript` gains a GET form with a file field, whose expected result is `?q=x&f=a+b.txt`.
+
+Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:56:46Z
+
+### Review disposition for PR #26, round 3 (terva-review run on de49c72)
+
+Both round-2 findings were reported resolved. GitHub run 36514519417 on de49c72 passed every job.
+
+1. **Medium: use the effective form method when deciding whether to intercept.** Fixed. The listener reads `form.method`, or `submitter.formMethod` when the submitter has `formmethod`. Those properties report a browser's effective method, so an invalid or missing value reads as `get`.
+
+   `TestOutsideLinksScript` gains four cases: `method="bogus"`, which is handed over, a GET form with a POST submitter, which is not, a POST form with a GET submitter, which is, and an uncancelable submit. With the raw-attribute check, the invalid-method case fails.
+2. **Medium: do not hand off a click that cannot be cancelled.** Fixed. The click and submit listeners return when `!e.cancelable`, as the `navigate` listener already did. With the checks removed, the new uncancelable click and submit cases both fail.
+
+Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T03:01:33Z
+
+### Review disposition for PR #26, round 4 (terva-review run on 93fb225)
+
+Both round-3 findings were reported resolved. GitHub run 36514939276 on 93fb225 passed every job.
+
+1. **Medium: resolve relative SVG links against the document base URL.** Fixed. `outside()` resolves against `document.baseURI`, and falls back to the page URL. The script now reads the document the way a browser does, where a `<base>` element can move relative URLs off the page's origin. `TestOutsideLinksScript` gains a relative SVG link under an outside base. With the page-URL base, it fails.
+2. **Medium: do not hand off image-submit forms with changed coordinates.** Fixed. A submit whose submitter is `<input type=image>` is left to the engine's policy, because the click coordinates cannot be reproduced from `FormData`. `TestOutsideLinksScript` gains the case. Without the check, it is handed over.
+
+Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T03:06:21Z
+
+### Review disposition for PR #26, round 5 (terva-review run on 4f74181)
+
+Both round-4 findings were reported resolved. GitHub run 36515299106 on 4f74181 passed every job.
+
+1. **Medium: honor the document's default target before handing off links and forms.** Fixed. When the element has no `target`, `sameWindow` reads the document's `<base target>`, so a frame named there is left alone. The submit listener takes the submitter's `formtarget` only when the submitter has that attribute.
+
+   `TestOutsideLinksScript` gains four cases:
+   - a link under a `<base target>` that names a frame, which is left alone;
+   - a link under `<base target=_top>`, which is handed over;
+   - a link with its own `_self` under a frame base, which is handed over;
+   - a GET form under a frame base, which is left alone.
+
+   Without the base-target check, both frame cases are handed over.
+
+Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.

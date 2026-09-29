@@ -415,9 +415,10 @@ func TestGeneratedScriptsParse(t *testing.T) {
 	// (createInitScript), the events bridge and the bind script with every
 	// installer kind present (constant, accessor, setter, getter, plain fn).
 	scripts := map[string]string{
-		"appRegions": createAppRegionScript(true, true, "linux"),
-		"bridge":     createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), []string{"http://127.0.0.1:8080", "data:text/html,x"}),
-		"events":     eventsInitScript("events"),
+		"appRegions":  createAppRegionScript(true, true, "linux"),
+		"bridge":      createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), []string{"http://127.0.0.1:8080", "data:text/html,x"}, false),
+		"bridgeLinks": createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), []string{"http://127.0.0.1:8080"}, true),
+		"events":      eventsInitScript("events"),
 		"bind": createBindScript([]binding{
 			{name: "demo.a", kind: bindingConst, value: `{"k":1}`},
 			{name: "demo.b", kind: bindingAccessor},
@@ -597,5 +598,138 @@ func TestCheckToken(t *testing.T) {
 		if _, ok := c.checkToken(body); ok {
 			t.Errorf("checkToken(%q) accepted", body)
 		}
+	}
+}
+
+// TestOutsideLinksScript runs the bridge's outside-link intercept (see
+// initOutsideLinks) in node against a stub window, and checks which clicks,
+// form submits, and navigate events it hands to Go and which it leaves to
+// the page and the engine.
+func TestOutsideLinksScript(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	token := strings.Repeat("ef", bridgeTokenLen/2)
+	bridge := createInitScript("function(m) { posted.push(m); }", token, []string{"http://127.0.0.1:8080"}, true)
+	harness := `
+const bridge = ` + marshalJSON(bridge) + `;
+const token = ` + marshalJSON(token) + `;
+const listeners = {}, navListeners = [];
+const posted = [];
+const win = { crypto: { getRandomValues: function(a) { return a; } },
+  location: { protocol: 'http:', host: '127.0.0.1:8080', href: 'http://127.0.0.1:8080/page' },
+  addEventListener: function(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+  navigation: { addEventListener: function(type, fn) { if (type === 'navigate') navListeners.push(fn); } } };
+win.top = win;
+function StubFormData(form) {
+  return { forEach: function(fn) { form.fields.forEach(function(p) { fn(p[1], p[0]); }); } };
+}
+const doc = { baseURI: 'http://127.0.0.1:8080/page', baseTarget: null,
+  querySelector: function(sel) { return sel === 'base[target]' && doc.baseTarget !== null ? el({ target: doc.baseTarget }, {}) : null; } };
+function withBaseTarget(t, run) { doc.baseTarget = t; try { return run(); } finally { doc.baseTarget = null; } }
+new Function('window', 'posted', 'FormData', 'document', bridge)(win, posted, StubFormData, doc);
+function el(attrs, props) {
+  return Object.assign({ getAttribute: function(n) { return n in attrs ? attrs[n] : null; },
+    hasAttribute: function(n) { return n in attrs; } }, props);
+}
+function ev(props) {
+  return Object.assign({ defaultPrevented: false, cancelable: true, button: 0, cancelled: false,
+    preventDefault: function() { this.defaultPrevented = true; this.cancelled = true; } }, props);
+}
+function click(a, extra) {
+  const e = ev(Object.assign({ target: { closest: function() { return a; } } }, extra));
+  listeners.click.forEach(function(fn) { fn(e); });
+  return e;
+}
+// A click on a link inside a shadow root: window sees the event retargeted to
+// the host, which is not a link, and only the composed path holds the link.
+function shadowClick(a) {
+  const span = el({}, { localName: 'span' }), host = el({}, { localName: 'my-widget' });
+  const e = ev({ target: { closest: function() { return null; } },
+    composedPath: function() { return [span, a, { nodeType: 11 }, host, { localName: 'body' }, win]; } });
+  listeners.click.forEach(function(fn) { fn(e); });
+  return e;
+}
+function submit(form, extra) {
+  const e = ev(Object.assign({ target: form }, extra));
+  listeners.submit.forEach(function(fn) { fn(e); });
+  return e;
+}
+function navigate(url, extra) {
+  const e = ev(Object.assign({ cancelable: true, hashChange: false, formData: null, downloadRequest: null,
+    navigationType: 'push', destination: { url: url } }, extra));
+  navListeners.forEach(function(fn) { fn(e); });
+  return e;
+}
+const out = 'https://example.com/a?b=1#c';
+const cases = [
+  ['outside link', function() { return click(el({ href: out }, { href: out })); }, out],
+  ['outside link, target _top', function() { return click(el({ href: out, target: '_top' }, { href: out })); }, out],
+  ['trusted link', function() { return click(el({ href: '/x' }, { href: 'http://127.0.0.1:8080/x' })); }, null],
+  ['ctrl-click', function() { return click(el({ href: out }, { href: out }), { ctrlKey: true }); }, null],
+  ['middle button', function() { return click(el({ href: out }, { href: out }), { button: 1 }); }, null],
+  ['target _blank', function() { return click(el({ href: out, target: '_blank' }, { href: out })); }, null],
+  ['download', function() { return click(el({ href: out, download: '' }, { href: out })); }, null],
+  ['not cancelable', function() { return click(el({ href: out }, { href: out }), { cancelable: false }); }, null],
+  ['page handled it', function() { return click(el({ href: out }, { href: out }), { defaultPrevented: true }); }, null],
+  ['mailto', function() { return click(el({ href: 'mailto:a@b.invalid' }, { href: 'mailto:a@b.invalid' })); }, null],
+  ['no link', function() { return click(null); }, null],
+  ['outside SVG link', function() { return click(el({ href: out }, { localName: 'a', href: { baseVal: out } })); }, out],
+  ['outside SVG link, xlink:href only', function() { return click(el({ 'xlink:href': out }, { localName: 'a', href: { baseVal: '' } })); }, out],
+  ['relative SVG link under an outside base', function() {
+    doc.baseURI = 'https://outside.example/dir/';
+    try { return click(el({ href: 'p' }, { localName: 'a', href: { baseVal: 'p' } })); }
+    finally { doc.baseURI = 'http://127.0.0.1:8080/page'; }
+  }, 'https://outside.example/dir/p'],
+  ['trusted SVG link', function() { return click(el({ href: '/x' }, { localName: 'a', href: { baseVal: '/x' } })); }, null],
+  ['outside link in a shadow root', function() { return shadowClick(el({ href: out }, { localName: 'a', href: out })); }, out],
+  ['trusted link in a shadow root', function() { return shadowClick(el({ href: '/x' }, { localName: 'a', href: 'http://127.0.0.1:8080/x' })); }, null],
+  ['anchor without href in a shadow root', function() { return shadowClick(el({}, { localName: 'a' })); }, null],
+  ['GET form', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [['q', 'a b']] })); }, 'https://example.com/s?q=a+b'],
+  ['GET form with a file', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [['q', 'x'], ['f', { name: 'a b.txt', size: 3 }]] })); }, 'https://example.com/s?q=x&f=a+b.txt'],
+  // The browser reports an invalid method as get.
+  ['form with an invalid method', function() { return submit(el({ method: 'bogus' }, { method: 'get', action: 'https://example.com/s', fields: [] })); }, 'https://example.com/s'],
+  ['POST form', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] })); }, null],
+  ['GET form, POST submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'post' }, { formMethod: 'post' }) }); }, null],
+  ['POST form, GET submitter', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'get' }, { formMethod: 'get', formAction: 'https://example.com/s' }) }); }, 'https://example.com/s'],
+  ['link under <base target> naming a frame', function() { return withBaseTarget('preview', function() { return click(el({ href: out }, { href: out })); }); }, null],
+  ['link under <base target=_top>', function() { return withBaseTarget('_top', function() { return click(el({ href: out }, { href: out })); }); }, out],
+  ['link with its own _self under <base target> naming a frame', function() { return withBaseTarget('preview', function() { return click(el({ href: out, target: '_self' }, { href: out })); }); }, out],
+  ['GET form under <base target> naming a frame', function() { return withBaseTarget('preview', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] })); }); }, null],
+  ['GET form, image submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({}, { type: 'image' }) }); }, null],
+  ['submit not cancelable', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { cancelable: false }); }, null],
+  ['trusted GET form', function() { return submit(el({}, { method: 'get', action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],
+  ['navigate push', function() { return navigate(out); }, out],
+  ['navigate replace', function() { return navigate(out, { navigationType: 'replace' }); }, out],
+  ['navigate traverse', function() { return navigate(out, { navigationType: 'traverse' }); }, null],
+  ['navigate hash', function() { return navigate(out, { hashChange: true }); }, null],
+  ['navigate not cancelable', function() { return navigate(out, { cancelable: false }); }, null],
+  ['navigate trusted', function() { return navigate('http://127.0.0.1:8080/y'); }, null],
+];
+let failed = false;
+for (const [name, run, want] of cases) {
+  posted.length = 0;
+  const e = run();
+  let got = null;
+  if (posted.length === 1 && posted[0].slice(0, token.length) === token) {
+    const m = JSON.parse(posted[0].slice(token.length));
+    got = m.method === ` + marshalJSON(internalOpenExternal) + ` ? m.params[0] : 'method ' + m.method;
+  } else if (posted.length > 1) {
+    got = posted.length + ' posts';
+  }
+  if (got !== want || (want !== null) !== e.cancelled) {
+    console.error(name + ': posted ' + got + ' cancelled ' + e.cancelled + ', want ' + want);
+    failed = true;
+  }
+}
+process.exit(failed ? 1 : 0);
+`
+	file := filepath.Join(t.TempDir(), "outside.js")
+	if err := os.WriteFile(file, []byte(harness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, file).CombinedOutput(); err != nil {
+		t.Fatalf("outside links: %v\n%s", err, out)
 	}
 }

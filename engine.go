@@ -192,7 +192,7 @@ func (c *viewCore) bridgeScriptLocked(postFn string) string {
 		origins = append(origins, o)
 	}
 	sort.Strings(origins)
-	return createInitScript(postFn, c.token, origins)
+	return createInitScript(postFn, c.token, origins, interceptOutsideLinks)
 }
 
 // checkToken strips the view's bridge token from the front of body and
@@ -684,6 +684,21 @@ func refuseNavigation(rawurl string, action navAction) {
 	log.Printf("tuohi: navigation to %q refused by the navigation policy", rawurl)
 }
 
+// openOutside hands a navigation the page's bridge caught leaving the trusted
+// origins (internalOpenExternal) to the system. The page's word is not taken
+// for it: only an http or https URL the navigation policy would itself hand
+// over is opened.
+func (w *webview) openOutside(rawurl string) {
+	u, err := url.Parse(rawurl)
+	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) {
+		log.Printf("tuohi: outside link %q refused: not an http or https URL", rawurl)
+		return
+	}
+	if action := w.navigationPolicy(rawurl); action == navExternal {
+		refuseNavigation(rawurl, action)
+	}
+}
+
 // handleNewWindow applies the navigation policy to a page's request for a
 // new window (target=_blank, window.open), which the engine has already
 // refused to open: tuohi never opens a second window. A trusted origin loads
@@ -749,6 +764,15 @@ func (w *webview) onMessage(body, senderURL string, senderKnown bool) {
 		// A live bind or unbind failed on the page. The install Eval is
 		// fire-and-forget, so log the failure rather than lose it.
 		handleInternalBindError(m.Params)
+		return
+	}
+	if m.Method == internalOpenExternal {
+		// The bridge caught a navigation leaving the trusted origins (see
+		// initOutsideLinks).
+		var args []string
+		if json.Unmarshal(m.Params, &args) == nil && len(args) == 1 {
+			w.openOutside(args[0])
+		}
 		return
 	}
 	if w.handleInternal(m.Method, m.Params) {

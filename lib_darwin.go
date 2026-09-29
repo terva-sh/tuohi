@@ -1718,6 +1718,11 @@ func addWKUserScript(manager objc.ID, src string) {
 	s.Send(sel("release"))
 }
 
+// interceptOutsideLinks is false: this engine decides a top-level
+// navigation before its request is sent, so the bridge need not (see
+// initOutsideLinks).
+const interceptOutsideLinks = false
+
 func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 	switch method {
 	case internalWindowDrag:

@@ -107,6 +107,7 @@ func TestMain(m *testing.M) {
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
+		resOutsideLinks.Store(outsideLinksScenario())
 	}
 	os.Exit(m.Run())
 }
