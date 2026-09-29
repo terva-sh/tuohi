@@ -366,6 +366,9 @@ const initBridgeTail = `)(token + message);
     return Webview_;
   })();
   window.__webview__ = new Webview();
+  // The reply key proves to a script Go evaluates that this document is a
+  // trusted one (see bridgeGuard). It cannot be changed or removed.
+  Object.defineProperty(window.__webview__, '__key', {value: replyKey});
 `
 
 // initOutsideLinks, appended to the bridge on an engine that decides a
@@ -536,8 +539,10 @@ const initPageTitle = `
 //
 // The bridge is installed only in a top-level document whose origin is one of
 // origins (see initBridgeGate). post() prefixes token to every message, and
-// the Go side drops any message without it (see webview.onMessage).
-func createInitScript(postFn, token string, origins []string, outsideLinks bool) string {
+// the Go side drops any message without it (see webview.onMessage). The
+// bridge also carries replyKey, which a script Go evaluates checks before it
+// hands the document anything (see bridgeGuard).
+func createInitScript(postFn, token, replyKey string, origins []string, outsideLinks bool) string {
 	trusted := make(map[string]bool, len(origins))
 	for _, o := range origins {
 		trusted[o] = true
@@ -545,6 +550,7 @@ func createInitScript(postFn, token string, origins []string, outsideLinks bool)
 	trustedJSON, _ := json.Marshal(trusted) // a map of strings to bools always marshals
 	script := "(function() {\n  'use strict';\n" +
 		"  var token = " + marshalJSON(token) + ";\n" +
+		"  var replyKey = " + marshalJSON(replyKey) + ";\n" +
 		"  var trusted = " + string(trustedJSON) + ";\n" +
 		initBridgeGate + initBridgeHead + postFn + initBridgeTail
 	if outsideLinks {
@@ -552,6 +558,22 @@ func createInitScript(postFn, token string, origins []string, outsideLinks bool)
 	}
 	script += strings.Replace(initPageTitle, "METHOD", marshalJSON(internalPageTitle), 1)
 	return script + "})()"
+}
+
+// bridgeGuard wraps body, a script Go evaluates in the view's current
+// document to hand it something (a binding's result, an event, a binding),
+// so that body runs only where the bridge's reply key is: in a trusted
+// document. Eval runs in whatever document is current, which after a
+// navigation can be a page on an untrusted origin. Such a page gets no
+// bridge, but it can define its own window.__webview__, and it gets the
+// events API, which is installed in every document. It never holds the key,
+// so it cannot pass the check: a getter it defines for __key is called but
+// learns nothing, because the comparison is made here. The script is strict,
+// so a function the page defines cannot reach this one's source through
+// caller. body can use w, the checked bridge.
+func bridgeGuard(replyKey, body string) string {
+	return "(function(){'use strict';var w=window.__webview__;if(!w||w.__key!==" +
+		marshalJSON(replyKey) + "){return;}" + body + "})()"
 }
 
 // createBindScript returns the document-start script that installs every

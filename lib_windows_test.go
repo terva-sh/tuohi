@@ -61,6 +61,7 @@ func TestMain(m *testing.M) {
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
+		resReplyTrust.Store(replyTrustScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
 			repeatStatus = repeatDataURL(n)
 		}

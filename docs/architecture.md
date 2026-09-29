@@ -278,6 +278,26 @@ call a view's Go bindings) carries out:
   bind errors. Today a page can maximise any window, because `toggleMaximize`
   has no `frameless` guard on Unix or Windows. On Windows it can also turn the
   whole client area into a title bar.
+- **What Go sends is guarded as well.** Go delivers a binding's result, an
+  event, or a live binding by evaluating script in the view's current
+  document. After a navigation that document may not be trusted: it has no
+  bridge, but it can define its own `window.__webview__`, and it has the
+  events API, which is installed in every document. So every such script is
+  wrapped by `bridgeGuard` and runs only if `window.__webview__.__key` equals
+  the view's reply key.
+  - **The reply key.** The bridge sets it, in trusted documents only, as a
+    property that cannot be changed. An untrusted page's getter for `__key`
+    learns nothing, because the comparison is made in tuohi's script. That
+    script is strict, so the getter cannot read its source through `caller`.
+  - **Why it is separate from the token.** A trusted page's own scripts can
+    read the reply key. If it leaks, a later untrusted page could receive
+    replies and events, but could still never call Go.
+  - **Why not a key per document.** TKT-01M3JYQWZB01CPZ938Y8C24PXX weighed
+    it: Go would have to learn each new document's key before it could emit
+    to that document, and events sent in that gap would be lost across a
+    reload.
+  - **Why not refuse `Eval` on an untrusted URI.** That races with
+    navigation, as the first Linux sender check did.
 - **A navigation policy.** It lands only after `App.Open` stops accepting
   `file:`, because it hands `App.Open` URLs that a page chose. A top-level
   navigation to an allowed origin goes ahead, and so does `about:blank`.

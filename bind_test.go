@@ -416,8 +416,8 @@ func TestGeneratedScriptsParse(t *testing.T) {
 	// installer kind present (constant, accessor, setter, getter, plain fn).
 	scripts := map[string]string{
 		"appRegions":  createAppRegionScript(true, true, "linux"),
-		"bridge":      createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), []string{"http://127.0.0.1:8080", "data:text/html,x"}, false),
-		"bridgeLinks": createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), []string{"http://127.0.0.1:8080"}, true),
+		"bridge":      createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), strings.Repeat("1", bridgeTokenLen), []string{"http://127.0.0.1:8080", "data:text/html,x"}, false),
+		"bridgeLinks": createInitScript("function(m){}", strings.Repeat("0", bridgeTokenLen), strings.Repeat("1", bridgeTokenLen), []string{"http://127.0.0.1:8080"}, true),
 		"events":      eventsInitScript("events"),
 		"bind": createBindScript([]binding{
 			{name: "demo.a", kind: bindingConst, value: `{"k":1}`},
@@ -611,7 +611,7 @@ func TestOutsideLinksScript(t *testing.T) {
 		t.Skip("node not available")
 	}
 	token := strings.Repeat("ef", bridgeTokenLen/2)
-	bridge := createInitScript("function(m) { posted.push(m); }", token, []string{"http://127.0.0.1:8080"}, true)
+	bridge := createInitScript("function(m) { posted.push(m); }", token, "k", []string{"http://127.0.0.1:8080"}, true)
 	harness := `
 const bridge = ` + marshalJSON(bridge) + `;
 const token = ` + marshalJSON(token) + `;
@@ -746,7 +746,7 @@ func TestPageTitleScript(t *testing.T) {
 		t.Skip("node not available")
 	}
 	token := strings.Repeat("ab", bridgeTokenLen/2)
-	bridge := createInitScript("function(m) { posted.push(m); }", token, []string{"http://127.0.0.1:8080"}, false)
+	bridge := createInitScript("function(m) { posted.push(m); }", token, "k", []string{"http://127.0.0.1:8080"}, false)
 	harness := `
 const bridge = ` + marshalJSON(bridge) + `;
 const token = ` + marshalJSON(token) + `;
@@ -834,5 +834,113 @@ process.exit(failed ? 1 : 0);
 	}
 	if out, err := exec.Command(node, file).CombinedOutput(); err != nil {
 		t.Fatalf("page title: %v\n%s", err, out)
+	}
+}
+
+// TestBridgeGuardScript runs the scripts Go evaluates to deliver a binding's
+// result and an event (bridgeGuard) in Node, against a trusted document with
+// the real bridge and events API, and against an untrusted one that defines
+// its own window.__webview__ and has the events API, which every document
+// gets. Only the trusted document may receive anything, and the untrusted
+// one's getter for __key must not learn the key, even through caller
+// (TKT-01M3JYQWZB01CPZ938Y8C24PXX).
+func TestBridgeGuardScript(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	token := strings.Repeat("ab", bridgeTokenLen/2)
+	key := strings.Repeat("c3", bridgeTokenLen/2)
+	bridge := createInitScript("function(m) { posted.push(m); }", token, key, []string{"http://127.0.0.1:8080"}, false)
+	events := eventsInitScript("events")
+	reply := bridgeGuard(key, `w.onReply("ID", 0, JSON.stringify("result"));`)
+	f := &eventsFakeWV{bindMethodsWebViewStub: &bindMethodsWebViewStub{}, bound: map[string]any{}}
+	e, err := installEvents(f, "events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.guard = func(body string) string { return bridgeGuard(key, body) }
+	if err := e.Emit("ping", "pong"); err != nil {
+		t.Fatal(err)
+	}
+	event := f.lastEval()
+	harness := `
+const bridge = ` + marshalJSON(bridge) + `, events = ` + marshalJSON(events) + `;
+const reply = ` + marshalJSON(reply) + `, event = ` + marshalJSON(event) + `;
+const key = ` + marshalJSON(key) + `;
+function load(host, page) {
+  const posted = [];
+  const win = { crypto: { getRandomValues: function(a) { return a; } },
+    location: { protocol: 'http:', host: host, href: 'http://' + host + '/page' } };
+  win.top = win;
+  new Function('window', 'posted', 'document', bridge)(win, posted, undefined);
+  new Function('window', events)(win);
+  if (page) page(win);
+  return win;
+}
+function run(win, script) { new Function('window', script)(win); }
+let failed = false;
+function expect(name, got, want) {
+  if (JSON.stringify(got) !== JSON.stringify(want)) {
+    console.error(name + ': got ' + JSON.stringify(got) + ', want ' + JSON.stringify(want));
+    failed = true;
+  }
+}
+
+// A trusted document receives the reply and the event.
+const trusted = load('127.0.0.1:8080');
+const tgot = [];
+trusted.events.on('ping', function(v) { tgot.push('event:' + v); });
+run(trusted, event);
+expect('trusted event', tgot, ['event:pong']);
+expect('trusted key is not writable', (function() { try { trusted.__webview__.__key = 'x'; } catch (e) {} return trusted.__webview__.__key; })(), key);
+
+// A trusted document's pending call settles through the guarded reply.
+const t2 = load('127.0.0.1:8080');
+const posted2 = [];
+t2.__webview__.post = function(m) { posted2.push(JSON.parse(m)); };
+let settled = null;
+t2.__webview__.call('slow').then(function(v) { settled = v; });
+run(t2, reply.replace('"ID"', JSON.stringify(posted2[0].id)));
+
+// An untrusted document gets no bridge; it defines its own, with a getter
+// for __key that tries to read the calling script's source.
+let leaked = '', keyReads = 0;
+const untrusted = load('evil.example', function(win) {
+  // A plain sloppy function as the getter: only such a function has the
+  // legacy caller, which names a sloppy caller and hides a strict one.
+  win.__webview__ = { onReply: function(id, status, result) { ugot.push('reply:' + id + ':' + result); } };
+  Object.defineProperty(win.__webview__, '__key', { get: function getKey() {
+    keyReads++;
+    try { leaked += String(getKey.caller); } catch (e) {}
+    return 'guess';
+  } });
+});
+const ugot = [];
+expect('untrusted gets no bridge', typeof untrusted.__webview__.call, 'undefined');
+untrusted.events.on('ping', function(v) { ugot.push('event:' + v); });
+run(untrusted, reply);
+run(untrusted, event);
+expect('untrusted receives', ugot, []);
+expect('untrusted key reads', keyReads, 2);
+expect('key leaked through caller', leaked.indexOf(key) >= 0, false);
+
+// The same scripts without the guard reach the untrusted document: the
+// harness can see a delivery when one happens.
+run(untrusted, 'window.__webview__.onReply("control", 0, "1");');
+run(untrusted, event.slice(event.indexOf('(function(){var g=window.events'), event.lastIndexOf(';})()')));
+expect('unguarded control', ugot, ['reply:control:1', 'event:pong']);
+
+Promise.resolve().then(function() {
+  expect('trusted call settled', settled, 'result');
+  process.exit(failed ? 1 : 0);
+});
+`
+	file := filepath.Join(t.TempDir(), "guard.js")
+	if err := os.WriteFile(file, []byte(harness), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, file).CombinedOutput(); err != nil {
+		t.Fatalf("bridge guard: %v\n%s", err, out)
 	}
 }
