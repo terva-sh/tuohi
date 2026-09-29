@@ -63,6 +63,7 @@ func TestMain(m *testing.M) {
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
+		resTitle.Store(titleScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
@@ -745,4 +746,22 @@ func TestBadMessagesAreDropped(t *testing.T) {
 	if got != "alive frameHits=0" {
 		t.Fatalf("bad messages = %q, want %q", got, "alive frameHits=0")
 	}
+}
+
+// windowTitle reads the native window's title, on the main thread.
+func windowTitle(e engine) string {
+	var title string
+	autorelease(func() {
+		title = cstr(e.(*webview).window.Send(sel("title")).Send(sel("UTF8String")))
+	})
+	return title
+}
+
+// pageURL reads the URL of the view's page, on the main thread.
+func pageURL(e engine) string {
+	var u string
+	autorelease(func() {
+		u = cstr(e.(*webview).webView.Send(sel("URL")).Send(sel("absoluteString")).Send(sel("UTF8String")))
+	})
+	return u
 }

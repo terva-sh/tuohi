@@ -1430,6 +1430,15 @@ func (w *webview) Unminimize() {
 	w.Dispatch(func() { showWindow(w.window, swRestore) })
 }
 
+// setTitle sets the window's title (see applyTitle), on the UI thread. It
+// names the taskbar button and the Alt-Tab entry of a frameless window too.
+func (w *webview) setTitle(title string) {
+	if w.window == 0 {
+		return
+	}
+	setWindowTextW(w.window, utf16(title))
+}
+
 // Unmaximize restores a maximized window to its previous normal size
 // (SW_RESTORE). No-op when the window is not maximized.
 func (w *webview) Unmaximize() {
@@ -1992,6 +2001,8 @@ var (
 	getModuleHandleW   func(name uintptr) uintptr
 	registerClassExW   func(wc *wndClassExW) uint16
 	createWindowExW    func(exStyle uint32, class, name *uint16, style uint32, x, y, w, h int32, parent, menu, inst, param uintptr) uintptr
+	setWindowTextW     func(hwnd uintptr, text *uint16) int32
+	getWindowTextW     func(hwnd uintptr, buf *uint16, max int32) int32
 	defWindowProcW     func(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr
 	callWindowProcW    func(prev uintptr, hwnd uintptr, msg uint32, wp, lp uintptr) uintptr
 	getMessageW        func(m *msgStruct, hwnd uintptr, min, max uint32) int32
@@ -2096,6 +2107,8 @@ func ensureWinInit() error {
 		reg(&getModuleHandleW, kernel32, "GetModuleHandleW")
 		reg(&registerClassExW, user32, "RegisterClassExW")
 		reg(&createWindowExW, user32, "CreateWindowExW")
+		reg(&setWindowTextW, user32, "SetWindowTextW")
+		reg(&getWindowTextW, user32, "GetWindowTextW")
 		reg(&defWindowProcW, user32, "DefWindowProcW")
 		reg(&callWindowProcW, user32, "CallWindowProcW")
 		reg(&getMessageW, user32, "GetMessageW")
