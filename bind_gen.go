@@ -388,7 +388,10 @@ const initOutsideLinks = `
     function outside(href) {
       var u;
       if (typeof href !== 'string') { return ''; }
-      try { u = new URL(href, loc.href); } catch (e) { return ''; }
+      // A relative URL resolves against the document's base, which a <base>
+      // element may move off the page's own origin.
+      var base = (typeof document !== 'undefined' && document.baseURI) || loc.href;
+      try { u = new URL(href, base); } catch (e) { return ''; }
       if (u.protocol !== 'http:' && u.protocol !== 'https:') { return ''; }
       if (Object.prototype.hasOwnProperty.call(trusted, u.protocol + '//' + u.host)) { return ''; }
       return u.href;
@@ -433,6 +436,9 @@ const initOutsideLinks = `
       var method = submitter && submitter.hasAttribute && submitter.hasAttribute('formmethod') ?
         submitter.formMethod : form.method;
       var target = (submitter && submitter.getAttribute('formtarget')) || form.getAttribute('target');
+      // An image button adds the click's coordinates, which FormData does
+      // not carry, so the engine's own policy decides that submission.
+      if (submitter && submitter.type === 'image') { return; }
       if (String(method || 'get').toLowerCase() !== 'get' || !sameWindow(target)) { return; }
       var href = outside((submitter && submitter.formAction) || form.action);
       if (!href) { return; }

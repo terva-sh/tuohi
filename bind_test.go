@@ -625,7 +625,8 @@ win.top = win;
 function StubFormData(form) {
   return { forEach: function(fn) { form.fields.forEach(function(p) { fn(p[1], p[0]); }); } };
 }
-new Function('window', 'posted', 'FormData', bridge)(win, posted, StubFormData);
+const doc = { baseURI: 'http://127.0.0.1:8080/page' };
+new Function('window', 'posted', 'FormData', 'document', bridge)(win, posted, StubFormData, doc);
 function el(attrs, props) {
   return Object.assign({ getAttribute: function(n) { return n in attrs ? attrs[n] : null; },
     hasAttribute: function(n) { return n in attrs; } }, props);
@@ -674,6 +675,11 @@ const cases = [
   ['no link', function() { return click(null); }, null],
   ['outside SVG link', function() { return click(el({ href: out }, { localName: 'a', href: { baseVal: out } })); }, out],
   ['outside SVG link, xlink:href only', function() { return click(el({ 'xlink:href': out }, { localName: 'a', href: { baseVal: '' } })); }, out],
+  ['relative SVG link under an outside base', function() {
+    doc.baseURI = 'https://outside.example/dir/';
+    try { return click(el({ href: 'p' }, { localName: 'a', href: { baseVal: 'p' } })); }
+    finally { doc.baseURI = 'http://127.0.0.1:8080/page'; }
+  }, 'https://outside.example/dir/p'],
   ['trusted SVG link', function() { return click(el({ href: '/x' }, { localName: 'a', href: { baseVal: '/x' } })); }, null],
   ['outside link in a shadow root', function() { return shadowClick(el({ href: out }, { localName: 'a', href: out })); }, out],
   ['trusted link in a shadow root', function() { return shadowClick(el({ href: '/x' }, { localName: 'a', href: 'http://127.0.0.1:8080/x' })); }, null],
@@ -685,6 +691,7 @@ const cases = [
   ['POST form', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] })); }, null],
   ['GET form, POST submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'post' }, { formMethod: 'post' }) }); }, null],
   ['POST form, GET submitter', function() { return submit(el({ method: 'post' }, { method: 'post', action: 'https://example.com/s', fields: [] }), { submitter: el({ formmethod: 'get' }, { formMethod: 'get', formAction: 'https://example.com/s' }) }); }, 'https://example.com/s'],
+  ['GET form, image submitter', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { submitter: el({}, { type: 'image' }) }); }, null],
   ['submit not cancelable', function() { return submit(el({ method: 'get' }, { method: 'get', action: 'https://example.com/s', fields: [] }), { cancelable: false }); }, null],
   ['trusted GET form', function() { return submit(el({}, { method: 'get', action: 'http://127.0.0.1:8080/s', fields: [] })); }, null],
   ['navigate push', function() { return navigate(out); }, out],
