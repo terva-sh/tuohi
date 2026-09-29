@@ -40,10 +40,16 @@ const (
 
 	nsModalResponseOK = 1
 
-	// wkPermissionDecisionGrant is WKUIDelegate's WKPermissionDecisionGrant
-	// (the enum is Prompt=0, Grant=1, Deny=2), passed to the media-capture
-	// decision handler to allow camera/microphone access.
+	// wkPermissionDecisionGrant and wkPermissionDecisionDeny are
+	// WKUIDelegate's WKPermissionDecision values (Prompt=0, Grant=1,
+	// Deny=2), passed to the media-capture decision handler.
 	wkPermissionDecisionGrant = 1
+	wkPermissionDecisionDeny  = 2
+
+	// wkMediaCaptureType values: what a media-capture request asks for.
+	wkMediaCaptureTypeCamera              = 0
+	wkMediaCaptureTypeMicrophone          = 1
+	wkMediaCaptureTypeCameraAndMicrophone = 2
 
 	// wkNavigationActionPolicyCancel and wkNavigationActionPolicyAllow are
 	// WKNavigationDelegate's WKNavigationActionPolicy values, passed to the
@@ -507,18 +513,42 @@ func invokeOpenPanelCompletion(completionHandler, urls objc.ID) {
 }
 
 // requestMediaCapturePermission implements WKUIDelegate's
+// requestMediaCapturePermission implements WKUIDelegate's
 // webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:
 // decisionHandler: (macOS 12+). WKMediaCaptureType only ever reports camera,
-// microphone, or camera-and-microphone requests - display capture is not
-// surfaced through this delegate; on macOS 13+ getDisplayMedia() opens the
-// system ScreenCaptureKit picker on its own. Granting every request here is
-// therefore exactly the camera/microphone permission the library promises.
-// The host app still needs NSCameraUsageDescription / NSMicrophoneUsageDescription
-// in its Info.plist, and Screen Recording permission (TCC) for screen capture.
+// microphone, or camera-and-microphone requests; display capture is not
+// surfaced through this delegate. Each is decided by the view's policy
+// (viewCore.permits) for origin, the security origin of the frame asking,
+// and a type this code does not know is denied. A program that grants the
+// camera or the microphone still needs NSCameraUsageDescription or
+// NSMicrophoneUsageDescription in its Info.plist.
 func requestMediaCapturePermission(self objc.ID, _cmd objc.SEL, webView, origin, frame objc.ID, captureType int, decisionHandler objc.ID) {
 	autorelease(func() {
-		invokeDecisionHandler(decisionHandler, wkPermissionDecisionGrant)
+		decision := wkPermissionDecisionDeny
+		var perms []Permission
+		switch captureType {
+		case wkMediaCaptureTypeCamera:
+			perms = []Permission{PermissionCamera}
+		case wkMediaCaptureTypeMicrophone:
+			perms = []Permission{PermissionMicrophone}
+		case wkMediaCaptureTypeCameraAndMicrophone:
+			perms = []Permission{PermissionCamera, PermissionMicrophone}
+		}
+		if w := lookupEngine(self); w != nil && w.permits(securityOriginURL(origin), perms...) {
+			decision = wkPermissionDecisionGrant
+		}
+		invokeDecisionHandler(decisionHandler, decision)
 	})
+}
+
+// securityOriginURL writes a WKSecurityOrigin as a URL whose origin is that
+// one (see originURL). A nil origin gives "".
+func securityOriginURL(origin objc.ID) string {
+	if origin == 0 {
+		return ""
+	}
+	return originURL(cstr(origin.Send(sel("protocol")).Send(sel("UTF8String"))),
+		cstr(origin.Send(sel("host")).Send(sel("UTF8String"))), int(origin.Send(sel("port"))))
 }
 
 // decidePolicyForNavigationAction implements WKNavigationDelegate's

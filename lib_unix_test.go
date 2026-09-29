@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/terva-sh/tuohi/pure"
 	"os"
 	"os/exec"
 	"runtime"
@@ -110,6 +111,7 @@ func TestMain(m *testing.M) {
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
+		resPermissions.Store(permissionsScenario())
 	}
 	os.Exit(m.Run())
 }
@@ -389,4 +391,64 @@ func windowTitle(e engine) string {
 // pageURL reads the URL of the view's page, on the UI thread.
 func pageURL(e engine) string {
 	return cstr(webkitWebViewGetURI(e.(*webview).webview))
+}
+
+var webkitSettingsSetEnableMockCaptureDevices func(settings uintptr, enabled bool)
+
+// enableFakeCapture gives the view WebKitGTK's mock camera and microphone, so
+// a granted capture succeeds with no hardware.
+func enableFakeCapture(e engine) {
+	if webkitSettingsSetEnableMockCaptureDevices == nil {
+		soname := "libwebkit2gtk-4.1.so.0"
+		if gtk4 {
+			soname = "libwebkitgtk-6.0.so.4"
+		}
+		lib, err := openFirst(soname)
+		if err != nil {
+			return
+		}
+		pure.RegisterLibFunc(&webkitSettingsSetEnableMockCaptureDevices, lib, "webkit_settings_set_enable_mock_capture_devices")
+	}
+	webkitSettingsSetEnableMockCaptureDevices(webkitWebViewGetSettings(e.(*webview).webview), true)
+}
+
+var (
+	xOpenDisplay         func(name uintptr) uintptr
+	xFlush               func(display uintptr) int32
+	xTestFakeMotionEvent func(display uintptr, screen, x, y int32, delay uint64) int32
+	xTestFakeButtonEvent func(display uintptr, button uint32, press bool, delay uint64) int32
+)
+
+// realClick clicks the view's page through XTest, which the page sees as a
+// user gesture, and reports whether it could. It clicks at (100, 100) on the
+// screen: under xvfb there is no window manager, so the window sits at the
+// origin, and the page covers itself with a layer that takes the click.
+// Without X11 or libXtst it cannot click, and the scenario records that.
+func realClick(v *View) bool {
+	if xOpenDisplay == nil {
+		x11, err := openFirst("libX11.so.6")
+		if err != nil {
+			return false
+		}
+		xtst, err := openFirst("libXtst.so.6")
+		if err != nil {
+			return false
+		}
+		pure.RegisterLibFunc(&xOpenDisplay, x11, "XOpenDisplay")
+		pure.RegisterLibFunc(&xFlush, x11, "XFlush")
+		pure.RegisterLibFunc(&xTestFakeMotionEvent, xtst, "XTestFakeMotionEvent")
+		pure.RegisterLibFunc(&xTestFakeButtonEvent, xtst, "XTestFakeButtonEvent")
+	}
+	d := xOpenDisplay(0)
+	if d == 0 {
+		return false
+	}
+	var x, y int32 = 100, 100
+	_ = ui.call(v.w.Raise)
+	time.Sleep(200 * time.Millisecond)
+	xTestFakeMotionEvent(d, -1, x, y, 0)
+	xTestFakeButtonEvent(d, 1, true, 0)
+	xTestFakeButtonEvent(d, 1, false, 0)
+	xFlush(d)
+	return true
 }
