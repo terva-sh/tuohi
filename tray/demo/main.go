@@ -24,7 +24,7 @@ func main() {
 	cfg := tray.Config{
 		Icon:          iconLight,
 		DarkModeIcon:  iconDark,
-		Tooltip:       "appkit tray test",
+		Tooltip:       "tuohi tray test",
 		OnClick:       func() { fmt.Println("Left click!") },
 		OnDoubleClick: func() { fmt.Println("Double click!") },
 		OnRightClick:  func() { fmt.Println("Right click!") },
@@ -32,7 +32,7 @@ func main() {
 			{Label: "Hello", OnClick: func() { fmt.Println("Hello clicked!") }},
 			{Label: "Show Notification", OnClick: func() {
 				fmt.Println("Sending notification...")
-				if err := notify.Show("appkit tray demo", "appkit", "Hello from tray!"); err != nil {
+				if err := notify.Show("tuohi tray demo", "tuohi", "Hello from tray!"); err != nil {
 					fmt.Println("Notify error:", err)
 				}
 			}},

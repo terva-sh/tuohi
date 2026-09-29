@@ -1,4 +1,4 @@
-/* appkit demo page script.
+/* tuohi demo page script.
  *
  * The page is served by App.FS from the same uniform "app://" origin on every
  * platform. Serving is scheme-first on Windows and Linux (WebView2's https
@@ -22,7 +22,7 @@ const $ = (id) => document.getElementById(id);
 const hasBridge = () => typeof window.demoEcho === 'function';
 
 /* --- app sections ---------------------------------------------------------
- * The bridge sections below need the appkit host: the Go side attaches the
+ * The bridge sections below need the tuohi host: the Go side attaches the
  * window.demo* bindings and the events bridge to the view regardless of the
  * page's origin. */
 
@@ -125,7 +125,7 @@ function wireBridgeSections() {
   // Clipboard
   $('clipCopy').addEventListener('click', async () => {
     try {
-      await window.demoCopyText('appkit demo clipboard payload');
+      await window.demoCopyText('tuohi demo clipboard payload');
       $('clipResult').textContent = 'copied';
     } catch (e) { $('clipResult').textContent = 'copy failed: ' + e; }
   });
@@ -178,7 +178,7 @@ function wireBridgeSections() {
 
   // Open / Reveal (launch external programs; not exercised by the self test)
   $('openLink').addEventListener('click', async () => {
-    const r = await window.demoOpen('https://github.com/malivvan/appkit');
+    const r = await window.demoOpen('https://github.com/terva-sh/tuohi');
     $('filesResult').textContent = r === '' ? 'opened in the default browser' : 'open error: ' + r;
   });
   $('revealFile').addEventListener('click', async () => {
@@ -397,9 +397,9 @@ async function runSelfTest() {
     return `${detail}, path=${on.path}`;
   });
 
-  // Drag-region contract: the stylesheet must carry the appkit drag rule.
+  // Drag-region contract: the stylesheet must carry the tuohi drag rule.
   // Browsers can drop unknown -webkit- properties from the parsed CSSOM (the
-  // appkit tracker reads the raw stylesheet text for the same reason), so scan
+  // tuohi tracker reads the raw stylesheet text for the same reason), so scan
   // both cssRules and the fetched raw text, polling while the sheet loads.
   await step('custom chrome drag region', async () => {
     const hasRule = (text) => text.includes('-app-region') || text.includes('-webkit-app-region') || text.includes('-webview-app-region');
@@ -487,7 +487,7 @@ async function runSelfTest() {
 }
 
 // The self-test controls need the JS bridge; the buttons are only skipped
-// when the page has no appkit host at all (plain browser), in which case the
+// when the page has no tuohi host at all (plain browser), in which case the
 // section is hidden too (see boot).
 if (hasBridge()) {
   $('runSelftest').addEventListener('click', () => { $('selftestLog').innerHTML = ''; runSelfTest(); });
@@ -504,7 +504,7 @@ function boot() {
   if (hasBridge()) {
     wireBridgeSections();
   } else {
-    // No appkit host behind this page (e.g. it was opened in a plain
+    // No tuohi host behind this page (e.g. it was opened in a plain
     // browser): the bridge sections and the self test cannot work, so only
     // the overview is shown.
     $('section-selftest').hidden = true;
