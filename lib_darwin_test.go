@@ -35,6 +35,7 @@ var (
 	resExternalLoop atomic.Value // string
 	resWindowState  atomic.Value // string
 	resBadMessages  atomic.Value // string
+	resOffMain      atomic.Value // string
 )
 
 func TestMain(m *testing.M) {
@@ -45,6 +46,8 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 	if !testing.Short() {
 		runtime.LockOSThread()
+		// First, while no run loop has ever run.
+		resOffMain.Store(offMainScenario())
 		resBridge.Store(bridgeScenario())
 		resErrorUnbind.Store(errorUnbindScenario())
 		resRichTypes.Store(richTypesScenario())
@@ -85,6 +88,49 @@ func requireGUI(t *testing.T, got string) {
 		t.Fatal("GUI scenario did not run, and TUOHI_REQUIRE_GUI=1")
 	}
 	t.Skip("GUI scenarios skipped (-short)")
+}
+
+// offMainScenario calls Show and Wait from a goroutine, which cannot run on
+// the main thread because init locked the main goroutine to it, with no run
+// loop running. Both must refuse with ErrNotMainThread, and no window may be
+// created.
+func offMainScenario() string {
+	before := atomic.LoadInt32(&windowCount)
+	res := make(chan string, 1)
+	go func() {
+		if onMainThread() {
+			res <- "goroutine ran on the main thread"
+			return
+		}
+		app := testApp()
+		w := &View{}
+		showErr := app.Show(w)
+		waitErr := app.Wait()
+		res <- fmt.Sprintf("show=%v wait=%v", errors.Is(showErr, ErrNotMainThread), errors.Is(waitErr, ErrNotMainThread))
+	}()
+	var r string
+	select {
+	case r = <-res:
+	case <-time.After(10 * time.Second):
+		return "Show or Wait blocked off the main thread"
+	}
+	if n := atomic.LoadInt32(&windowCount) - before; n != 0 {
+		r += fmt.Sprintf(" windows=%d", n)
+	}
+	if !onMainThread() {
+		r += " TestMain-off-main"
+	}
+	return r
+}
+
+// TestNotMainThread checks offMainScenario, and that TestMain, on the main
+// goroutine, runs on the main thread.
+func TestNotMainThread(t *testing.T) {
+	got, _ := resOffMain.Load().(string)
+	requireGUI(t, got)
+	if want := "show=true wait=true"; got != want {
+		t.Fatalf("off the main thread: got %q, want %q", got, want)
+	}
 }
 
 // openPanelCompletionScenario exercises the WKUIDelegate file-chooser
@@ -615,7 +661,12 @@ func externalLoopScenario() string {
 
 	go func() {
 		verdict := func() string {
-			for i := 0; app.Send(sel("isRunning")) == 0; i++ {
+			// isRunning turns true before [NSApp run] enters the run loop, and
+			// uiThreadErr asks the run loop itself, so wait for both.
+			if err := loadThreadCheck(); err != nil {
+				return "thread check: " + err.Error()
+			}
+			for i := 0; app.Send(sel("isRunning")) == 0 || !mainLoopRunning(); i++ {
 				if i > 500 {
 					return "host loop never started"
 				}
@@ -644,6 +695,13 @@ func externalLoopScenario() string {
 				}
 			case <-time.After(15 * time.Second):
 				return "timeout: New or Run blocked under a running loop (deadlock)"
+			}
+
+			// Wait's start step, called here off the main thread, must run on
+			// the main thread through the host's loop.
+			onMain := false
+			if err := startOnUI(func() { onMain = onMainThread() }); err != nil || !onMain {
+				return fmt.Sprintf("startOnUI: err=%v on main=%v", err, onMain)
 			}
 
 			// Second shape: the whole lifecycle issued ON the UI thread from

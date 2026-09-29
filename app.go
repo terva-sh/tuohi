@@ -9,6 +9,38 @@
 // at login), tuohi/clipboard, tuohi/notify and tuohi/tray. A service that
 // needs the UI thread, such as the tray, is set up in App.Start.
 //
+// # The main thread
+//
+// Call App.Show and App.Wait from main, or from functions main calls, and run
+// everything else in goroutines. macOS requires it: AppKit accepts UI work
+// only on the process's main thread, and the package keeps the main goroutine
+// there from its init on. Off the main thread, Show and Wait return
+// ErrNotMainThread unless a run loop is already running on the main thread to
+// hand the work to. Linux and Windows have no such rule, but a program written
+// this way runs on all three. A program that serves its interface itself,
+// over loopback HTTP, starts the server in a goroutine and opens the window
+// on main:
+//
+//	func main() {
+//		ln, err := net.Listen("tcp", "127.0.0.1:0")
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//		go http.Serve(ln, handler)
+//
+//		app := &tuohi.App{Exit: true}
+//		view := &tuohi.View{URL: "http://" + ln.Addr().String() + "/"}
+//		if err := app.Show(view); err != nil {
+//			log.Fatal(err)
+//		}
+//		if err := app.Wait(); err != nil {
+//			log.Fatal(err)
+//		}
+//	}
+//
+// Other View methods, such as Eval, Navigate and Close, are safe from any
+// goroutine; they are marshalled to the UI thread.
+//
 // Source layout: the package is split into three file families. app*.go
 // holds the application scope - the App type (configuration + runtime
 // context), its app-scope methods (Show, Wait, Open/Reveal, Backend) and the
@@ -440,17 +472,30 @@ func (a *App) begin() (*appScope, error) {
 // Wait and call View.Run on its window instead; the two models must not be
 // mixed.
 func (a *App) Wait() error {
+	// Before the scope opens, so that a refused call does no platform
+	// initialization on the wrong thread.
+	if err := uiThreadErr(); err != nil {
+		return err
+	}
 	s, err := a.begin()
 	if err != nil {
 		return fmt.Errorf("appkit: wait: %w", err)
 	}
-	a.start(s)
-	// App.Start sets up the services that need the UI thread - Wait runs on
-	// it - before the loop below dispatches their events.
-	if s.cfg.Start != nil {
-		if err := s.cfg.Start(); err != nil {
-			return fmt.Errorf("tuohi: start: %w", err)
+	// The icon and App.Start set up what needs the UI thread before the loop
+	// below dispatches its events. Wait normally runs on that thread; on
+	// macOS under a loop another owner runs, it may not, and startOnUI hands
+	// the work to the main thread.
+	var startErr error
+	if err := startOnUI(func() {
+		a.start(s)
+		if s.cfg.Start != nil {
+			startErr = s.cfg.Start()
 		}
+	}); err != nil {
+		return fmt.Errorf("tuohi: start: %w", err)
+	}
+	if startErr != nil {
+		return fmt.Errorf("tuohi: start: %w", startErr)
 	}
 	ui.enterLoop()
 	for atomic.LoadInt32(&s.exitFlag) == 0 {
@@ -865,6 +910,13 @@ var allowedSchemes = map[string]bool{
 	"https":  true,
 	"mailto": true,
 }
+
+// ErrNotMainThread is returned on macOS by App.Show and App.Wait called off
+// the process's main thread when no run loop is running there to take the
+// work. AppKit runs only on the main thread, so call Show and Wait from main
+// and run anything else, such as an HTTP server, in a goroutine (see the
+// package doc). It is never returned on Linux or Windows.
+var ErrNotMainThread = errors.New("tuohi: on macOS the UI runs on the main thread; call App.Show and App.Wait from main")
 
 // ErrScheme is returned by Open when the URL's scheme is not in the allow-list.
 var ErrScheme = errors.New("appkit: refused URL scheme")
