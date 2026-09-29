@@ -7,7 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 	"os"
 	"os/exec"
 	"runtime"
@@ -407,7 +407,7 @@ func enableFakeCapture(e engine) {
 		if err != nil {
 			return
 		}
-		pure.RegisterLibFunc(&webkitSettingsSetEnableMockCaptureDevices, lib, "webkit_settings_set_enable_mock_capture_devices")
+		purego.RegisterLibFunc(&webkitSettingsSetEnableMockCaptureDevices, lib, "webkit_settings_set_enable_mock_capture_devices")
 	}
 	webkitSettingsSetEnableMockCaptureDevices(webkitWebViewGetSettings(e.(*webview).webview), true)
 }
@@ -434,10 +434,10 @@ func realClick(v *View) bool {
 		if err != nil {
 			return false
 		}
-		pure.RegisterLibFunc(&xOpenDisplay, x11, "XOpenDisplay")
-		pure.RegisterLibFunc(&xFlush, x11, "XFlush")
-		pure.RegisterLibFunc(&xTestFakeMotionEvent, xtst, "XTestFakeMotionEvent")
-		pure.RegisterLibFunc(&xTestFakeButtonEvent, xtst, "XTestFakeButtonEvent")
+		purego.RegisterLibFunc(&xOpenDisplay, x11, "XOpenDisplay")
+		purego.RegisterLibFunc(&xFlush, x11, "XFlush")
+		purego.RegisterLibFunc(&xTestFakeMotionEvent, xtst, "XTestFakeMotionEvent")
+		purego.RegisterLibFunc(&xTestFakeButtonEvent, xtst, "XTestFakeButtonEvent")
 	}
 	d := xOpenDisplay(0)
 	if d == 0 {

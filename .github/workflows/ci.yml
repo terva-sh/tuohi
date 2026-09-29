@@ -104,8 +104,9 @@ jobs:
       - name: Run Unit tests and coverage
         run: go test -race -covermode atomic -coverprofile=covprofile ./...
 
-      # Tier 2 (FreeBSD/NetBSD): cgo-disabled cross-builds and lint, no extra
-      # flags (see README "Supported platforms").
+      # Tier 2 (FreeBSD/NetBSD): cgo-disabled cross-builds and lint. FreeBSD
+      # needs purego's fakecgo compiled with -std (see README "Supported
+      # platforms"); the Makefile adds the flag.
       - name: FreeBSD & NetBSD (Tier 2)
         run: |
           make cross-bsd
@@ -291,7 +292,10 @@ jobs:
           # carries no C toolchain dependency. -trimpath and the linker flags
           # come from the workflow-level GOFLAGS above, shared by every build.
           # GOARM only applies to GOARCH=arm and is ignored elsewhere.
-          CGO_ENABLED=0 GOARM="${{ matrix.goarm }}" go build -o "$out" ./demo
+          # FreeBSD needs purego's fakecgo compiled with -std when cgo is off.
+          flags=""
+          if [ "$GOOS" = freebsd ]; then flags="-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std"; fi
+          CGO_ENABLED=0 GOARM="${{ matrix.goarm }}" go build $flags -o "$out" ./demo
 
       # Only a tag consumes the binaries, and nineteen of them on every run is
       # real artifact storage - so a non-release run builds but does not upload.

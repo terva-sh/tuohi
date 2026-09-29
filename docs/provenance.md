@@ -58,6 +58,8 @@ adopting it), which records each finding with its file and line.
 
 - tuohi as a whole: MIT, in [LICENSE](../LICENSE), keeping appkit's copyright
   line.
-- `pure/`: Apache-2.0, in [pure/LICENSE](../pure/LICENSE), with Go's BSD
-  licence for `pure/internal/fakecgo` in [pure/LICENSE-GO](../pure/LICENSE-GO).
+- purego: a module dependency, `github.com/ebitengine/purego`, under
+  Apache-2.0, not a copy in this repository. appkit's modified copy in `pure/`
+  was replaced by upstream v0.11.1 under TKT-01M3HWWRW7YGCHHZY4BFEX3A6W, which
+  also retired the copy's missing change notices.
 - Wails and webview: MIT, credited in [NOTICE](../NOTICE) and at the code.

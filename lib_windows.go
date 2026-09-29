@@ -8,9 +8,9 @@
 //
 // COM idiom (outbound): each interface is a `struct{ vtbl *...Vtbl }`; the
 // vtbl is a struct of uintptr slots in exact IDL order; a method call is
-// pure.SyscallN(i.vtbl.Method, this, args...). Inbound handler objects we
+// purego.SyscallN(i.vtbl.Method, this, args...). Inbound handler objects we
 // implement use a Go-built vtable {QueryInterface, AddRef, Release, Invoke}
-// of pure.NewCallback pointers; the objects live in package-global memory
+// of purego.NewCallback pointers; the objects live in package-global memory
 // (kept alive, and Go's GC is non-moving) so the pointers handed to WebView2
 // stay valid across the async creation window.
 
@@ -31,7 +31,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 var errNoWindow = errors.New("webview2: failed to create window")
@@ -352,7 +352,7 @@ func asContentLoadingArgs(p uintptr) *contentLoadingArgs {
 // document is loading, and false when WebView2 cannot say.
 func (i *contentLoadingArgs) NavigationID() (uint64, bool) {
 	var id uint64
-	r, _, _ := pure.SyscallN(i.vtbl.GetNavigationID, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&id)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetNavigationID, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&id)))
 	return id, int32(r) >= 0
 }
 
@@ -360,7 +360,7 @@ func (i *contentLoadingArgs) NavigationID() (uint64, bool) {
 // true when WebView2 cannot say.
 func (i *contentLoadingArgs) IsErrorPage() bool {
 	var v int32
-	r, _, _ := pure.SyscallN(i.vtbl.GetIsErrorPage, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&v)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetIsErrorPage, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&v)))
 	return int32(r) < 0 || v != 0
 }
 
@@ -400,12 +400,12 @@ func (i *navigationStartingArgs) URI() string {
 // NavigationCompleted, and false when WebView2 cannot say.
 func (i *navigationStartingArgs) NavigationID() (uint64, bool) {
 	var id uint64
-	r, _, _ := pure.SyscallN(i.vtbl.GetNavigationID, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&id)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetNavigationID, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&id)))
 	return id, int32(r) >= 0
 }
 
 func (i *navigationStartingArgs) Cancel() {
-	pure.SyscallN(i.vtbl.PutCancel, uintptr(unsafe.Pointer(i)), 1)
+	purego.SyscallN(i.vtbl.PutCancel, uintptr(unsafe.Pointer(i)), 1)
 }
 
 // newWindowRequestedArgsVtbl mirrors ICoreWebView2NewWindowRequestedEventArgs
@@ -439,7 +439,7 @@ func (i *newWindowRequestedArgs) URI() string {
 
 // Handle marks the request handled, so WebView2 opens no popup window.
 func (i *newWindowRequestedArgs) Handle() {
-	pure.SyscallN(i.vtbl.PutHandled, uintptr(unsafe.Pointer(i)), 1)
+	purego.SyscallN(i.vtbl.PutHandled, uintptr(unsafe.Pointer(i)), 1)
 }
 
 // permissionRequestedArgsVtbl mirrors
@@ -483,7 +483,7 @@ func (i *permissionRequestedArgs) URI() string {
 // Kind returns the COREWEBVIEW2_PERMISSION_KIND asked for, or -1.
 func (i *permissionRequestedArgs) Kind() int {
 	var k int32 = -1
-	r, _, _ := pure.SyscallN(i.vtbl.GetPermissionKind, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&k)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetPermissionKind, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&k)))
 	if int32(r) < 0 {
 		return -1
 	}
@@ -492,14 +492,14 @@ func (i *permissionRequestedArgs) Kind() int {
 
 // SetState answers the request, so WebView2 shows no prompt of its own.
 func (i *permissionRequestedArgs) SetState(state int) {
-	pure.SyscallN(i.vtbl.PutState, uintptr(unsafe.Pointer(i)), uintptr(state))
+	purego.SyscallN(i.vtbl.PutState, uintptr(unsafe.Pointer(i)), uintptr(state))
 }
 
 // comString calls a COM getter that returns an LPWSTR the caller frees with
 // CoTaskMemFree, and returns it as a Go string, or "" on failure.
 func comString(getter, this uintptr) string {
 	var p uintptr
-	r, _, _ := pure.SyscallN(getter, this, uintptr(unsafe.Pointer(&p)))
+	r, _, _ := purego.SyscallN(getter, this, uintptr(unsafe.Pointer(&p)))
 	if int32(r) < 0 || p == 0 {
 		return ""
 	}
@@ -513,7 +513,7 @@ func asNavigationCompletedArgs(p uintptr) *navigationCompletedArgs {
 
 func (i *navigationCompletedArgs) IsSuccess() bool {
 	var ok int32
-	pure.SyscallN(i.vtbl.GetIsSuccess, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&ok)))
+	purego.SyscallN(i.vtbl.GetIsSuccess, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&ok)))
 	return ok != 0
 }
 
@@ -556,13 +556,13 @@ func (i *settings) settingsQI(iid *guid) uintptr {
 	return out
 }
 func (i *settings) QueryInterface(riid *guid, out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.QueryInterface, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(riid)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.QueryInterface, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(riid)), uintptr(unsafe.Pointer(out)))
 	return r
 }
-func (i *settings) Release() { pure.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
+func (i *settings) Release() { purego.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
 
 func (i *environment) CreateController(hwnd, handler uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.CreateCoreWebView2Controller, uintptr(unsafe.Pointer(i)), hwnd, handler)
+	r, _, _ := purego.SyscallN(i.vtbl.CreateCoreWebView2Controller, uintptr(unsafe.Pointer(i)), hwnd, handler)
 	return r
 }
 
@@ -571,18 +571,18 @@ func (i *environment) CreateController(hwnd, handler uintptr) uintptr {
 // time, by CreateWebResourceResponse for custom schemes - so a reference is
 // held for the life of the webview (taken in handlerInvoke, dropped in Destroy)
 // rather than relying on the callback's transient one.
-func (i *environment) AddRef()  { pure.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Pointer(i))) }
-func (i *environment) Release() { pure.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
+func (i *environment) AddRef()  { purego.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Pointer(i))) }
+func (i *environment) Release() { purego.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
 func (i *controller) GetCoreWebView2(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.GetCoreWebView2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetCoreWebView2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 func (i *controller) QueryInterface(riid *guid, out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.QueryInterface, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(riid)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.QueryInterface, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(riid)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 func (i *controller) PutIsVisible(v bool) {
-	pure.SyscallN(i.vtbl.PutIsVisible, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsVisible, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // moveFocusReasonProgrammatic is COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC:
@@ -595,7 +595,7 @@ const moveFocusReasonProgrammatic = 0
 // screen-reader accessibility gap, since focus on the host HWND does not reach
 // the WebView2 child HWND on its own.
 func (i *controller) MoveFocus(reason uintptr) {
-	pure.SyscallN(i.vtbl.MoveFocus, uintptr(unsafe.Pointer(i)), reason)
+	purego.SyscallN(i.vtbl.MoveFocus, uintptr(unsafe.Pointer(i)), reason)
 }
 
 // getBounds reads the controller's current bounds. Unlike putBounds (RECT by
@@ -603,74 +603,74 @@ func (i *controller) MoveFocus(reason uintptr) {
 // serves both arches. Used by the embed regression test to assert the bounds
 // follow the host window.
 func (i *controller) getBounds(r *rect) {
-	pure.SyscallN(i.vtbl.GetBounds, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(r)))
+	purego.SyscallN(i.vtbl.GetBounds, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(r)))
 }
 
 // AddRef/Close/Release are the controller's IUnknown/lifetime methods.
 // (putBounds is arch-specific; see putbounds_amd64.go and putbounds_arm64.go.)
-func (i *controller) AddRef()  { pure.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Pointer(i))) }
-func (i *controller) Close()   { pure.SyscallN(i.vtbl.Close, uintptr(unsafe.Pointer(i))) }
-func (i *controller) Release() { pure.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
+func (i *controller) AddRef()  { purego.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Pointer(i))) }
+func (i *controller) Close()   { purego.SyscallN(i.vtbl.Close, uintptr(unsafe.Pointer(i))) }
+func (i *controller) Release() { purego.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
 
 // PutDefaultBackgroundColor sets the color - alpha included - painted behind
 // the page. COREWEBVIEW2_COLOR is a {A, R, G, B} byte struct passed by value,
 // which travels as a little-endian uint32 (A in the low byte). It returns the
 // HRESULT so callers can detect E_INVALIDARG / failures (transparency).
 func (i *controller2) PutDefaultBackgroundColor(color uint32) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.PutDefaultBackgroundColor, uintptr(unsafe.Pointer(i)), uintptr(color))
+	r, _, _ := purego.SyscallN(i.vtbl.PutDefaultBackgroundColor, uintptr(unsafe.Pointer(i)), uintptr(color))
 	return r
 }
 
-func (i *controller2) Release() { pure.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
+func (i *controller2) Release() { purego.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i))) }
 
 func (i *coreWebView2) GetSettings(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.GetSettings, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetSettings, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 
 func (i *coreWebView2) Navigate(url *uint16) {
-	pure.SyscallN(i.vtbl.Navigate, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(url)))
+	purego.SyscallN(i.vtbl.Navigate, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(url)))
 }
 func (i *coreWebView2) NavigateToString(html *uint16) {
-	pure.SyscallN(i.vtbl.NavigateToString, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(html)))
+	purego.SyscallN(i.vtbl.NavigateToString, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(html)))
 }
 func (i *coreWebView2) ExecuteScript(js *uint16, handler uintptr) {
-	pure.SyscallN(i.vtbl.ExecuteScript, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(js)), handler)
+	purego.SyscallN(i.vtbl.ExecuteScript, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(js)), handler)
 }
 func (i *coreWebView2) AddScript(js *uint16, handler uintptr) {
-	pure.SyscallN(i.vtbl.AddScriptToExecuteOnDocumentCreated, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(js)), handler)
+	purego.SyscallN(i.vtbl.AddScriptToExecuteOnDocumentCreated, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(js)), handler)
 }
 func (i *coreWebView2) RemoveScript(id *uint16) {
-	pure.SyscallN(i.vtbl.RemoveScriptToExecuteOnDocCreated, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(id)))
+	purego.SyscallN(i.vtbl.RemoveScriptToExecuteOnDocCreated, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(id)))
 }
 func (i *coreWebView2) Release() {
-	pure.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i)))
+	purego.SyscallN(i.vtbl.Release, uintptr(unsafe.Pointer(i)))
 }
 func (i *coreWebView2) AddWebMessageReceived(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddWebMessageReceived, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddWebMessageReceived, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddNavigationStarting(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddNavigationStarting, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddNavigationStarting, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddContentLoading(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddContentLoading, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddContentLoading, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddNewWindowRequested(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddNewWindowRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddNewWindowRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddPermissionRequested(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddPermissionRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddPermissionRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddNavigationCompleted(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddNavigationCompleted, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddNavigationCompleted, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddWebResourceRequested(handler uintptr, token *uint64) {
-	pure.SyscallN(i.vtbl.AddWebResourceRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+	purego.SyscallN(i.vtbl.AddWebResourceRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
 func (i *coreWebView2) AddWebResourceRequestedFilter(uri *uint16, ctx uint32) {
-	pure.SyscallN(i.vtbl.AddWebResourceRequestedFilter, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(uri)), uintptr(ctx))
+	purego.SyscallN(i.vtbl.AddWebResourceRequestedFilter, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(uri)), uintptr(ctx))
 }
-func (i *coreWebView2) AddRef() { pure.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Pointer(i))) }
+func (i *coreWebView2) AddRef() { purego.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Pointer(i))) }
 
 // The put_* accessors below apply each setting through the interface that owns
 // its offset. Base (ICoreWebView2Settings) properties live on *settings; the
@@ -681,78 +681,78 @@ func (i *coreWebView2) AddRef() { pure.SyscallN(i.vtbl.AddRef, uintptr(unsafe.Po
 
 // ---- Base (ICoreWebView2Settings) ----
 func (i *settings) PutIsScriptEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsScriptEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsScriptEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutIsWebMessageEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsWebMessageEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsWebMessageEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutAreDefaultScriptDialogsEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutAreDefaultScriptDialogsEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutAreDefaultScriptDialogsEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutIsStatusBarEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsStatusBarEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsStatusBarEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutDevTools(v bool) {
-	pure.SyscallN(i.vtbl.PutDevTools, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutDevTools, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutAreDefaultContextMenusEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutAreDefaultContextMenusEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutAreDefaultContextMenusEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutAreHostObjectsAllowed(v bool) {
-	pure.SyscallN(i.vtbl.PutAreHostObjectsAllowed, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutAreHostObjectsAllowed, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutIsZoomControlEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsZoomControlEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsZoomControlEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings) PutIsBuiltInErrorPageEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsBuiltInErrorPageEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsBuiltInErrorPageEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // ---- ICoreWebView2Settings3 ----
 func (i *settings3i) PutAreBrowserAcceleratorKeysEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutAreBrowserAcceleratorKeysEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutAreBrowserAcceleratorKeysEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // ---- ICoreWebView2Settings4 ----
 func (i *settings4i) PutIsPasswordAutosaveEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsPasswordAutosaveEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsPasswordAutosaveEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 func (i *settings4i) PutIsGeneralAutofillEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsGeneralAutofillEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsGeneralAutofillEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // ---- ICoreWebView2Settings5 ----
 func (i *settings5i) PutIsPinchZoomEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsPinchZoomEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsPinchZoomEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // ---- ICoreWebView2Settings6 ----
 func (i *settings6i) PutIsSwipeNavigationEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsSwipeNavigationEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsSwipeNavigationEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // ---- ICoreWebView2Settings7 (COREWEBVIEW2_PDF_TOOLBAR_ITEMS bitmask u32) ----
 func (i *settings7i) PutHiddenPdfToolbarItems(mask uint32) {
-	pure.SyscallN(i.vtbl.PutHiddenPdfToolbarItems, uintptr(unsafe.Pointer(i)), uintptr(mask))
+	purego.SyscallN(i.vtbl.PutHiddenPdfToolbarItems, uintptr(unsafe.Pointer(i)), uintptr(mask))
 }
 
 // ---- ICoreWebView2Settings8 ----
 func (i *settings8i) PutIsReputationCheckingRequired(v bool) {
-	pure.SyscallN(i.vtbl.PutIsReputationCheckingRequired, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsReputationCheckingRequired, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // ---- ICoreWebView2Settings9 ----
 func (i *settings9i) PutIsNonClientRegionSupportEnabled(v bool) {
-	pure.SyscallN(i.vtbl.PutIsNonClientRegionSupportEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
+	purego.SyscallN(i.vtbl.PutIsNonClientRegionSupportEnabled, uintptr(unsafe.Pointer(i)), boolToUintptr(v))
 }
 
 // GetSource returns the URI of the document that posted the message.
 func (i *messageArgs) GetSource(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.GetSource, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetSource, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 func (i *messageArgs) TryGetWebMessageAsString(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.TryGetWebMessageAsStr, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.TryGetWebMessageAsStr, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 
@@ -1116,7 +1116,7 @@ func ensureCOMInit() error {
 				comInitErr = fmt.Errorf("resolve %s: %w", name, e)
 				return
 			}
-			pure.RegisterFunc(fn, addr)
+			purego.RegisterFunc(fn, addr)
 		}
 		reg(&coInitializeEx, ole32, "CoInitializeEx")
 		reg(&coTaskMemFree, ole32, "CoTaskMemFree")
@@ -1128,10 +1128,10 @@ func ensureCOMInit() error {
 			return
 		}
 		sharedHandlerVtbl = &comHandlerVtbl{
-			QueryInterface: pure.NewCallback(handlerQueryInterface),
-			AddRef:         pure.NewCallback(handlerAddRef),
-			Release:        pure.NewCallback(handlerRelease),
-			Invoke:         pure.NewCallback(handlerInvoke),
+			QueryInterface: purego.NewCallback(handlerQueryInterface),
+			AddRef:         purego.NewCallback(handlerAddRef),
+			Release:        purego.NewCallback(handlerRelease),
+			Invoke:         purego.NewCallback(handlerInvoke),
 		}
 	})
 	return comInitErr
@@ -1262,7 +1262,7 @@ func createEnvironment(userDataDir string, envHandler *comHandler) error {
 	}
 	// HRESULT(bool, webview2_runtime_type, PCWSTR userDataDir, IUnknown* options,
 	//         ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler*)
-	r, _, _ := pure.SyscallN(addr,
+	r, _, _ := purego.SyscallN(addr,
 		1, // bool: true
 		0, // runtime_type: installed
 		uintptr(unsafe.Pointer(utf16(userDataDir))),
@@ -1830,11 +1830,11 @@ func asWebResourceRequestedArgs(p uintptr) *webResourceRequestedArgs {
 }
 
 func (i *webResourceRequestedArgs) GetRequest(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.GetRequest, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetRequest, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 func (i *webResourceRequestedArgs) PutResponse(resp uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.PutResponse, uintptr(unsafe.Pointer(i)), resp)
+	r, _, _ := purego.SyscallN(i.vtbl.PutResponse, uintptr(unsafe.Pointer(i)), resp)
 	return r
 }
 
@@ -1857,16 +1857,16 @@ func releaseUnknown(p uintptr) {
 		return
 	}
 	u := (*unknown)(ptr(p))
-	pure.SyscallN(u.vtbl.Release, p)
+	purego.SyscallN(u.vtbl.Release, p)
 }
 
 func (i *webResourceRequest) GetUri(out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.GetUri, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
+	r, _, _ := purego.SyscallN(i.vtbl.GetUri, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(out)))
 	return r
 }
 
 func (i *environment) CreateWebResourceResponse(stream uintptr, status int, reason, headers *uint16, out *uintptr) uintptr {
-	r, _, _ := pure.SyscallN(i.vtbl.CreateWebResourceResponse,
+	r, _, _ := purego.SyscallN(i.vtbl.CreateWebResourceResponse,
 		uintptr(unsafe.Pointer(i)), stream, uintptr(status),
 		uintptr(unsafe.Pointer(reason)), uintptr(unsafe.Pointer(headers)), uintptr(unsafe.Pointer(out)))
 	return r
@@ -1900,7 +1900,7 @@ func shCreateMemStream(data []byte) uintptr {
 	if len(data) > 0 {
 		p = &data[0]
 	}
-	r, _, _ := pure.SyscallN(memStreamProc, uintptr(unsafe.Pointer(p)), uintptr(uint32(len(data)))) // #nosec G103 -- SHCreateMemStream copies the buffer
+	r, _, _ := purego.SyscallN(memStreamProc, uintptr(unsafe.Pointer(p)), uintptr(uint32(len(data)))) // #nosec G103 -- SHCreateMemStream copies the buffer
 	return r
 }
 
@@ -2029,7 +2029,7 @@ func (w *webview) canonicalSchemeURL(vhostURL string) string {
 // into C. The engine is identified by an integer id stored in GWLP_USERDATA
 // (seeded from CreateWindowExW's lpCreateParams in WM_NCCREATE) and looked up
 // in a Go map; dispatched closures are keyed by an integer id passed via
-// WM_APP's LPARAM; the WndProc trampolines come from pure.NewCallback. Only
+// WM_APP's LPARAM; the WndProc trampolines come from purego.NewCallback. Only
 // integers cross the boundary.
 
 const (
@@ -2197,7 +2197,7 @@ func ensureWinInit() error {
 				winInitErr = fmt.Errorf("webview: resolve %s: %w", name, e)
 				return
 			}
-			pure.RegisterFunc(fn, addr)
+			purego.RegisterFunc(fn, addr)
 		}
 		reg(&getModuleHandleW, kernel32, "GetModuleHandleW")
 		reg(&registerClassExW, user32, "RegisterClassExW")
@@ -2239,9 +2239,9 @@ func ensureWinInit() error {
 		if winInitErr != nil {
 			return
 		}
-		wndProcCB = pure.NewCallback(wndProc)
-		hostProcCB = pure.NewCallback(hostProc)
-		dispatchProcCB = pure.NewCallback(dispatchProc)
+		wndProcCB = purego.NewCallback(wndProc)
+		hostProcCB = purego.NewCallback(hostProc)
+		dispatchProcCB = purego.NewCallback(dispatchProc)
 	})
 	return winInitErr
 }

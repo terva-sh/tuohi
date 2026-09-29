@@ -12,7 +12,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure/objc"
+	"github.com/ebitengine/purego/objc"
 
 	"github.com/terva-sh/tuohi/dialog"
 )

@@ -15,6 +15,8 @@ export CGO_ENABLED := "0"
 # GitHub workflow runs the macOS and Windows engines on hosted runners.
 targets := "linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 freebsd/amd64 netbsd/amd64"
 
+fakecgo_std := "-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std"
+
 default:
     @just --list
 
@@ -36,17 +38,12 @@ fmt-check:
 check-imports:
     make --no-print-directory check-imports
 
-# Every package but pure/, whose suite is upstream purego's and needs a C
-# compiler for its fixtures. Forgejo CI tests exactly this set.
-packages := `go list ./... | grep -v '/pure' | tr '\n' ' '`
+# Every package. Forgejo CI tests exactly this set.
+packages := "./..."
 
 # The headless tests. GUI scenarios skip themselves without a display.
 test:
     go test {{packages}}
-
-# purego's own suite in pure/. Needs a C compiler; GitHub CI runs it.
-test-pure:
-    go test ./pure/...
 
 # The GUI scenarios on both WebKitGTK stacks, under Xvfb and a private bus.
 # TUOHI_REQUIRE_GUI=1 fails a scenario that would skip, so a green run means
@@ -59,11 +56,13 @@ test-gui:
     done; \
     if [ -n "$failed" ]; then echo "test-gui failed on:$failed" >&2; exit 1; fi
 
-# Build every package for every target.
+# Build every package for every target. FreeBSD needs purego's fakecgo
+# compiled with -std when cgo is off; the README says why.
 cross:
     for t in {{targets}}; do \
         echo "== $t"; \
-        GOOS=${t%/*} GOARCH=${t#*/} go build ./...; \
+        flags=""; if [ "${t%/*}" = freebsd ]; then flags="{{fakecgo_std}}"; fi; \
+        GOOS=${t%/*} GOARCH=${t#*/} go build $flags ./...; \
     done
 
 # Validate the ticket store the way CI does.

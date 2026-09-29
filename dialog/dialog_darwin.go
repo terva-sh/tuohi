@@ -1,4 +1,4 @@
-// macOS open/save panels: NSOpenPanel and NSSavePanel via pure's
+// macOS open/save panels: NSOpenPanel and NSSavePanel via purego's
 // Objective-C runtime (no cgo). The panels are application-modal (runModal),
 // so callers must invoke Open on the main thread.
 
@@ -9,7 +9,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure/objc"
+	"github.com/ebitengine/purego/objc"
 )
 
 const nsModalResponseOK = 1

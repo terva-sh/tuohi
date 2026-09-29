@@ -1,4 +1,4 @@
-// macOS backend: an NSStatusItem in the menu bar with an NSMenu, via pure's
+// macOS backend: an NSStatusItem in the menu bar with an NSMenu, via purego's
 // Objective-C runtime (no cgo). The status item and its menus are AppKit
 // objects, so everything here runs on the main thread; Run drives
 // NSApplication's run loop and Stop wakes it from any thread through
@@ -22,8 +22,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
-	"github.com/terva-sh/tuohi/pure/objc"
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 )
 
 const (
@@ -92,7 +92,7 @@ func ensureInit() error {
 			"/System/Library/Frameworks/Foundation.framework/Foundation",
 			"/System/Library/Frameworks/AppKit.framework/AppKit",
 		} {
-			_, err := pure.Dlopen(fw, pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+			_, err := purego.Dlopen(fw, purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 			if err != nil {
 				initErr = fmt.Errorf("tray: load %s: %w", fw, err)
 				return

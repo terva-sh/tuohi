@@ -1,6 +1,6 @@
 //go:build linux || freebsd || netbsd
 
-// Unix open/save panels (Linux, FreeBSD, NetBSD): GtkFileChooserNative via pure. The modal is
+// Unix open/save panels (Linux, FreeBSD, NetBSD): GtkFileChooserNative via purego. The modal is
 // driven manually (set_modal + show + "response" signal + main-loop
 // iteration) because gtk_native_dialog_run was removed in GTK4; the manual
 // sequence is exactly what it did internally and works on both GTK3 and
@@ -24,12 +24,12 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 const (
 	// RTLD_NOLOAD (glibc and musl): return the handle only if the library is
-	// already mapped, never load it. pure does not export it.
+	// already mapped, never load it. purego does not export it.
 	rtldNoload = 0x4
 
 	gtkFileChooserActionOpen         = 0
@@ -101,20 +101,20 @@ var (
 // openGTK picks the GTK stack: join the one already mapped into the process if
 // any (RTLD_NOLOAD probe - never loads), else load GTK3, else GTK4.
 func openGTK() (uintptr, error) {
-	lib, err := pure.Dlopen("libgtk-4.so.1", pure.RTLD_LAZY|rtldNoload)
+	lib, err := purego.Dlopen("libgtk-4.so.1", purego.RTLD_LAZY|rtldNoload)
 	if err == nil {
 		gtk4 = true
 		return lib, nil
 	}
-	lib, err = pure.Dlopen("libgtk-3.so.0", pure.RTLD_LAZY|rtldNoload)
+	lib, err = purego.Dlopen("libgtk-3.so.0", purego.RTLD_LAZY|rtldNoload)
 	if err == nil {
 		return lib, nil
 	}
-	lib, err = pure.Dlopen("libgtk-3.so.0", pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+	lib, err = purego.Dlopen("libgtk-3.so.0", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	if err == nil {
 		return lib, nil
 	}
-	lib, err = pure.Dlopen("libgtk-4.so.1", pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+	lib, err = purego.Dlopen("libgtk-4.so.1", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	if err == nil {
 		gtk4 = true
 		return lib, nil
@@ -129,37 +129,37 @@ func ensureInit() error {
 			initErr = err
 			return
 		}
-		glib, err := pure.Dlopen("libglib-2.0.so.0", pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+		glib, err := purego.Dlopen("libglib-2.0.so.0", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 		if err != nil {
 			initErr = err
 			return
 		}
-		gobject, err := pure.Dlopen("libgobject-2.0.so.0", pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+		gobject, err := purego.Dlopen("libgobject-2.0.so.0", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 		if err != nil {
 			initErr = err
 			return
 		}
 
-		pure.RegisterLibFunc(&gtkFileChooserNativeNew, gtkLib, "gtk_file_chooser_native_new")
-		pure.RegisterLibFunc(&gtkNativeDialogShow, gtkLib, "gtk_native_dialog_show")
-		pure.RegisterLibFunc(&gtkNativeDialogHide, gtkLib, "gtk_native_dialog_hide")
-		pure.RegisterLibFunc(&gtkNativeDialogSetModal, gtkLib, "gtk_native_dialog_set_modal")
-		pure.RegisterLibFunc(&gtkFileChooserSetSelectMultiple, gtkLib, "gtk_file_chooser_set_select_multiple")
-		pure.RegisterLibFunc(&gtkFileChooserSetCurrentName, gtkLib, "gtk_file_chooser_set_current_name")
-		pure.RegisterLibFunc(&gtkFileFilterNew, gtkLib, "gtk_file_filter_new")
-		pure.RegisterLibFunc(&gtkFileFilterSetName, gtkLib, "gtk_file_filter_set_name")
-		pure.RegisterLibFunc(&gtkFileFilterAddPattern, gtkLib, "gtk_file_filter_add_pattern")
-		pure.RegisterLibFunc(&gtkFileChooserAddFilter, gtkLib, "gtk_file_chooser_add_filter")
+		purego.RegisterLibFunc(&gtkFileChooserNativeNew, gtkLib, "gtk_file_chooser_native_new")
+		purego.RegisterLibFunc(&gtkNativeDialogShow, gtkLib, "gtk_native_dialog_show")
+		purego.RegisterLibFunc(&gtkNativeDialogHide, gtkLib, "gtk_native_dialog_hide")
+		purego.RegisterLibFunc(&gtkNativeDialogSetModal, gtkLib, "gtk_native_dialog_set_modal")
+		purego.RegisterLibFunc(&gtkFileChooserSetSelectMultiple, gtkLib, "gtk_file_chooser_set_select_multiple")
+		purego.RegisterLibFunc(&gtkFileChooserSetCurrentName, gtkLib, "gtk_file_chooser_set_current_name")
+		purego.RegisterLibFunc(&gtkFileFilterNew, gtkLib, "gtk_file_filter_new")
+		purego.RegisterLibFunc(&gtkFileFilterSetName, gtkLib, "gtk_file_filter_set_name")
+		purego.RegisterLibFunc(&gtkFileFilterAddPattern, gtkLib, "gtk_file_filter_add_pattern")
+		purego.RegisterLibFunc(&gtkFileChooserAddFilter, gtkLib, "gtk_file_chooser_add_filter")
 
-		pure.RegisterLibFunc(&gFree, glib, "g_free")
-		pure.RegisterLibFunc(&gMainContextIteration, glib, "g_main_context_iteration")
-		pure.RegisterLibFunc(&gObjectUnref, gobject, "g_object_unref")
-		pure.RegisterLibFunc(&gSignalConnectData, gobject, "g_signal_connect_data")
+		purego.RegisterLibFunc(&gFree, glib, "g_free")
+		purego.RegisterLibFunc(&gMainContextIteration, glib, "g_main_context_iteration")
+		purego.RegisterLibFunc(&gObjectUnref, gobject, "g_object_unref")
+		purego.RegisterLibFunc(&gSignalConnectData, gobject, "g_signal_connect_data")
 
 		// "response" delivers (GtkNativeDialog*, gint response_id, gpointer
 		// token). gint is 32-bit; mask before interpreting so a negative id
 		// (ACCEPT = -3) survives the widening into a uintptr register.
-		dialogResponseFn = pure.NewCallback(func(_, responseID, token uintptr) uintptr {
+		dialogResponseFn = purego.NewCallback(func(_, responseID, token uintptr) uintptr {
 			dialogRespMu.Lock()
 			st := dialogRespStates[token]
 			if st != nil {
@@ -171,26 +171,26 @@ func ensureInit() error {
 		})
 
 		if gtk4 {
-			pure.RegisterLibFunc(&gtkInitCheck4, gtkLib, "gtk_init_check")
-			pure.RegisterLibFunc(&gtkFileChooserGetFile, gtkLib, "gtk_file_chooser_get_file")
-			pure.RegisterLibFunc(&gtkFileChooserGetFiles, gtkLib, "gtk_file_chooser_get_files")
-			pure.RegisterLibFunc(&gtkFileChooserSetCurrentFolder4, gtkLib, "gtk_file_chooser_set_current_folder")
-			gio, e := pure.Dlopen("libgio-2.0.so.0", pure.RTLD_LAZY|pure.RTLD_GLOBAL)
+			purego.RegisterLibFunc(&gtkInitCheck4, gtkLib, "gtk_init_check")
+			purego.RegisterLibFunc(&gtkFileChooserGetFile, gtkLib, "gtk_file_chooser_get_file")
+			purego.RegisterLibFunc(&gtkFileChooserGetFiles, gtkLib, "gtk_file_chooser_get_files")
+			purego.RegisterLibFunc(&gtkFileChooserSetCurrentFolder4, gtkLib, "gtk_file_chooser_set_current_folder")
+			gio, e := purego.Dlopen("libgio-2.0.so.0", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 			if e != nil {
 				initErr = e
 				return
 			}
-			pure.RegisterLibFunc(&gFileNewForPath, gio, "g_file_new_for_path")
-			pure.RegisterLibFunc(&gFileGetPath, gio, "g_file_get_path")
-			pure.RegisterLibFunc(&gListModelGetNItems, gio, "g_list_model_get_n_items")
-			pure.RegisterLibFunc(&gListModelGetItem, gio, "g_list_model_get_item")
+			purego.RegisterLibFunc(&gFileNewForPath, gio, "g_file_new_for_path")
+			purego.RegisterLibFunc(&gFileGetPath, gio, "g_file_get_path")
+			purego.RegisterLibFunc(&gListModelGetNItems, gio, "g_list_model_get_n_items")
+			purego.RegisterLibFunc(&gListModelGetItem, gio, "g_list_model_get_item")
 			return
 		}
-		pure.RegisterLibFunc(&gtkInitCheck3, gtkLib, "gtk_init_check")
-		pure.RegisterLibFunc(&gtkFileChooserGetFilename, gtkLib, "gtk_file_chooser_get_filename")
-		pure.RegisterLibFunc(&gtkFileChooserGetFilenames, gtkLib, "gtk_file_chooser_get_filenames")
-		pure.RegisterLibFunc(&gtkFileChooserSetCurrentFolder, gtkLib, "gtk_file_chooser_set_current_folder")
-		pure.RegisterLibFunc(&gSListFree, glib, "g_slist_free")
+		purego.RegisterLibFunc(&gtkInitCheck3, gtkLib, "gtk_init_check")
+		purego.RegisterLibFunc(&gtkFileChooserGetFilename, gtkLib, "gtk_file_chooser_get_filename")
+		purego.RegisterLibFunc(&gtkFileChooserGetFilenames, gtkLib, "gtk_file_chooser_get_filenames")
+		purego.RegisterLibFunc(&gtkFileChooserSetCurrentFolder, gtkLib, "gtk_file_chooser_set_current_folder")
+		purego.RegisterLibFunc(&gSListFree, glib, "g_slist_free")
 	})
 	return initErr
 }

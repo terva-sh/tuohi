@@ -8,10 +8,3 @@ version: "2"
 linters:
   default: standard
 
-  exclusions:
-    # pure/ is vendored third-party code (the Ebitengine purego fork kept for
-    # appkit's cgo-free engine), so appkit's CI does not lint it: its upstream
-    # style is not ours to police, and its build-tag-only code — dead on the
-    # host GOOS — trips the `unused` linter.
-    paths:
-      - ^pure/

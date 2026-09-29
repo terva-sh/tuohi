@@ -10,21 +10,6 @@ and how it was verified.
 This product includes software derived from the following projects.
 
 ------------------------------------------------------------------------------
-purego  (pure/)
-https://github.com/ebitengine/purego
-Licensed under the Apache License, Version 2.0: pure/LICENSE.
-SPDX-FileCopyrightText: The Ebitengine Authors
-
-pure/ is a modified copy of purego v0.11.0: the package and its linker
-symbols are renamed from purego to pure, Android and iOS support is removed,
-and FreeBSD's cgo_export_dynamic directives are dropped. Files that carry an
-Ebitengine SPDX header and differ from upstream were modified by appkit's
-author and are distributed here as modified.
-
-pure/internal/fakecgo contains code from the Go project, under the BSD-style
-licence in pure/LICENSE-GO: Copyright 2009 The Go Authors.
-
-------------------------------------------------------------------------------
 Wails  (autostart support)
 https://github.com/wailsapp/wails, v3 pkg/application/autostart*.go
 MIT License. Copyright (c) 2018-Present Lea Anthony

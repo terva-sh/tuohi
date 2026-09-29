@@ -5,7 +5,7 @@
 // the first instance and fails once one exists, so it doubles as the
 // single-instance lock; the same pipe then carries the forwarded arguments.
 // Windows has no dlopen, so the kernel32 symbols are resolved with
-// LoadLibrary/GetProcAddress and bound with pure.RegisterFunc.
+// LoadLibrary/GetProcAddress and bound with purego.RegisterFunc.
 package tuohi
 
 import (
@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 	winregistry "golang.org/x/sys/windows/registry"
 )
 
@@ -69,7 +69,7 @@ func ensureInit() error {
 				initErr = e
 				return
 			}
-			pure.RegisterFunc(p, addr)
+			purego.RegisterFunc(p, addr)
 		}
 		reg(&createNamedPipeW, "CreateNamedPipeW")
 		reg(&connectNamedPipe, "ConnectNamedPipe")
@@ -316,7 +316,7 @@ func openEnsureInit() error {
 			openInitErr = fmt.Errorf("open: resolve ShellExecuteW: %w", err)
 			return
 		}
-		pure.RegisterFunc(&shellExecuteW, addr)
+		purego.RegisterFunc(&shellExecuteW, addr)
 	})
 	return openInitErr
 }

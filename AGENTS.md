@@ -162,17 +162,19 @@ package. It is a library, not an application: each consumer owns its window.
 
 It is a fork of `github.com/malivvan/appkit` v0.1.0, whose repository no
 longer exists. Read [docs/provenance.md](docs/provenance.md) before changing
-licensing, attribution, or anything under `pure/`.
+licensing or attribution.
 
 ### Rules
 
 - **No cgo, ever, in what ships.** terva-sh releases are built on one Linux
   host with `CGO_ENABLED=0` and cross-compiled, so a change that needs a C
   toolchain for any target is not acceptable. Loading system libraries at run
-  time through `pure` is how the engines are reached, and is the reason this
-  library exists. Build and test with `CGO_ENABLED=0`: with cgo on, `pure`
-  links `runtime/cgo` and exercises a different path from the one consumers
-  get.
+  time through [purego](https://github.com/ebitengine/purego) is how the
+  engines are reached, and is the reason this library exists. Build and test
+  with `CGO_ENABLED=0`: with cgo on, purego links `runtime/cgo` and exercises a
+  different path from the one consumers get. A FreeBSD build without cgo
+  needs `-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std`, which
+  `just cross` passes.
 - **Attribution travels with code.** Code derived from another project keeps
   its notice where it lives and gets an entry in [NOTICE](NOTICE). The
   autostart helpers come from Wails and the WebView2 loader from webview. If
@@ -190,9 +192,7 @@ licensing, attribution, or anything under `pure/`.
 
 `just` lists the recipes. `just ci` runs what Forgejo CI runs: vet, gofmt, the
 import check, the embedded-JavaScript check, the headless tests, the cross
-builds, and `git ticket check`. Both test every package except `pure/`, whose
-suite is upstream purego's and compiles C fixtures. `just test-pure` runs it
-where a C compiler is installed, and GitHub CI runs it on every push.
+builds, and `git ticket check`.
 
 The GUI scenarios need a display, a session bus, and a working WebKitGTK.
 `just test-gui` runs them under `xvfb-run` and `dbus-run-session` on both

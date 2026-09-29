@@ -1,6 +1,6 @@
 //go:build linux || freebsd || netbsd
 
-// Unix View backend (Linux, FreeBSD, NetBSD) in pure Go via pure's
+// Unix View backend (Linux, FreeBSD, NetBSD) in pure Go via purego's
 //
 // This backend dlopen/dlsyms the system GTK and WebKitGTK shared objects
 // directly, so appkit needs no cgo and no bundled native library on Unix.
@@ -24,7 +24,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/terva-sh/tuohi/pure"
+	"github.com/ebitengine/purego"
 )
 
 const (
@@ -254,7 +254,7 @@ var (
 func openFirst(names ...string) (uintptr, error) {
 	var lastErr error
 	for _, n := range names {
-		h, err := pure.Dlopen(n, pure.RTLD_NOW|pure.RTLD_GLOBAL)
+		h, err := purego.Dlopen(n, purego.RTLD_NOW|purego.RTLD_GLOBAL)
 		if err == nil {
 			return h, nil
 		}
@@ -434,72 +434,72 @@ func ensureInit() error {
 		// number their signals differently and are compile-only targets);
 		// WebKitGTK builds old enough to lack the API keep JSC's default.
 		if runtime.GOOS == "linux" {
-			if addr, e := pure.Dlsym(jsc, "JSConfigureSignalForGC"); e == nil {
+			if addr, e := purego.Dlsym(jsc, "JSConfigureSignalForGC"); e == nil {
 				var configureSignalForGC func(sig int32)
-				pure.RegisterFunc(&configureSignalForGC, addr)
+				purego.RegisterFunc(&configureSignalForGC, addr)
 				configureSignalForGC(jscGCRealtimeSignal)
 			}
 		}
 
-		pure.RegisterLibFunc(&gIdleAddFull, glib, "g_idle_add_full")
-		pure.RegisterLibFunc(&gMainContextIteration, glib, "g_main_context_iteration")
-		pure.RegisterLibFunc(&gThreadSelf, glib, "g_thread_self")
-		pure.RegisterLibFunc(&gFree, glib, "g_free")
-		pure.RegisterLibFunc(&gBytesNew, glib, "g_bytes_new")
-		pure.RegisterLibFunc(&gListAppend, glib, "g_list_append")
-		pure.RegisterLibFunc(&gSetPrgname, glib, "g_set_prgname")
-		pure.RegisterLibFunc(&gObjectRefSink, gobject, "g_object_ref_sink")
-		pure.RegisterLibFunc(&gObjectUnref, gobject, "g_object_unref")
-		pure.RegisterLibFunc(&gSignalConnectData, gobject, "g_signal_connect_data")
+		purego.RegisterLibFunc(&gIdleAddFull, glib, "g_idle_add_full")
+		purego.RegisterLibFunc(&gMainContextIteration, glib, "g_main_context_iteration")
+		purego.RegisterLibFunc(&gThreadSelf, glib, "g_thread_self")
+		purego.RegisterLibFunc(&gFree, glib, "g_free")
+		purego.RegisterLibFunc(&gBytesNew, glib, "g_bytes_new")
+		purego.RegisterLibFunc(&gListAppend, glib, "g_list_append")
+		purego.RegisterLibFunc(&gSetPrgname, glib, "g_set_prgname")
+		purego.RegisterLibFunc(&gObjectRefSink, gobject, "g_object_ref_sink")
+		purego.RegisterLibFunc(&gObjectUnref, gobject, "g_object_unref")
+		purego.RegisterLibFunc(&gSignalConnectData, gobject, "g_signal_connect_data")
 		// g_signal_handlers_disconnect_by_data is a macro, not a symbol.
-		pure.RegisterLibFunc(&gSignalHandlersDisconnectMatched, gobject, "g_signal_handlers_disconnect_matched")
+		purego.RegisterLibFunc(&gSignalHandlersDisconnectMatched, gobject, "g_signal_handlers_disconnect_matched")
 
 		if gtk4 {
-			pure.RegisterLibFunc(&gtkInitCheck0, gtk, "gtk_init_check")
-			pure.RegisterLibFunc(&gtkWindowNew0, gtk, "gtk_window_new")
-			pure.RegisterLibFunc(&gtkWindowSetChild, gtk, "gtk_window_set_child")
-			pure.RegisterLibFunc(&gtkWidgetSetVisible, gtk, "gtk_widget_set_visible")
-			pure.RegisterLibFunc(&gtkWindowSetDefaultSize, gtk, "gtk_window_set_default_size")
-			pure.RegisterLibFunc(&gtkNativeGetSurface, gtk, "gtk_native_get_surface")
+			purego.RegisterLibFunc(&gtkInitCheck0, gtk, "gtk_init_check")
+			purego.RegisterLibFunc(&gtkWindowNew0, gtk, "gtk_window_new")
+			purego.RegisterLibFunc(&gtkWindowSetChild, gtk, "gtk_window_set_child")
+			purego.RegisterLibFunc(&gtkWidgetSetVisible, gtk, "gtk_widget_set_visible")
+			purego.RegisterLibFunc(&gtkWindowSetDefaultSize, gtk, "gtk_window_set_default_size")
+			purego.RegisterLibFunc(&gtkNativeGetSurface, gtk, "gtk_native_get_surface")
 			// GTK4 removed gtk_window_begin_move/resize_drag; the drag is driven
 			// on the window's GdkSurface via gdk_toplevel_begin_move/resize.
 			// GDK4 ships inside libgtk-4, so the same handle resolves them.
-			pure.RegisterLibFunc(&gdkToplevelBeginMove, gtk, "gdk_toplevel_begin_move")
-			pure.RegisterLibFunc(&gdkToplevelBeginResize, gtk, "gdk_toplevel_begin_resize")
-			pure.RegisterLibFunc(&gdkToplevelGetState, gtk, "gdk_toplevel_get_state")
+			purego.RegisterLibFunc(&gdkToplevelBeginMove, gtk, "gdk_toplevel_begin_move")
+			purego.RegisterLibFunc(&gdkToplevelBeginResize, gtk, "gdk_toplevel_begin_resize")
+			purego.RegisterLibFunc(&gdkToplevelGetState, gtk, "gdk_toplevel_get_state")
 			// Frameless transparency on GTK4 (see applyBackground): the window
 			// background is cleared through CSS instead of an RGBA visual.
-			pure.RegisterLibFunc(&gtkCssProviderNew, gtk, "gtk_css_provider_new")
-			pure.RegisterLibFunc(&gtkCssProviderLoadFromString, gtk, "gtk_css_provider_load_from_string")
-			pure.RegisterLibFunc(&gtkWidgetGetStyleContext, gtk, "gtk_widget_get_style_context")
-			pure.RegisterLibFunc(&gtkStyleContextAddProvider, gtk, "gtk_style_context_add_provider")
+			purego.RegisterLibFunc(&gtkCssProviderNew, gtk, "gtk_css_provider_new")
+			purego.RegisterLibFunc(&gtkCssProviderLoadFromString, gtk, "gtk_css_provider_load_from_string")
+			purego.RegisterLibFunc(&gtkWidgetGetStyleContext, gtk, "gtk_widget_get_style_context")
+			purego.RegisterLibFunc(&gtkStyleContextAddProvider, gtk, "gtk_style_context_add_provider")
 			// Window-state controls (see Show/Hide/Maximize/Minimize): GTK4
 			// minimizes through gtk_window_minimize (iconify is the GTK3 name).
-			pure.RegisterLibFunc(&gtkWindowMinimize, gtk, "gtk_window_minimize")
-			pure.RegisterLibFunc(&gtkWindowUnminimize, gtk, "gtk_window_unminimize")
+			purego.RegisterLibFunc(&gtkWindowMinimize, gtk, "gtk_window_minimize")
+			purego.RegisterLibFunc(&gtkWindowUnminimize, gtk, "gtk_window_unminimize")
 			// Runtime application icon: gdk_toplevel_set_icon_list plus the
 			// gdk_memory_texture_new builder. Optional - a GTK4 build without
 			// them simply skips the icon (best-effort, see App.Icon).
-			if _, e := pure.Dlsym(gtk, "gdk_toplevel_set_icon_list"); e == nil {
-				pure.RegisterLibFunc(&gdkMemoryTextureNew, gtk, "gdk_memory_texture_new")
-				pure.RegisterLibFunc(&gdkToplevelSetIconList, gtk, "gdk_toplevel_set_icon_list")
+			if _, e := purego.Dlsym(gtk, "gdk_toplevel_set_icon_list"); e == nil {
+				purego.RegisterLibFunc(&gdkMemoryTextureNew, gtk, "gdk_memory_texture_new")
+				purego.RegisterLibFunc(&gdkToplevelSetIconList, gtk, "gdk_toplevel_set_icon_list")
 				haveGdkIcons = true
 			}
 		} else {
-			pure.RegisterLibFunc(&gtkInitCheck, gtk, "gtk_init_check")
-			pure.RegisterLibFunc(&gtkWindowNew, gtk, "gtk_window_new")
-			pure.RegisterLibFunc(&gtkContainerAdd, gtk, "gtk_container_add")
-			pure.RegisterLibFunc(&gtkContainerRemove, gtk, "gtk_container_remove")
-			pure.RegisterLibFunc(&gtkWidgetShow, gtk, "gtk_widget_show")
-			pure.RegisterLibFunc(&gtkWidgetHide, gtk, "gtk_widget_hide")
-			pure.RegisterLibFunc(&gtkWindowIconify, gtk, "gtk_window_iconify")
-			pure.RegisterLibFunc(&gtkWindowDeiconify, gtk, "gtk_window_deiconify")
-			pure.RegisterLibFunc(&gtkWindowResize, gtk, "gtk_window_resize")
-			pure.RegisterLibFunc(&gtkWindowSetGeometryHints, gtk, "gtk_window_set_geometry_hints")
-			pure.RegisterLibFunc(&gtkWindowBeginMoveDrag3, gtk, "gtk_window_begin_move_drag")
-			pure.RegisterLibFunc(&gtkWindowBeginResizeDrag3, gtk, "gtk_window_begin_resize_drag")
-			pure.RegisterLibFunc(&gdkWindowGetState, gtk, "gdk_window_get_state")
-			pure.RegisterLibFunc(&gtkWindowMove, gtk, "gtk_window_move")
+			purego.RegisterLibFunc(&gtkInitCheck, gtk, "gtk_init_check")
+			purego.RegisterLibFunc(&gtkWindowNew, gtk, "gtk_window_new")
+			purego.RegisterLibFunc(&gtkContainerAdd, gtk, "gtk_container_add")
+			purego.RegisterLibFunc(&gtkContainerRemove, gtk, "gtk_container_remove")
+			purego.RegisterLibFunc(&gtkWidgetShow, gtk, "gtk_widget_show")
+			purego.RegisterLibFunc(&gtkWidgetHide, gtk, "gtk_widget_hide")
+			purego.RegisterLibFunc(&gtkWindowIconify, gtk, "gtk_window_iconify")
+			purego.RegisterLibFunc(&gtkWindowDeiconify, gtk, "gtk_window_deiconify")
+			purego.RegisterLibFunc(&gtkWindowResize, gtk, "gtk_window_resize")
+			purego.RegisterLibFunc(&gtkWindowSetGeometryHints, gtk, "gtk_window_set_geometry_hints")
+			purego.RegisterLibFunc(&gtkWindowBeginMoveDrag3, gtk, "gtk_window_begin_move_drag")
+			purego.RegisterLibFunc(&gtkWindowBeginResizeDrag3, gtk, "gtk_window_begin_resize_drag")
+			purego.RegisterLibFunc(&gdkWindowGetState, gtk, "gdk_window_get_state")
+			purego.RegisterLibFunc(&gtkWindowMove, gtk, "gtk_window_move")
 			// Runtime application icon (App.Icon): GTK3 window icons are
 			// GdkPixbufs. The two gtk_window_* setters live in libgtk-3 itself
 			// and are registered unconditionally; the pixbuf constructor comes
@@ -507,108 +507,108 @@ func ensureInit() error {
 			// handle's dependency closure, whose visibility depends on the
 			// libc's dlopen semantics). A machine without libgdk_pixbuf simply
 			// skips the icon (best-effort, see App.Icon).
-			pure.RegisterLibFunc(&gtkWindowSetDefaultIcon, gtk, "gtk_window_set_default_icon")
-			pure.RegisterLibFunc(&gtkWindowSetIcon, gtk, "gtk_window_set_icon")
+			purego.RegisterLibFunc(&gtkWindowSetDefaultIcon, gtk, "gtk_window_set_default_icon")
+			purego.RegisterLibFunc(&gtkWindowSetIcon, gtk, "gtk_window_set_icon")
 			if pb, e := openFirst("libgdk_pixbuf-2.0.so.0", "libgdk_pixbuf-2.0.so"); e == nil {
-				if _, se := pure.Dlsym(pb, "gdk_pixbuf_new_from_data"); se == nil {
-					pure.RegisterLibFunc(&gdkPixbufNewFromData, pb, "gdk_pixbuf_new_from_data")
+				if _, se := purego.Dlsym(pb, "gdk_pixbuf_new_from_data"); se == nil {
+					purego.RegisterLibFunc(&gdkPixbufNewFromData, pb, "gdk_pixbuf_new_from_data")
 				}
 			}
 		}
-		pure.RegisterLibFunc(&gtkWindowSetResizable, gtk, "gtk_window_set_resizable")
-		pure.RegisterLibFunc(&gtkWindowSetDecorated, gtk, "gtk_window_set_decorated")
-		pure.RegisterLibFunc(&gtkWidgetSetSizeRequest, gtk, "gtk_widget_set_size_request")
-		pure.RegisterLibFunc(&gtkWidgetGrabFocus, gtk, "gtk_widget_grab_focus")
-		pure.RegisterLibFunc(&gtkWidgetGetDisplay, gtk, "gtk_widget_get_display")
-		pure.RegisterLibFunc(&gdkDisplayGetDefaultSeat, gtk, "gdk_display_get_default_seat")
-		pure.RegisterLibFunc(&gdkSeatGetPointer, gtk, "gdk_seat_get_pointer")
-		pure.RegisterLibFunc(&gdkDisplayGetDefault, gtk, "gdk_display_get_default")
-		pure.RegisterLibFunc(&gdkDisplayGetName, gtk, "gdk_display_get_name")
+		purego.RegisterLibFunc(&gtkWindowSetResizable, gtk, "gtk_window_set_resizable")
+		purego.RegisterLibFunc(&gtkWindowSetDecorated, gtk, "gtk_window_set_decorated")
+		purego.RegisterLibFunc(&gtkWidgetSetSizeRequest, gtk, "gtk_widget_set_size_request")
+		purego.RegisterLibFunc(&gtkWidgetGrabFocus, gtk, "gtk_widget_grab_focus")
+		purego.RegisterLibFunc(&gtkWidgetGetDisplay, gtk, "gtk_widget_get_display")
+		purego.RegisterLibFunc(&gdkDisplayGetDefaultSeat, gtk, "gdk_display_get_default_seat")
+		purego.RegisterLibFunc(&gdkSeatGetPointer, gtk, "gdk_seat_get_pointer")
+		purego.RegisterLibFunc(&gdkDisplayGetDefault, gtk, "gdk_display_get_default")
+		purego.RegisterLibFunc(&gdkDisplayGetName, gtk, "gdk_display_get_name")
 		if !gtk4 {
 			// gtk_widget_get_window does not exist in GTK4 (GtkWidgets there
 			// have no GdkWindow); it is only used by the GTK3 frameless path.
-			pure.RegisterLibFunc(&gtkWidgetGetWindow, gtk, "gtk_widget_get_window")
+			purego.RegisterLibFunc(&gtkWidgetGetWindow, gtk, "gtk_widget_get_window")
 			// Window-background helpers, all GTK3-only (GTK4 has native
 			// transparency and no widget-background override API).
-			pure.RegisterLibFunc(&gdkScreenGetDefault, gtk, "gdk_screen_get_default")
-			pure.RegisterLibFunc(&gdkScreenGetRGBAVisual, gtk, "gdk_screen_get_rgba_visual")
-			pure.RegisterLibFunc(&gtkWidgetSetVisual, gtk, "gtk_widget_set_visual")
-			pure.RegisterLibFunc(&gtkWidgetOverrideBackgroundColor, gtk, "gtk_widget_override_background_color")
+			purego.RegisterLibFunc(&gdkScreenGetDefault, gtk, "gdk_screen_get_default")
+			purego.RegisterLibFunc(&gdkScreenGetRGBAVisual, gtk, "gdk_screen_get_rgba_visual")
+			purego.RegisterLibFunc(&gtkWidgetSetVisual, gtk, "gtk_widget_set_visual")
+			purego.RegisterLibFunc(&gtkWidgetOverrideBackgroundColor, gtk, "gtk_widget_override_background_color")
 		}
 		// Present exists in GTK3 and GTK4 alike, so no version split here.
-		pure.RegisterLibFunc(&gtkWindowPresent, gtk, "gtk_window_present")
-		pure.RegisterLibFunc(&gtkWindowClose, gtk, "gtk_window_close")
-		pure.RegisterLibFunc(&gtkWindowMaximize, gtk, "gtk_window_maximize")
-		pure.RegisterLibFunc(&gtkWindowUnmaximize, gtk, "gtk_window_unmaximize")
-		pure.RegisterLibFunc(&gtkWindowSetTitle, gtk, "gtk_window_set_title")
-		pure.RegisterLibFunc(&gtkWindowGetTitle, gtk, "gtk_window_get_title")
+		purego.RegisterLibFunc(&gtkWindowPresent, gtk, "gtk_window_present")
+		purego.RegisterLibFunc(&gtkWindowClose, gtk, "gtk_window_close")
+		purego.RegisterLibFunc(&gtkWindowMaximize, gtk, "gtk_window_maximize")
+		purego.RegisterLibFunc(&gtkWindowUnmaximize, gtk, "gtk_window_unmaximize")
+		purego.RegisterLibFunc(&gtkWindowSetTitle, gtk, "gtk_window_set_title")
+		purego.RegisterLibFunc(&gtkWindowGetTitle, gtk, "gtk_window_get_title")
 
-		pure.RegisterLibFunc(&webkitWebViewNew, webkit, "webkit_web_view_new")
-		pure.RegisterLibFunc(&webkitWebViewGetUserContentManager, webkit, "webkit_web_view_get_user_content_manager")
-		pure.RegisterLibFunc(&webkitWebViewGetSettings, webkit, "webkit_web_view_get_settings")
-		pure.RegisterLibFunc(&webkitSettingsSetEnableMediaStream, webkit, "webkit_settings_set_enable_media_stream")
-		pure.RegisterLibFunc(&webkitSettingsSetJavascriptCanAccessClipboard, webkit, "webkit_settings_set_javascript_can_access_clipboard")
-		pure.RegisterLibFunc(&gTypeCheckInstanceIsA, gobject, "g_type_check_instance_is_a")
-		pure.RegisterLibFunc(&gTypeNameFromInstance, gobject, "g_type_name_from_instance")
-		pure.RegisterLibFunc(&webkitPermissionRequestAllow, webkit, "webkit_permission_request_allow")
-		pure.RegisterLibFunc(&webkitPermissionRequestDeny, webkit, "webkit_permission_request_deny")
-		pure.RegisterLibFunc(&webkitUserMediaPermissionIsForAudioDevice, webkit, "webkit_user_media_permission_is_for_audio_device")
-		pure.RegisterLibFunc(&webkitUserMediaPermissionIsForVideoDevice, webkit, "webkit_user_media_permission_is_for_video_device")
+		purego.RegisterLibFunc(&webkitWebViewNew, webkit, "webkit_web_view_new")
+		purego.RegisterLibFunc(&webkitWebViewGetUserContentManager, webkit, "webkit_web_view_get_user_content_manager")
+		purego.RegisterLibFunc(&webkitWebViewGetSettings, webkit, "webkit_web_view_get_settings")
+		purego.RegisterLibFunc(&webkitSettingsSetEnableMediaStream, webkit, "webkit_settings_set_enable_media_stream")
+		purego.RegisterLibFunc(&webkitSettingsSetJavascriptCanAccessClipboard, webkit, "webkit_settings_set_javascript_can_access_clipboard")
+		purego.RegisterLibFunc(&gTypeCheckInstanceIsA, gobject, "g_type_check_instance_is_a")
+		purego.RegisterLibFunc(&gTypeNameFromInstance, gobject, "g_type_name_from_instance")
+		purego.RegisterLibFunc(&webkitPermissionRequestAllow, webkit, "webkit_permission_request_allow")
+		purego.RegisterLibFunc(&webkitPermissionRequestDeny, webkit, "webkit_permission_request_deny")
+		purego.RegisterLibFunc(&webkitUserMediaPermissionIsForAudioDevice, webkit, "webkit_user_media_permission_is_for_audio_device")
+		purego.RegisterLibFunc(&webkitUserMediaPermissionIsForVideoDevice, webkit, "webkit_user_media_permission_is_for_video_device")
 		for fn, name := range map[*func() uintptr]string{
 			&webkitUserMediaPermissionRequestType:   "webkit_user_media_permission_request_get_type",
 			&webkitDeviceInfoPermissionRequestType:  "webkit_device_info_permission_request_get_type",
 			&webkitClipboardPermissionRequestType:   "webkit_clipboard_permission_request_get_type",
 			&webkitPointerLockPermissionRequestType: "webkit_pointer_lock_permission_request_get_type",
 		} {
-			if _, e := pure.Dlsym(webkit, name); e == nil {
-				pure.RegisterLibFunc(fn, webkit, name)
+			if _, e := purego.Dlsym(webkit, name); e == nil {
+				purego.RegisterLibFunc(fn, webkit, name)
 			}
 		}
-		pure.RegisterLibFunc(&webkitSettingsSetEnableWriteConsoleToStdout, webkit, "webkit_settings_set_enable_write_console_messages_to_stdout")
-		pure.RegisterLibFunc(&webkitSettingsSetEnableDeveloperExtras, webkit, "webkit_settings_set_enable_developer_extras")
-		pure.RegisterLibFunc(&webkitSettingsSetEnableJavascript, webkit, "webkit_settings_set_enable_javascript")
-		pure.RegisterLibFunc(&webkitWebViewLoadURI, webkit, "webkit_web_view_load_uri")
-		pure.RegisterLibFunc(&webkitWebViewLoadHTML, webkit, "webkit_web_view_load_html")
-		pure.RegisterLibFunc(&webkitWebViewGetURI, webkit, "webkit_web_view_get_uri")
-		pure.RegisterLibFunc(&webkitUserContentManagerAddScript, webkit, "webkit_user_content_manager_add_script")
-		pure.RegisterLibFunc(&webkitUserContentManagerRemoveAllScripts, webkit, "webkit_user_content_manager_remove_all_scripts")
-		pure.RegisterLibFunc(&webkitUserScriptNew, webkit, "webkit_user_script_new")
-		pure.RegisterLibFunc(&webkitUserScriptUnref, webkit, "webkit_user_script_unref")
-		pure.RegisterLibFunc(&webkitNavigationPolicyDecisionGetNavigationAction, webkit, "webkit_navigation_policy_decision_get_navigation_action")
-		pure.RegisterLibFunc(&webkitNavigationActionGetRequest, webkit, "webkit_navigation_action_get_request")
-		pure.RegisterLibFunc(&webkitNetworkErrorQuark, webkit, "webkit_network_error_quark")
-		pure.RegisterLibFunc(&webkitPolicyErrorQuark, webkit, "webkit_policy_error_quark")
-		pure.RegisterLibFunc(&webkitResponsePolicyDecisionGetRequest, webkit, "webkit_response_policy_decision_get_request")
-		pure.RegisterLibFunc(&webkitResponsePolicyDecisionIsMainFrameMainRes, webkit, "webkit_response_policy_decision_is_main_frame_main_resource")
-		pure.RegisterLibFunc(&webkitURIRequestGetURI, webkit, "webkit_uri_request_get_uri")
-		pure.RegisterLibFunc(&webkitPolicyDecisionIgnore, webkit, "webkit_policy_decision_ignore")
+		purego.RegisterLibFunc(&webkitSettingsSetEnableWriteConsoleToStdout, webkit, "webkit_settings_set_enable_write_console_messages_to_stdout")
+		purego.RegisterLibFunc(&webkitSettingsSetEnableDeveloperExtras, webkit, "webkit_settings_set_enable_developer_extras")
+		purego.RegisterLibFunc(&webkitSettingsSetEnableJavascript, webkit, "webkit_settings_set_enable_javascript")
+		purego.RegisterLibFunc(&webkitWebViewLoadURI, webkit, "webkit_web_view_load_uri")
+		purego.RegisterLibFunc(&webkitWebViewLoadHTML, webkit, "webkit_web_view_load_html")
+		purego.RegisterLibFunc(&webkitWebViewGetURI, webkit, "webkit_web_view_get_uri")
+		purego.RegisterLibFunc(&webkitUserContentManagerAddScript, webkit, "webkit_user_content_manager_add_script")
+		purego.RegisterLibFunc(&webkitUserContentManagerRemoveAllScripts, webkit, "webkit_user_content_manager_remove_all_scripts")
+		purego.RegisterLibFunc(&webkitUserScriptNew, webkit, "webkit_user_script_new")
+		purego.RegisterLibFunc(&webkitUserScriptUnref, webkit, "webkit_user_script_unref")
+		purego.RegisterLibFunc(&webkitNavigationPolicyDecisionGetNavigationAction, webkit, "webkit_navigation_policy_decision_get_navigation_action")
+		purego.RegisterLibFunc(&webkitNavigationActionGetRequest, webkit, "webkit_navigation_action_get_request")
+		purego.RegisterLibFunc(&webkitNetworkErrorQuark, webkit, "webkit_network_error_quark")
+		purego.RegisterLibFunc(&webkitPolicyErrorQuark, webkit, "webkit_policy_error_quark")
+		purego.RegisterLibFunc(&webkitResponsePolicyDecisionGetRequest, webkit, "webkit_response_policy_decision_get_request")
+		purego.RegisterLibFunc(&webkitResponsePolicyDecisionIsMainFrameMainRes, webkit, "webkit_response_policy_decision_is_main_frame_main_resource")
+		purego.RegisterLibFunc(&webkitURIRequestGetURI, webkit, "webkit_uri_request_get_uri")
+		purego.RegisterLibFunc(&webkitPolicyDecisionIgnore, webkit, "webkit_policy_decision_ignore")
 		if gtk4 {
 			// GTK4: the script-message callback delivers a JSCValue* directly, and
 			// the handler registration takes a world-name argument.
-			pure.RegisterLibFunc(&webkitRegisterHandler3, webkit, "webkit_user_content_manager_register_script_message_handler")
+			purego.RegisterLibFunc(&webkitRegisterHandler3, webkit, "webkit_user_content_manager_register_script_message_handler")
 		} else {
-			pure.RegisterLibFunc(&webkitUserContentManagerRegisterHandler, webkit, "webkit_user_content_manager_register_script_message_handler")
-			pure.RegisterLibFunc(&webkitJavascriptResultGetJSValue, webkit, "webkit_javascript_result_get_js_value")
+			purego.RegisterLibFunc(&webkitUserContentManagerRegisterHandler, webkit, "webkit_user_content_manager_register_script_message_handler")
+			purego.RegisterLibFunc(&webkitJavascriptResultGetJSValue, webkit, "webkit_javascript_result_get_js_value")
 		}
 
-		_, e := pure.Dlsym(webkit, "webkit_web_view_evaluate_javascript")
+		_, e := purego.Dlsym(webkit, "webkit_web_view_evaluate_javascript")
 		if e == nil {
-			pure.RegisterLibFunc(&webkitWebViewEvaluateJavascript, webkit, "webkit_web_view_evaluate_javascript")
+			purego.RegisterLibFunc(&webkitWebViewEvaluateJavascript, webkit, "webkit_web_view_evaluate_javascript")
 			haveEvaluateJavascript = true
 		} else {
-			pure.RegisterLibFunc(&webkitWebViewRunJavascript, webkit, "webkit_web_view_run_javascript")
+			purego.RegisterLibFunc(&webkitWebViewRunJavascript, webkit, "webkit_web_view_run_javascript")
 		}
 
-		pure.RegisterLibFunc(&jscValueToString, jsc, "jsc_value_to_string")
+		purego.RegisterLibFunc(&jscValueToString, jsc, "jsc_value_to_string")
 
 		// webkit_web_view_set_background_color is present in every current
 		// WebKitGTK, but older ones lack it; resolve optionally so the
 		// window-background feature degrades to a no-op there.
-		if addr, e := pure.Dlsym(webkit, "webkit_web_view_set_background_color"); e == nil {
-			pure.RegisterFunc(&webkitWebViewSetBackgroundColor, addr)
+		if addr, e := purego.Dlsym(webkit, "webkit_web_view_set_background_color"); e == nil {
+			purego.RegisterFunc(&webkitWebViewSetBackgroundColor, addr)
 		}
 
-		dispatchSourceFn = pure.NewCallback(func(data uintptr) uintptr {
+		dispatchSourceFn = purego.NewCallback(func(data uintptr) uintptr {
 			dispatchMu.Lock()
 			f := dispatchMap[data]
 			delete(dispatchMap, data)
@@ -618,7 +618,7 @@ func ensureInit() error {
 			}
 			return gSourceRemove
 		})
-		messageHandlerFn = pure.NewCallback(func(_, jsResult, userData uintptr) uintptr {
+		messageHandlerFn = purego.NewCallback(func(_, jsResult, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w != nil {
 				// WebKitGTK does not say which frame posted the message, so
@@ -628,14 +628,14 @@ func ensureInit() error {
 			}
 			return 0
 		})
-		windowDestroyFn = pure.NewCallback(func(_, userData uintptr) uintptr {
+		windowDestroyFn = purego.NewCallback(func(_, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w != nil {
 				w.onWindowDestroy()
 			}
 			return 0
 		})
-		loadChangedFn = pure.NewCallback(func(_, loadEvent, userData uintptr) uintptr {
+		loadChangedFn = purego.NewCallback(func(_, loadEvent, userData uintptr) uintptr {
 			// WEBKIT_LOAD_FINISHED == 3: the page finished loading; View.Ready
 			// fires exactly once per view on this moment.
 			if int32(loadEvent) == 3 {
@@ -645,21 +645,21 @@ func ensureInit() error {
 			}
 			return 0
 		})
-		loadFailedFn = pure.NewCallback(func(_, loadEvent, failingURI, gerror, userData uintptr) uintptr {
+		loadFailedFn = purego.NewCallback(func(_, loadEvent, failingURI, gerror, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w == nil || !w.loadFailed(int32(loadEvent), cstr(failingURI), gerror) {
 				return 0 // WebKit's error page
 			}
 			return 1
 		})
-		decidePolicyFn = pure.NewCallback(func(_, decision, decisionType, userData uintptr) uintptr {
+		decidePolicyFn = purego.NewCallback(func(_, decision, decisionType, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w == nil || !w.decidePolicy(decision, int(decisionType)) {
 				return 0 // WebKit's default decision
 			}
 			return 1
 		})
-		permissionFn = pure.NewCallback(func(_, request, userData uintptr) uintptr {
+		permissionFn = purego.NewCallback(func(_, request, userData uintptr) uintptr {
 			w := lookupEngine(userData)
 			if w == nil || !w.permissionRequest(request) {
 				return 0 // WebKit's default decision
@@ -796,7 +796,7 @@ type webview struct {
 	isWindowShown bool
 	isSizeSet     bool
 
-	schemeCB uintptr // retained pure trampoline
+	schemeCB uintptr // retained purego trampoline
 
 	viewCore
 }
@@ -830,7 +830,7 @@ func (w *webview) registerSchemes() error {
 	if err != nil {
 		return fmt.Errorf("webview: register schemes: load gobject: %w", err)
 	}
-	gFreeAddr, err := pure.Dlsym(glibLib, "g_free")
+	gFreeAddr, err := purego.Dlsym(glibLib, "g_free")
 	if err != nil {
 		return fmt.Errorf("webview: register schemes: resolve g_free: %w", err)
 	}
@@ -856,18 +856,18 @@ func (w *webview) registerSchemes() error {
 		freeError                func(err uintptr)
 		ioErrorQuark             func() uint32
 	)
-	pure.RegisterLibFunc(&getContext, webkit, "webkit_web_view_get_context")
-	pure.RegisterLibFunc(&registerScheme, webkit, "webkit_web_context_register_uri_scheme")
-	pure.RegisterLibFunc(&getSecurityManager, webkit, "webkit_web_context_get_security_manager")
-	pure.RegisterLibFunc(&registerAsSecure, webkit, "webkit_security_manager_register_uri_scheme_as_secure")
-	pure.RegisterLibFunc(&requestGetURI, webkit, "webkit_uri_scheme_request_get_uri")
-	pure.RegisterLibFunc(&schemeRequestFinish, webkit, "webkit_uri_scheme_request_finish")
-	pure.RegisterLibFunc(&schemeRequestFinishError, webkit, "webkit_uri_scheme_request_finish_error")
-	pure.RegisterLibFunc(&memInputStreamNew, gio, "g_memory_input_stream_new_from_data")
-	pure.RegisterLibFunc(&gObjectUnref, gobject, "g_object_unref")
-	pure.RegisterLibFunc(&newErrorLiteral, glibLib, "g_error_new_literal")
-	pure.RegisterLibFunc(&freeError, glibLib, "g_error_free")
-	pure.RegisterLibFunc(&ioErrorQuark, gio, "g_io_error_quark")
+	purego.RegisterLibFunc(&getContext, webkit, "webkit_web_view_get_context")
+	purego.RegisterLibFunc(&registerScheme, webkit, "webkit_web_context_register_uri_scheme")
+	purego.RegisterLibFunc(&getSecurityManager, webkit, "webkit_web_context_get_security_manager")
+	purego.RegisterLibFunc(&registerAsSecure, webkit, "webkit_security_manager_register_uri_scheme_as_secure")
+	purego.RegisterLibFunc(&requestGetURI, webkit, "webkit_uri_scheme_request_get_uri")
+	purego.RegisterLibFunc(&schemeRequestFinish, webkit, "webkit_uri_scheme_request_finish")
+	purego.RegisterLibFunc(&schemeRequestFinishError, webkit, "webkit_uri_scheme_request_finish_error")
+	purego.RegisterLibFunc(&memInputStreamNew, gio, "g_memory_input_stream_new_from_data")
+	purego.RegisterLibFunc(&gObjectUnref, gobject, "g_object_unref")
+	purego.RegisterLibFunc(&newErrorLiteral, glibLib, "g_error_new_literal")
+	purego.RegisterLibFunc(&freeError, glibLib, "g_error_free")
+	purego.RegisterLibFunc(&ioErrorQuark, gio, "g_io_error_quark")
 
 	ctx := getContext(w.webview)
 	if ctx == 0 {
@@ -880,7 +880,7 @@ func (w *webview) registerSchemes() error {
 
 	// void (*WebKitURISchemeRequestCallback)(WebKitURISchemeRequest*, gpointer).
 	// user_data is the engine id, so this resolves back to the right webview.
-	w.schemeCB = pure.NewCallback(func(req uintptr, data uintptr) uintptr {
+	w.schemeCB = purego.NewCallback(func(req uintptr, data uintptr) uintptr {
 		eng := lookupEngine(data)
 		if eng == nil {
 			return 0
@@ -935,12 +935,12 @@ func resolveMemdup(glib uintptr) (func(mem unsafe.Pointer, size int) unsafe.Poin
 // for g_memdup2, guint (uint32) for the older g_memdup - so the registered
 // signature matches the C ABI exactly; ok is false when the symbol is absent.
 func memdupFn[T uint32 | uint64](glib uintptr, symbol string) (func(mem unsafe.Pointer, size int) unsafe.Pointer, bool) {
-	addr, err := pure.Dlsym(glib, symbol)
+	addr, err := purego.Dlsym(glib, symbol)
 	if err != nil || addr == 0 {
 		return nil, false
 	}
 	var f func(unsafe.Pointer, T) unsafe.Pointer
-	pure.RegisterFunc(&f, addr)
+	purego.RegisterFunc(&f, addr)
 	return func(mem unsafe.Pointer, size int) unsafe.Pointer { return f(mem, T(size)) }, true
 }
 
@@ -1672,9 +1672,9 @@ func (w *webview) applyFramelessCSD() {
 		return
 	}
 	announceCSDOnce.Do(func() {
-		addr, err := pure.Dlsym(gtkLib, "gdk_wayland_window_announce_csd")
+		addr, err := purego.Dlsym(gtkLib, "gdk_wayland_window_announce_csd")
 		if err == nil && addr != 0 {
-			pure.RegisterFunc(&announceCSD, addr)
+			purego.RegisterFunc(&announceCSD, addr)
 		}
 	})
 	if announceCSD == nil {
