@@ -1158,16 +1158,6 @@ func (v *View) Dialog(opts dialog.Options) ([]string, error) {
 	return w.Dialog(opts)
 }
 
-// The View dialog method presents the platform's native open, save and
-// choose-directory panels. It is a thin wrapper over the standalone
-// github.com/terva-sh/tuohi/dialog package: that package requires the panel
-// to run on the main/UI thread, so the method dispatches the call onto the UI
-// thread and blocks the calling goroutine until the panel is dismissed.
-//
-// A canceled panel - and a panel that could not be presented at all (no
-// backend, no display) - returns an empty result and a nil error, following
-// the dialog package contract.
-
 // Dialog presents the native panel selected by opts.Type and returns the
 // chosen path(s), or nil if the user cancelled.
 func (w *webview) Dialog(opts dialog.Options) ([]string, error) {

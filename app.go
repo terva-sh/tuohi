@@ -41,18 +41,18 @@
 // Other View methods, such as Eval, Navigate and Close, are safe from any
 // goroutine; they are marshalled to the UI thread.
 //
-// Source layout: the package is split into three file families. app*.go
-// holds the application scope - the App type (configuration + runtime
-// context), its app-scope methods (Show, Wait, Open/Reveal, Backend) and the
-// per-OS app internals (app icon, Open/Reveal); view*.go holds the view/window
-// API surface (the define-first View struct and its methods, the geometry +
-// State/Config types, scheme types, App.Show glue, the View Dialog method,
-// drag regions); the binding/events machinery may be split further into
-// bind.go (registry model + value conversion), bind_gen.go (the generated
-// JS) and bind_evt.go (the events bridge) - see AGENTS.md "Source layout";
-// lib*.go holds the pure per-platform engine layer
-// (lib_{darwin,linux,windows}.go talk to WKWebView/WebKitGTK/WebView2 and the
-// platform APIs).
+// Source layout: app*.go holds the application scope - the App type
+// (configuration + runtime context), its app-scope methods (Show, Wait,
+// Open/Reveal, Backend) and the per-OS app internals (app icon,
+// Open/Reveal); view*.go holds the view/window API surface (the define-first
+// View struct and its methods, geometry and State, scheme types, App.Show
+// glue, the View Dialog method, drag regions); bind.go (registry model +
+// value conversion), bind_gen.go (the generated JS) and bind_evt.go (the
+// events bridge) hold the binding and events machinery; engine.go holds the
+// engine interface every platform satisfies and the code they share; and
+// lib_darwin.go, lib_unix.go and lib_windows.go are the per-platform engine
+// layer, which talks to WKWebView, WebKitGTK and WebView2 and the platform
+// APIs.
 //
 // Platform code lives in *_unix.go / *_windows.go / *_darwin.go files; a
 // capability that a platform cannot provide returns an Err* sentinel or is a
@@ -224,45 +224,16 @@ type App struct {
 
 	// Bind holds the application's declarative bindings: every entry is bound
 	// onto each view App.Show creates, so one entry here covers all windows.
-	// A key is a DOTTED path - dots separate nested variables on the page, so
-	// a value bound at "app.someAPI.call" appears as window.app.someAPI.call.
-	// What a value becomes is decided by its kind alone:
+	// Keys and values follow the rules [View.Bind] documents: a dotted key
+	// names a nested page variable, and the value's kind decides whether it
+	// becomes a function, an accessor property or a frozen constant.
 	//
-	//   - a function becomes a JS function the page calls. Its arity decides
-	//     whether it ALSO works as a variable: a zero-argument function is a
-	//     callable GETTER - call it (`window.name()`), or read it as a value
-	//     (`await window.name`, which calls it with no arguments); a
-	//     one-argument function is a callable SETTER - call it
-	//     (`window.name(v)`), or ASSIGN to it (`window.name = v`, which runs
-	//     it with the assigned value; the assignment expression yields that
-	//     value, so await the CALL form for the result);
-	//   - a length-2 array of two functions ([2]any{getter, setter}) becomes
-	//     a readable AND writable property: reading it runs the getter over
-	//     the bridge (`const v = await window.name`), assigning to it runs
-	//     the setter (`window.name = v`) - see makeAccessorBinding;
-	//   - any other value - a bool, a number, a string, or any JSON-encodable
-	//     value such as a struct, map or slice - becomes an immutable JS
-	//     constant bound wholesale under that name.
-	//
-	// The page's calls are dispatched to Go in the order it makes them, so a
-	// read issued after a write observes the write
-	// (`window.count = 1; await window.count`).
-	//
-	// No part of a Go type is ever bound separately: structs and maps are
-	// never walked. The namespace the bindings of a page are installed into
-	// is frozen once the batch finishes, so the page cannot mutate the
-	// functions, constants or accessor objects it was given.
-	//
-	// A nil entry binds nothing. A view may override an app-wide name - or
-	// unbind it with a nil entry - through its own View.Bind map.
-	//
-	// Entries are applied to every view deterministically: in alphabetical
-	// key order, before the view's own View.Bind entries (see App.Show), so
-	// the result never depends on Go's map iteration order.
-	//
-	// Like every App field it is committed when the app scope opens (later
-	// edits have no effect) and is read once per shown view, at window
-	// creation.
+	// What differs from View.Bind: a nil entry here binds nothing, and a view
+	// overrides an app-wide name - or unbinds it with a nil entry - through
+	// its own View.Bind map. The entries are applied to every view in
+	// alphabetical key order, before the view's own (see App.Show). Like every
+	// App field, Bind is committed when the app scope opens (later edits have
+	// no effect) and is read once per shown view, at window creation.
 	Bind map[string]any
 
 	// FS is the filesystem the application serves to its views - the app's
@@ -468,9 +439,8 @@ func (a *App) begin() (*appScope, error) {
 // the process being killed) ends it.
 //
 // Create all windows with App.Show and keep every UI call on the goroutine
-// that calls Wait (the main goroutine). A simple single-window app may skip
-// Wait and call View.Run on its window instead; the two models must not be
-// mixed.
+// that calls Wait (the main goroutine). Every app, even one with a single
+// window, runs its loop through Wait: View has no Run method of its own.
 func (a *App) Wait() error {
 	// Before the scope opens, so that a refused call does no platform
 	// initialization on the wrong thread.
