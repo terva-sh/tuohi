@@ -717,9 +717,15 @@ func dispatchMain(f func()) {
 }
 
 // onMainThread reports whether the caller runs on the process main thread -
-// the only thread AppKit accepts UI work from.
+// the only thread AppKit accepts UI work from. It asks libSystem's
+// pthread_main_np, which answers what +[NSThread isMainThread] does without
+// needing Foundation loaded: it runs before ensureInit, from uiThreadErr and
+// from code that checks the thread first.
 func onMainThread() bool {
-	return class("NSThread").Send(sel("isMainThread")) != 0
+	if loadThreadCheck() != nil {
+		return false
+	}
+	return pthreadMainNP() != 0
 }
 
 // onUIThread is the dispatcher's onUI hook (see uiDispatcher). The UI thread
@@ -741,7 +747,7 @@ func uiThreadErr() error {
 	if err := loadThreadCheck(); err != nil {
 		return err
 	}
-	if pthreadMainNP() != 0 || mainLoopRunning() {
+	if onMainThread() || mainLoopRunning() {
 		return nil
 	}
 	return ErrNotMainThread
