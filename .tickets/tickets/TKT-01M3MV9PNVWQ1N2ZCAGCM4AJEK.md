@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T02:36:27Z
+updated_at: 2026-09-29T02:45:08Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -146,3 +146,22 @@ Not verified here: the new scenario on macOS and Windows. They should hand every
 **agent:claude-code/t3code-72958710** at 2026-09-29T02:36:27Z
 
 GitHub run 36513098161 showed WebView2 (runtime 153) requesting GET /link and GET /assign from the outside server although NavigationStarting cancelled both. They were ordinary requests, with no Sec-Purpose. The intercept is now on for Windows too (interceptOutsideLinks = true in lib_windows.go), and the internalOpenExternal handler moved from lib_unix.go into the shared onMessage (engine.go), so both engines use one implementation. macOS passed the whole scenario, the dead redirect included, and keeps the intercept off. The Windows cause, and redirects on Windows, are filed as a separate ticket (Keep WebView2 from requesting a navigation NavigationStarting cancels). The outside server in the scenario now records each request's target and purpose header, so a failure names them.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:45:08Z
+
+### Review disposition for PR #26 (terva-review run on 5bed776)
+
+1. **Medium: outside links inside shadow DOM bypass the click intercept.** Fixed. `linkOf` walks `e.composedPath()` for the first `a` or `area` element with an `href`, and falls back to `closest()` where `composedPath` is missing. Tests:
+   - **`TestOutsideLinksScript`** gains three shadow-root cases: an outside link, a trusted link, and an anchor with no `href`. With the old lookup the outside-link case fails.
+   - **`TestOutsideLinksNotRequested`** gains a `shadowlink` step. Controls on WebKitGTK 6.0, both with the `navigate` listener off:
+     - with the old lookup, the outside server received `/shadow`;
+     - with `linkOf`, it did not.
+
+     With `navigate` on, the Navigation API also catches this click on 6.0, even though it misses a plain link click there.
+2. **Medium: stopping click propagation without cancelling it bypasses the hand-off.** Declined, and documented in `initOutsideLinks` and docs/architecture.md.
+   - **Why the bubble phase:** the listener runs there so a page that handles its own clicks keeps them.
+   - **What a capture-phase listener would cost:** it would take every outside click before the page's own handlers had decided. A page that cancels a click itself would then have its link opened anyway.
+   - **Why it's not a policy bypass:** the missed click is still judged at its response and handed to the system, and nothing is shown. What is lost is the "never requested" guarantee, and only when the application's own trusted page stops propagation.
+   - **Tracking:** the case is listed with server redirects and meta refresh as still requested first.
+
+Checks after the fix: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
