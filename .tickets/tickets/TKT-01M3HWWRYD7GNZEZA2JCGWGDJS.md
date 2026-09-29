@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T21:53:08Z
+updated_at: 2026-09-29T22:13:11Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -86,3 +86,12 @@ Rejected: removing the writer outright, in favour of the app installing its own 
 - `TestWaylandIdentityLeavesForeignEntry` checks that a foreign entry is byte-identical afterwards, and that no icons are written beside it.
 - Mutation controls: dropping the gate fails the opt-in test, and dropping the key check fails the foreign-entry test.
 - `just ci` and `just test-gui` pass on both stacks.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:13:11Z
+
+Disposition for the terva-review findings at ecfccca (run 885f1a2c), fixed in 8cf15ca:
+
+- **Accepted, high: "Check system-installed entries before creating a user entry".** The guard looked only in `XDG_DATA_HOME`. A user entry with the same id shadows a package's entry in `/usr/share`, so opting in would have hidden the package's entry. `installWaylandIdentity` now also checks `XDG_DATA_DIRS`, defaulting to `/usr/local/share:/usr/share` and ignoring relative entries as the Base Directory spec says. When a system entry exists it writes nothing. An entry and icons tuohi wrote before the package arrived are removed, so the package's entry shows through. `TestWaylandIdentitySystemEntry` covers both. Skipping the check leaves 3 files, and skipping the removal leaves 1; either way the test fails.
+- **Accepted, medium: "Recognize the generated marker only as its own desktop-entry key".** `isGenerated` now accepts `X-Tuohi-Generated=true` only as a key of the `[Desktop Entry]` group. The same text in a comment, in another key's value, in another group or with `false` does not count (`TestIsGenerated`). The foreign-entry test's entry now carries the marker in a comment. Going back to the substring match makes that test fail.
+
+The `App.DesktopEntry` doc and architecture.md say the guard covers system entries. `just ci` passes.
