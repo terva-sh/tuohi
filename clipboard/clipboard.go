@@ -10,28 +10,28 @@
 // text at its first NUL byte, because the native clipboards take C strings,
 // and replaces invalid UTF-8 with U+FFFD.
 //
-// On Linux, FreeBSD and NetBSD it calls the GTK that tuohi's window already
-// loaded: gtk_clipboard_* on GTK 3 and gdk_clipboard_* on GTK 4. No external
-// program runs. That has three costs:
+// It calls the toolkit tuohi's window already loaded, so no external program
+// runs: on Linux, FreeBSD and NetBSD the GTK clipboard, gtk_clipboard_* on
+// GTK 3 and gdk_clipboard_* on GTK 4, and on macOS the general NSPasteboard.
+// That has three costs:
 //
 //   - The clipboard works only once tuohi has started its toolkit, which is
 //     when a tuohi App shows its first window. A program that never opens a
 //     window has no clipboard, and Copy and Paste return ErrNoApp. Off the UI
 //     thread they also need the app's loop to be running (App.Wait).
-//   - The process serves the text it copied. On Wayland, and on X11 without
-//     a clipboard manager, the text is gone when the process exits. Wayland
-//     may also refuse to set the clipboard unless one of the process's
-//     windows had recent input.
+//   - On GTK the process serves the text it copied. On Wayland, and on X11
+//     without a clipboard manager, the text is gone when the process exits.
+//     Wayland may also refuse to set the clipboard unless one of the
+//     process's windows had recent input.
 //   - GTK 4 reads the clipboard asynchronously, so Paste waits on a round
 //     trip through the UI thread, which keeps running its loop meanwhile.
 //
-// On macOS and Windows it still wraps github.com/atotto/clipboard: macOS runs
-// pbcopy and pbpaste, which the system ships, and Windows uses the Win32
-// clipboard directly. Other platforms return ErrUnsupported.
+// On Windows it still wraps github.com/atotto/clipboard, which uses the
+// Win32 clipboard. Other platforms return ErrUnsupported.
 //
-// Both functions are safe to call from any goroutine. On GTK the work runs on
-// the UI thread: in place when the caller is on it, otherwise marshalled
-// there, with the caller waiting.
+// Both functions are safe to call from any goroutine. On GTK and macOS the
+// work runs on the UI thread: in place when the caller is on it, otherwise
+// marshalled there, with the caller waiting.
 package clipboard
 
 import (

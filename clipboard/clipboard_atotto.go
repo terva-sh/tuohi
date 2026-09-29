@@ -1,7 +1,7 @@
-//go:build darwin || windows
+//go:build windows
 
-// macOS and Windows still go through github.com/atotto/clipboard: pbcopy and
-// pbpaste on macOS, the Win32 clipboard on Windows.
+// Windows still goes through github.com/atotto/clipboard, which uses the
+// Win32 clipboard.
 
 package clipboard
 

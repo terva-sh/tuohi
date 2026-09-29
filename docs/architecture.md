@@ -589,9 +589,10 @@ should send its own COOP and COEP headers if it wants cross-origin isolation.
   works only once a tuohi app has shown a window; on Wayland, and on X11
   without a clipboard manager, copied text lasts only as long as the process;
   and Wayland may refuse a copy without recent input on one of its windows.
-  macOS and Windows still wrap atotto, which runs `pbcopy` and `pbpaste` on
-  macOS. `NSPasteboard` and Win32 replace it next, one engine per pull
-  request: TKT-01M3J59M2BR91XQBDT1TPPM4G5.
+  On macOS it uses the general `NSPasteboard` through `objc`, on the main
+  thread, with AppKit's `NSPasteboardTypeString` looked up from the loaded
+  framework. Windows still wraps atotto, and Win32 replaces it next, in its
+  own pull request: TKT-01M3J59M2BR91XQBDT1TPPM4G5.
 - **Notify, tray, and dialog** were already subpackages and stay as they are.
   The root no longer imports notify or tray. The tray is set up in
   `App.Start`, and its icon is the caller's `tray.Config.Icon`: the root no

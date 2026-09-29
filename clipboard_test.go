@@ -1,4 +1,4 @@
-//go:build linux || freebsd || netbsd
+//go:build linux || freebsd || netbsd || darwin
 
 package tuohi
 
@@ -18,7 +18,7 @@ var resClipboard atomic.Value // string
 const clipboardText = "tuohi ✓ 日本語 — ünïcödé"
 
 // clipboardScenario round-trips text through tuohi/clipboard, which reaches
-// GTK through the hook newView publishes. It copies and pastes once on the UI
+// the UI thread through the hook newView publishes. It copies and pastes once on the UI
 // thread before the loop runs, where the calls run in place, and once from
 // another goroutine while the loop runs, where they are marshalled to the UI
 // thread. The two texts differ, so the second paste cannot pass on the first
@@ -58,7 +58,7 @@ func clipboardScenario() string {
 }
 
 // TestClipboardRoundTrip checks that non-ASCII text survives Copy then Paste
-// through the native GTK clipboard, on and off the UI thread.
+// through the native clipboard, on and off the UI thread.
 func TestClipboardRoundTrip(t *testing.T) {
 	got, _ := resClipboard.Load().(string)
 	requireGUI(t, got)

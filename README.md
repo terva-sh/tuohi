@@ -213,12 +213,13 @@ any entry that points at the same executable. The exception is a bundled
 its own login item, named by its bundle identifier, so `id` and the
 arguments to `Enable` are not used there.
 
-**Clipboard.** On Linux, FreeBSD and NetBSD, `clipboard.Copy` and
-`clipboard.Paste` call the GTK that tuohi's window loaded, so no `xclip`,
-`xsel` or `wl-copy` is needed. They work once a tuohi `App` has shown its
-first window, and until then return `clipboard.ErrNoApp`. On Wayland, and
-on X11 without a clipboard manager, copied text lasts only as long as the
-process. macOS and Windows still use github.com/atotto/clipboard for now.
+**Clipboard.** `clipboard.Copy` and `clipboard.Paste` call the toolkit
+tuohi's window loaded: GTK on Linux, FreeBSD and NetBSD, so no `xclip`,
+`xsel` or `wl-copy` is needed, and `NSPasteboard` on macOS. They work once a
+tuohi `App` has shown its first window, and until then return
+`clipboard.ErrNoApp`. On Wayland, and on X11 without a clipboard manager,
+copied text lasts only as long as the process. Windows still uses
+github.com/atotto/clipboard for now.
 
 **Tray.** `App.Start` runs on the UI thread when `Wait` starts, before its
 loop dispatches any event, which is where `tray.Set` must be called. An
