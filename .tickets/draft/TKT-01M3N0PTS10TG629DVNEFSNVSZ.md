@@ -20,12 +20,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:03:32Z
-updated_at: 2026-09-28T22:03:32Z
+updated_at: 2026-09-29T21:06:01Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-72958710
+  id: agent:claude-code/fe5548cb
   name: ""
 extensions: {}
 ---
@@ -50,3 +50,23 @@ Found by reading, during the inventory for TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make 
 
 - [ ] Whether a Destroy-driven close reaches appWindowClosed on macOS is established by a scenario
 - [ ] App.Wait with Exit set returns after the last window is closed from Go
+
+## Notes
+
+**agent:claude-code/fe5548cb** at 2026-09-29T21:06:01Z
+
+### Reproduced: a Close from Go never ends App.Wait
+
+git-ticket-canvas checked this from its desktop window, and from a standalone probe. With `App{Exit: true}` and one framed `View`, a `View.Close` called from a goroutine after `Ready` takes the window off the screen and returns at once. `App.Wait` does not return. The probe's watchdog calls `App.Quit` at 8 s, and only then does `Wait` return, with nil.
+
+Reproduces at `v0.1.0-alpha.1`, at `865f6be`, at `e705b5c` on fix/view-threading, and at `5a23702` on main after PR #24. The threading change does not affect it.
+
+Closing the window with its close button does end `Wait`. That path goes through `onWindowWillClose`, which calls `appWindowClosed()`.
+
+### Where it goes wrong
+
+`destroyOnUI` (lib_darwin.go) clears the window's delegate before sending `close`, so `onWindowWillClose` never runs, and that is the only caller of `appWindowClosed()`. The `onWindowDestroyed(true)` that follows does not make up for it, because it skips the Terminate that the last window closing would otherwise trigger.
+
+### How the consumer works around it
+
+git-ticket-canvas's macOS GUI scenarios close with `App.Quit` instead of `View.Close` (cmd/git-ticket-canvas-desktop/window_gui_darwin_test.go). Its Linux scenarios keep `View.Close`, which works there.
