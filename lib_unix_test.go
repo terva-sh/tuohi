@@ -411,3 +411,44 @@ func enableFakeCapture(e engine) {
 	}
 	webkitSettingsSetEnableMockCaptureDevices(webkitWebViewGetSettings(e.(*webview).webview), true)
 }
+
+var (
+	xOpenDisplay         func(name uintptr) uintptr
+	xFlush               func(display uintptr) int32
+	xTestFakeMotionEvent func(display uintptr, screen, x, y int32, delay uint64) int32
+	xTestFakeButtonEvent func(display uintptr, button uint32, press bool, delay uint64) int32
+)
+
+// realClick clicks the view's page through XTest, which the page sees as a
+// user gesture, and reports whether it could. It clicks at (100, 100) on the
+// screen: under xvfb there is no window manager, so the window sits at the
+// origin, and the page covers itself with a layer that takes the click.
+// Without X11 or libXtst it cannot click, and the scenario records that.
+func realClick(v *View) bool {
+	if xOpenDisplay == nil {
+		x11, err := openFirst("libX11.so.6")
+		if err != nil {
+			return false
+		}
+		xtst, err := openFirst("libXtst.so.6")
+		if err != nil {
+			return false
+		}
+		pure.RegisterLibFunc(&xOpenDisplay, x11, "XOpenDisplay")
+		pure.RegisterLibFunc(&xFlush, x11, "XFlush")
+		pure.RegisterLibFunc(&xTestFakeMotionEvent, xtst, "XTestFakeMotionEvent")
+		pure.RegisterLibFunc(&xTestFakeButtonEvent, xtst, "XTestFakeButtonEvent")
+	}
+	d := xOpenDisplay(0)
+	if d == 0 {
+		return false
+	}
+	var x, y int32 = 100, 100
+	_ = ui.call(v.w.Raise)
+	time.Sleep(200 * time.Millisecond)
+	xTestFakeMotionEvent(d, -1, x, y, 0)
+	xTestFakeButtonEvent(d, 1, true, 0)
+	xTestFakeButtonEvent(d, 1, false, 0)
+	xFlush(d)
+	return true
+}

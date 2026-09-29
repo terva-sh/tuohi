@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"os"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1978,16 +1977,18 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	// default). Media streams are native-OFF in WebKitGTK and turned on, so
 	// navigator.mediaDevices exists as it does on the other engines; each
 	// capture is then decided by permissionRequest. Script access to the
-	// clipboard without a user gesture, copy and paste alike, stays off
-	// unless the view lists PermissionClipboard: with it on, any page can
-	// read the clipboard. Copying on a click works either way. The
-	// debug-driven pair - the dev-tools
+	// clipboard without a user gesture, copy and paste alike, stays off in
+	// every view: the setting covers the whole view, frames on any origin
+	// included, and with it on any of them can read the clipboard. A page
+	// the view grants PermissionClipboard reads it per request instead
+	// (navigator.clipboard, on a user gesture), and copying on a click works
+	// either way. The debug-driven pair - the dev-tools
 	// switch and console forwarding - tracks the view's resolved Debug flag
 	// (View.Debug OR App.Debug / APPKIT_DEBUG). Every other WebKitSettings
 	// property keeps the loaded library's own compiled-in defaults.
 	st := webkitWebViewGetSettings(w.webview)
 	webkitSettingsSetEnableMediaStream(st, true)
-	webkitSettingsSetJavascriptCanAccessClipboard(st, slices.Contains(v.Permissions, PermissionClipboard))
+	webkitSettingsSetJavascriptCanAccessClipboard(st, false)
 	webkitSettingsSetEnableJavascript(st, true)
 	webkitSettingsSetEnableWriteConsoleToStdout(st, v.Debug)
 	webkitSettingsSetEnableDeveloperExtras(st, v.Debug)

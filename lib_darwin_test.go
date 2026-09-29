@@ -771,3 +771,7 @@ func pageURL(e engine) string {
 // enableFakeCapture does nothing on macOS, where the permissions test only
 // checks denials (see TestPermissions).
 func enableFakeCapture(engine) {}
+
+// realClick makes no click on macOS, where a clipboard read shows the system's
+// Paste button whatever the view lists (see TestPermissions).
+func realClick(*View) bool { return false }

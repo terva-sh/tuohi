@@ -412,11 +412,14 @@ Everything else is denied, and no engine shows a prompt of its own.
   for the top-level page. It denies geolocation, notifications, DRM key
   systems, and storage access, and leaves pointer lock to WebKit.
   `javascript_can_access_clipboard`, which tuohi used to turn on for every
-  view, is on only when the view lists the clipboard. Measured on both
-  stacks, with the setting on any page could `execCommand('paste')` with no
-  user gesture and read the system clipboard. A copy made on a real click
-  works with the setting off. WebKitGTK names no frame, so a frame the
-  trusted page delegates a feature to with `allow=` shares the page's grant.
+  view, is now off in every view. Measured on both stacks, with the setting
+  on any page could `execCommand('paste')` with no user gesture and read the
+  system clipboard, and the setting covers the whole view, so a frame on any
+  origin could too. A granted page reads the clipboard per request instead:
+  `navigator.clipboard.readText()` on a real click raises a clipboard
+  permission request, which the handler decides. A copy made on a click
+  works either way. WebKitGTK names no frame, so a frame the trusted page
+  delegates a feature to with `allow=` shares the page's grant.
 - **Windows.** A `PermissionRequested` handler decides the microphone, the
   camera, and clipboard reads for the origin asking (a frame's own), and
   denies every other kind.

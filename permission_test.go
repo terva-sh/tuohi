@@ -111,6 +111,15 @@ window.addEventListener('load', async function() {
     setTimeout(function() { resolve('frame=timeout'); }, 10000);
   });
   out.push(frame);
+  // A layer over the whole page for realClick: a clipboard read on a user
+  // gesture, which is the only kind WebKitGTK raises a request for.
+  var layer = document.createElement('div');
+  layer.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:9999';
+  layer.addEventListener('click', function() {
+    navigator.clipboard.readText().then(function() { window.clicked('clickread=ok'); },
+      function(e) { window.clicked('clickread=' + (e.name === 'NotAllowedError' ? 'denied' : e.name)); });
+  });
+  document.body.appendChild(layer);
   window.done(out.join(' '));
 });
 </script></body></html>`
@@ -143,13 +152,25 @@ window.addEventListener('load', async function() {
 	defer w.Close()
 	enableFakeCapture(w.w)
 	res := make(chan string, 1)
+	clicks := make(chan string, 1)
 	_ = w.w.Bind("done", func(s string) { res <- s })
+	_ = w.w.Bind("clicked", func(s string) { clicks <- s })
 	time.AfterFunc(45*time.Second, func() { w.Close() })
 	result := make(chan string, 1)
 	go func() {
 		defer w.Close()
 		select {
 		case r := <-res:
+			// A real click where the platform can make one.
+			click := "clickread=none"
+			if realClick(w) {
+				select {
+				case click = <-clicks:
+				case <-time.After(10 * time.Second):
+					click = "clickread=timeout"
+				}
+			}
+			r += " " + click
 			askedMu.Lock()
 			sort.Strings(asked)
 			r += " asked=" + strings.Join(asked, ",")
@@ -188,18 +209,20 @@ func TestPermissions(t *testing.T) {
 		// before it asks, and tuohi cannot give WebView2 fake ones (it loads
 		// the runtime without the loader that reads browser arguments). The
 		// clipboard read and the notification reach the handler.
-		want = "none: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError asked=clipboard:no; " +
-			"camera: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError asked=clipboard:no; " +
-			"clipboard: video=NotFoundError audio=NotFoundError paste=false read=ok notify=denied frame=NotFoundError asked=clipboard:yes"
+		want = "none: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError clickread=none asked=clipboard:no; " +
+			"camera: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError clickread=none asked=clipboard:no; " +
+			"clipboard: video=NotFoundError audio=NotFoundError paste=false read=ok notify=denied frame=NotFoundError clickread=none asked=clipboard:yes"
 	case "darwin":
 		// With no camera on the runner, WebKit rejects video before it asks;
 		// the microphone request reaches the delegate and is denied.
-		want = "none: video=OverconstrainedError audio=denied paste=false read=denied notify=denied frame=OverconstrainedError asked=microphone:no"
+		want = "none: video=OverconstrainedError audio=denied paste=false read=denied notify=denied frame=OverconstrainedError clickread=none asked=microphone:no"
 		got, _, _ = strings.Cut(got, ";")
 	default:
-		want = "none: video=denied audio=denied paste=false read=denied notify=denied frame=denied asked=camera:no,camera:no,microphone:no; " +
-			"camera: video=ok audio=denied paste=false read=denied notify=denied frame=ok asked=camera:yes,camera:yes,microphone:no; " +
-			"clipboard: video=denied audio=denied paste=true read=denied notify=denied frame=denied asked=camera:no,camera:no,microphone:no"
+		// No script paste in any view: the clipboard is read per request,
+		// on the real click, where the clipboard view is granted.
+		want = "none: video=denied audio=denied paste=false read=denied notify=denied frame=denied clickread=denied asked=camera:no,camera:no,clipboard:no,microphone:no; " +
+			"camera: video=ok audio=denied paste=false read=denied notify=denied frame=ok clickread=denied asked=camera:yes,camera:yes,clipboard:no,microphone:no; " +
+			"clipboard: video=denied audio=denied paste=false read=denied notify=denied frame=denied clickread=ok asked=camera:no,camera:no,clipboard:yes,microphone:no"
 	}
 	if got != want {
 		t.Fatalf("permissions:\n got %s\nwant %s", got, want)

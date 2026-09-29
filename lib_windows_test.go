@@ -468,3 +468,7 @@ func pageURL(e engine) string {
 // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so there is no way to give it fake
 // devices (see TestPermissions).
 func enableFakeCapture(engine) {}
+
+// realClick makes no click on Windows, where a clipboard read needs none (see
+// TestPermissions).
+func realClick(*View) bool { return false }
