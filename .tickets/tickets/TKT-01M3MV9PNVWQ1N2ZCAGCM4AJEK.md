@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T02:56:46Z
+updated_at: 2026-09-29T03:01:33Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -190,5 +190,16 @@ Both round-2 findings were reported resolved. GitHub run 36514519417 on de49c72 
 
    `TestOutsideLinksScript` gains four cases: `method="bogus"`, which is handed over, a GET form with a POST submitter, which is not, a POST form with a GET submitter, which is, and an uncancelable submit. With the raw-attribute check, the invalid-method case fails.
 2. **Medium: do not hand off a click that cannot be cancelled.** Fixed. The click and submit listeners return when `!e.cancelable`, as the `navigate` listener already did. With the checks removed, the new uncancelable click and submit cases both fail.
+
+Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T03:01:33Z
+
+### Review disposition for PR #26, round 4 (terva-review run on 93fb225)
+
+Both round-3 findings were reported resolved. GitHub run 36514939276 on 93fb225 passed every job.
+
+1. **Medium: resolve relative SVG links against the document base URL.** Fixed. `outside()` resolves against `document.baseURI`, and falls back to the page URL. The script now reads the document the way a browser does, where a `<base>` element can move relative URLs off the page's origin. `TestOutsideLinksScript` gains a relative SVG link under an outside base. With the page-URL base, it fails.
+2. **Medium: do not hand off image-submit forms with changed coordinates.** Fixed. A submit whose submitter is `<input type=image>` is left to the engine's policy, because the click coordinates cannot be reproduced from `FormData`. `TestOutsideLinksScript` gains the case. Without the check, it is handed over.
 
 Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
