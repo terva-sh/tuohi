@@ -17,6 +17,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/terva-sh/tuohi/internal/desktopentry"
 )
 
 // setAppIcon installs the application icon (App.Icon, PNG bytes) when the
@@ -36,12 +38,13 @@ import (
 // has no per-window icon protocol, so the taskbar/switcher icon comes from
 // the .desktop entry the compositor matches to the window's app_id: GTK
 // 4.20+ can push pixels through the xdg-toplevel-icon protocol (GTK4 path),
-// but GTK3 cannot, so on a Wayland session the GTK3 path additionally
-// installs a per-user .desktop entry and a themed icon keyed to the app's
-// name (installWaylandIdentity) and advertises the matching program name -
-// that is the only channel a GTK3 window has on Wayland. Failure at any step
-// is reported but never fatal (App.start ignores the error).
-func setAppIcon(pngData []byte, name string) error {
+// but GTK3 cannot, so on a Wayland session, when the app asks with
+// App.DesktopEntry, the GTK3 path additionally installs a per-user .desktop
+// entry and a themed icon keyed to the app's name (installWaylandIdentity)
+// and advertises the matching program name - that is the only channel a GTK3
+// window has on Wayland. Failure at any step is reported but never fatal
+// (App.start ignores the error).
+func setAppIcon(pngData []byte, name string, desktopEntry bool) error {
 	if len(pngData) == 0 {
 		return errors.New("appkit: the application icon is empty")
 	}
@@ -63,15 +66,23 @@ func setAppIcon(pngData []byte, name string) error {
 	// app_id resolves to that entry. g_set_prgname must run before gtk_init
 	// (the app_id is captured when the first window's surface is created) -
 	// gtk_init happens later, in windowInit/newView.
-	if os.Getenv("WAYLAND_DISPLAY") != "" {
-		if id := installWaylandIdentity(name, img); id != "" && gSetPrgname != nil {
-			gSetPrgname(id)
-		}
+	if id := waylandIdentity(desktopEntry, name, img); id != "" && gSetPrgname != nil {
+		gSetPrgname(id)
 	}
 	return gtk3InstallAppIcon(img.Pix, b.Dx(), b.Dy())
 }
 
 // --- Wayland application identity (GTK3) -----------------------------------
+
+// waylandIdentity installs the GTK3 Wayland identity when the app asked for
+// it with App.DesktopEntry and the session is Wayland, and returns its
+// desktop id; otherwise it writes nothing and returns "".
+func waylandIdentity(desktopEntry bool, name string, img *image.NRGBA) string {
+	if !desktopEntry || os.Getenv("WAYLAND_DISPLAY") == "" {
+		return ""
+	}
+	return installWaylandIdentity(name, img)
+}
 
 // installWaylandIdentity gives the compositor a desktop entry to derive the
 // application icon from. It writes a per-user .desktop file and a themed PNG
@@ -106,6 +117,14 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	if len(sizes) == 0 {
 		return ""
 	}
+	// An entry of this name that tuohi did not write belongs to someone else,
+	// such as a package that installs the application properly. Leave it and
+	// its icon alone: advertising the id is enough for the compositor to use
+	// it.
+	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
+	if old, err := os.ReadFile(desktopPath); err == nil && !bytes.Contains(old, []byte(generatedKey)) {
+		return id
+	}
 	// Drop copies an older install left in hicolor size directories outside
 	// the target set (e.g. the old 256px demo glyph): loaders pick the closest
 	// available size, so a stale copy would keep shadowing the new icon.
@@ -138,13 +157,13 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	// Exec pointing at the current binary is a best-effort convenience.
 	desktop := "[Desktop Entry]\n" +
 		"Type=Application\n" +
-		"Name=" + strings.ReplaceAll(displayName, "\n", " ") + "\n" +
+		"Name=" + desktopentry.String(strings.ReplaceAll(displayName, "\n", " ")) + "\n" +
 		"Icon=" + id + "\n" +
-		"Exec=" + desktopQuote(exe) + "\n" +
+		"Exec=" + desktopentry.Exec(exe) + "\n" +
 		"Terminal=false\n" +
 		"Hidden=true\n" +
-		"NoDisplay=true\n"
-	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
+		"NoDisplay=true\n" +
+		generatedKey + "\n"
 	wroteDesktop, err := writeFileIfChanged(desktopPath, []byte(desktop))
 	if err != nil {
 		return ""
@@ -171,10 +190,13 @@ func refreshDesktopDatabase() {
 		if err != nil {
 			continue
 		}
-		// Run detached: the app must not block on (or fail because of) the
-		// desktop's cache rebuild.
+		// Run in the background: the app must not block on (or fail because
+		// of) the desktop's cache rebuild. Wait reaps it when it exits, so it
+		// does not linger as a zombie until the app does.
 		cmd := exec.Command(bin, "--noincremental")
-		_ = cmd.Start()
+		if cmd.Start() == nil {
+			go func() { _ = cmd.Wait() }()
+		}
 		return
 	}
 }
@@ -296,19 +318,9 @@ func removeOtherIconSizes(dataHome, id string, sizes []int) {
 	}
 }
 
-// desktopQuote quotes a value for a .desktop Exec key when it contains
-// whitespace or quotes (the desktop-entry Exec quoting rules).
-func desktopQuote(s string) string {
-	if s == "" {
-		return `""`
-	}
-	for _, r := range s {
-		if r <= ' ' || r == '"' || r == '\'' || r == '\\' {
-			return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
-		}
-	}
-	return s
-}
+// generatedKey marks a desktop entry installWaylandIdentity wrote, so a later
+// start rewrites it and never touches an entry without it.
+const generatedKey = "X-Tuohi-Generated=true"
 
 func openURL(rawurl string) error {
 	return runXdgOpen(rawurl)
