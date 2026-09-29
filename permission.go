@@ -44,6 +44,25 @@ func (p Permission) String() string {
 	return "permission(" + strconv.Itoa(int(p)) + ")"
 }
 
+// originURL writes a security origin's parts as a URL whose origin is that
+// one, for originOf: scheme://host, with the port when it is not 0 (0 means
+// the scheme's default). An IPv6 host is bracketed, whether or not the engine
+// gave it with brackets. An empty scheme gives "".
+func originURL(scheme, host string, port int) string {
+	if scheme == "" {
+		return ""
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	u := scheme + "://" + host
+	if port != 0 {
+		u += ":" + strconv.Itoa(port)
+	}
+	return u + "/"
+}
+
 // permissionDecided, when set, is told of every decision permits makes. Only
 // tests set it, before any view exists.
 var permissionDecided func(requester string, perms []Permission, granted bool)

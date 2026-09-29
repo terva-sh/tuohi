@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -543,22 +542,13 @@ func requestMediaCapturePermission(self objc.ID, _cmd objc.SEL, webView, origin,
 }
 
 // securityOriginURL writes a WKSecurityOrigin as a URL whose origin is that
-// one, for originOf: scheme://host, with the port when it is not 0 (0 means
-// the scheme's default). A nil origin gives "".
+// one (see originURL). A nil origin gives "".
 func securityOriginURL(origin objc.ID) string {
 	if origin == 0 {
 		return ""
 	}
-	scheme := cstr(origin.Send(sel("protocol")).Send(sel("UTF8String")))
-	host := cstr(origin.Send(sel("host")).Send(sel("UTF8String")))
-	if scheme == "" {
-		return ""
-	}
-	u := scheme + "://" + host
-	if port := int(origin.Send(sel("port"))); port != 0 {
-		u += ":" + strconv.Itoa(port)
-	}
-	return u + "/"
+	return originURL(cstr(origin.Send(sel("protocol")).Send(sel("UTF8String"))),
+		cstr(origin.Send(sel("host")).Send(sel("UTF8String"))), int(origin.Send(sel("port"))))
 }
 
 // decidePolicyForNavigationAction implements WKNavigationDelegate's

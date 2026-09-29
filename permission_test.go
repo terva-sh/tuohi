@@ -50,6 +50,37 @@ func TestPermits(t *testing.T) {
 	}
 }
 
+// TestOriginURL checks that a security origin's parts, as WKWebView gives
+// them, make a URL whose origin is the trusted one, IPv6 hosts included.
+func TestOriginURL(t *testing.T) {
+	c := &viewCore{
+		origins:     map[string]bool{"http://[::1]:8080": true, "http://127.0.0.1:8080": true, "https://example.com": true},
+		permissions: permissionSet([]Permission{PermissionCamera}),
+	}
+	cases := []struct {
+		scheme, host string
+		port         int
+		want         string
+		trusted      bool
+	}{
+		{"http", "127.0.0.1", 8080, "http://127.0.0.1:8080/", true},
+		{"http", "::1", 8080, "http://[::1]:8080/", true},
+		{"http", "[::1]", 8080, "http://[::1]:8080/", true},
+		{"https", "example.com", 0, "https://example.com/", true},
+		{"http", "::1", 9090, "http://[::1]:9090/", false},
+		{"", "example.com", 0, "", false},
+	}
+	for _, tc := range cases {
+		got := originURL(tc.scheme, tc.host, tc.port)
+		if got != tc.want {
+			t.Errorf("originURL(%q, %q, %d) = %q, want %q", tc.scheme, tc.host, tc.port, got, tc.want)
+		}
+		if trusted := c.permits(got, PermissionCamera); trusted != tc.trusted {
+			t.Errorf("permits(%q) = %v, want %v", got, trusted, tc.trusted)
+		}
+	}
+}
+
 var resPermissions atomic.Value // string
 
 // permissionsScenario shows a trusted page three times: in a view that lists
