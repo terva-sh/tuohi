@@ -271,8 +271,7 @@ type App struct {
 	//	app.Start = func() error { return tray.Set(cfg) }
 	//
 	// and tear it down after Wait returns (tray.Remove). An error from
-	// Start ends Wait, which returns it. An application that runs its window
-	// with View.Run instead of Wait never runs Start.
+	// Start ends Wait, which returns it.
 	//
 	// Like every App field it is committed when the app scope opens (later
 	// edits have no effect).
