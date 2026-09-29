@@ -1,4 +1,4 @@
-.PHONY: all build vet test test-short cover lint lint-bsd fmt tidy check-imports cross cross-bsd js-check demo
+.PHONY: all build vet test test-short cover lint lint-bsd fmt tidy check-imports cross cross-bsd js-check demo xdemo clean
 
 # Default target: runs the CI checks for the library.
 all: build vet test check-imports cross js-check
@@ -9,28 +9,28 @@ build:
 vet:
 	go vet ./...
 
-
-build:
+# xdemo cross-builds the demo for every build target into ./build.
+xdemo:
 	mkdir -p ./build && rm -f ./build/*
-	GOOS=windows GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_windows_amd64.exe ./demo/
-	GOOS=windows GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_windows_arm64.exe ./demo/
-	GOOS=windows GOARCH=386         go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_windows_386.exe ./demo/
-	GOOS=darwin  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_darwin_amd64 ./demo/
-	GOOS=darwin  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_darwin_arm64 ./demo/
-	GOOS=linux   GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_amd64 ./demo/
-	GOOS=linux   GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_arm64 ./demo/
-	GOOS=linux   GOARCH=386         go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_386 ./demo/
-	GOOS=linux   GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_armv7 ./demo/
-	GOOS=linux   GOARCH=arm GOARM=6 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_armv6 ./demo/
-	GOOS=linux   GOARCH=arm GOARM=5 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_armv5 ./demo/
-	GOOS=linux   GOARCH=loong64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_loong64 ./demo/
-	GOOS=linux   GOARCH=ppc64le     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_ppc64le ./demo/
-	GOOS=linux   GOARCH=riscv64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_riscv64 ./demo/
-	GOOS=linux   GOARCH=s390x       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_linux_s390x ./demo/
-	GOOS=freebsd GOARCH=amd64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_freebsd_amd64 ./demo/
-	GOOS=freebsd GOARCH=arm64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_freebsd_arm64 ./demo/
-	GOOS=netbsd  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_netbsd_amd64 ./demo/
-	GOOS=netbsd  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/appkit_netbsd_arm64 ./demo/
+	GOOS=windows GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_windows_amd64.exe ./demo/
+	GOOS=windows GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_windows_arm64.exe ./demo/
+	GOOS=windows GOARCH=386         go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_windows_386.exe ./demo/
+	GOOS=darwin  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_darwin_amd64 ./demo/
+	GOOS=darwin  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_darwin_arm64 ./demo/
+	GOOS=linux   GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_amd64 ./demo/
+	GOOS=linux   GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_arm64 ./demo/
+	GOOS=linux   GOARCH=386         go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_386 ./demo/
+	GOOS=linux   GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_armv7 ./demo/
+	GOOS=linux   GOARCH=arm GOARM=6 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_armv6 ./demo/
+	GOOS=linux   GOARCH=arm GOARM=5 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_armv5 ./demo/
+	GOOS=linux   GOARCH=loong64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_loong64 ./demo/
+	GOOS=linux   GOARCH=ppc64le     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_ppc64le ./demo/
+	GOOS=linux   GOARCH=riscv64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_riscv64 ./demo/
+	GOOS=linux   GOARCH=s390x       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_s390x ./demo/
+	GOOS=freebsd GOARCH=amd64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_freebsd_amd64 ./demo/
+	GOOS=freebsd GOARCH=arm64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_freebsd_arm64 ./demo/
+	GOOS=netbsd  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_netbsd_amd64 ./demo/
+	GOOS=netbsd  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_netbsd_arm64 ./demo/
 
 
 # FreeBSD needs purego's fakecgo compiled with -std when cgo is off: it
@@ -38,7 +38,7 @@ build:
 # refuses. golangci-lint builds through GOFLAGS, so it gets the flag there.
 FAKECGO_STD := -gcflags=github.com/ebitengine/purego/internal/fakecgo=-std
 
-# T5: the per-OS engine files only compile on their native OS, so CI must
+# The per-OS engine files only compile on their native OS, so CI must
 # cross-build the Tier-1 matrix - every OS/arch pair the README ships (the
 # purego bindings and the net/http/crypto-tls-free code cross-compile
 # everywhere) - plus the Tier-2 BSD targets (see cross-bsd). linux/amd64 is
@@ -55,7 +55,7 @@ cross-bsd:
 	CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 go build $(FAKECGO_STD) ./...
 	CGO_ENABLED=0 GOOS=netbsd GOARCH=amd64 go build ./...
 
-# RD2: the injected JS (bridge, events, bind script) lives inside Go raw
+# The injected JS (bridge, events, bind script) lives inside Go raw
 # strings, where a syntax error is only caught by a parser. The behavioral
 # node harnesses skip when node is absent, so this target makes the PARSE
 # check mandatory: it fails when node is missing, and otherwise runs the
@@ -64,13 +64,12 @@ js-check:
 	@command -v node >/dev/null 2>&1 || { echo "js-check: node is required (the injected JS is parsed and behavior-tested with it)"; exit 1; }
 	go test -run 'Script|Bridge' -count=1 .
 
-# check-imports ensures the module does not import net/http or crypto/tls. The
-# appkit module must remain independent of the stdlib HTTP/TLS stack - its
-# in-package loopback server (macOS/Linux always, Windows under App.HTTP)
-# and the custom-scheme serving are built on the stdlib hand-rolled path -
-# refer to AGENTS.md for details. This scans imports across all packages
-# (including test files, so prose comments mentioning these packages won't
-# falsely trigger it) for the current GOOS.
+# check-imports ensures the module does not import net/http or crypto/tls.
+# tuohi must remain independent of the stdlib HTTP/TLS stack: its per-view
+# loopback server (always on macOS, under App.HTTP on Linux and Windows) and
+# the custom-scheme serving are hand-rolled on package net. This scans the
+# imports of every package, test files included, for the current GOOS, so
+# prose comments mentioning these packages cannot trigger it.
 check-imports:
 	@forbidden="$$(go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./... | sort -u | grep -E '^(net/http|crypto/tls)$$')"; \
 	if [ -n "$$forbidden" ]; then \
