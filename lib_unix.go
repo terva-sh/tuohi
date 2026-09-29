@@ -15,6 +15,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -196,6 +198,8 @@ var (
 	// The navigation policy (see decidePolicy).
 	webkitNavigationPolicyDecisionGetNavigationAction func(decision uintptr) uintptr
 	webkitNavigationActionGetRequest                  func(action uintptr) uintptr
+	webkitNetworkErrorQuark                           func() uint32
+	webkitPolicyErrorQuark                            func() uint32
 	webkitResponsePolicyDecisionGetRequest            func(decision uintptr) uintptr
 	webkitResponsePolicyDecisionIsMainFrameMainRes    func(decision uintptr) bool
 	webkitURIRequestGetURI                            func(request uintptr) uintptr
@@ -222,6 +226,7 @@ var (
 	messageHandlerFn uintptr
 	windowDestroyFn  uintptr
 	loadChangedFn    uintptr
+	loadFailedFn     uintptr
 	decidePolicyFn   uintptr
 
 	// Library handles kept after ensureInit so other files (e.g. the file
@@ -537,6 +542,8 @@ func ensureInit() error {
 		pure.RegisterLibFunc(&webkitUserScriptUnref, webkit, "webkit_user_script_unref")
 		pure.RegisterLibFunc(&webkitNavigationPolicyDecisionGetNavigationAction, webkit, "webkit_navigation_policy_decision_get_navigation_action")
 		pure.RegisterLibFunc(&webkitNavigationActionGetRequest, webkit, "webkit_navigation_action_get_request")
+		pure.RegisterLibFunc(&webkitNetworkErrorQuark, webkit, "webkit_network_error_quark")
+		pure.RegisterLibFunc(&webkitPolicyErrorQuark, webkit, "webkit_policy_error_quark")
 		pure.RegisterLibFunc(&webkitResponsePolicyDecisionGetRequest, webkit, "webkit_response_policy_decision_get_request")
 		pure.RegisterLibFunc(&webkitResponsePolicyDecisionIsMainFrameMainRes, webkit, "webkit_response_policy_decision_is_main_frame_main_resource")
 		pure.RegisterLibFunc(&webkitURIRequestGetURI, webkit, "webkit_uri_request_get_uri")
@@ -603,6 +610,13 @@ func ensureInit() error {
 				}
 			}
 			return 0
+		})
+		loadFailedFn = pure.NewCallback(func(_, loadEvent, failingURI, gerror, userData uintptr) uintptr {
+			w := lookupEngine(userData)
+			if w == nil || !w.loadFailed(int32(loadEvent), cstr(failingURI), gerror) {
+				return 0 // WebKit's error page
+			}
+			return 1
 		})
 		decidePolicyFn = pure.NewCallback(func(_, decision, decisionType, userData uintptr) uintptr {
 			w := lookupEngine(userData)
@@ -917,6 +931,7 @@ func (w *webview) windowInit(window uintptr) error {
 	// marks the "page fully loaded" moment View.Ready waits for.
 	gSignalConnectData(w.webview, "load-changed", loadChangedFn, w.id, 0, 0)
 	gSignalConnectData(w.webview, "decide-policy", decidePolicyFn, w.id, 0, 0)
+	gSignalConnectData(w.webview, "load-failed", loadFailedFn, w.id, 0, 0)
 
 	gSignalConnectData(w.manager, "script-message-received::__webview__",
 		messageHandlerFn, w.id, 0, 0)
@@ -1379,6 +1394,44 @@ func (w *webview) decidePolicy(decision uintptr, decisionType int) bool {
 	return true
 }
 
+// WebKit load-failed details: WEBKIT_LOAD_STARTED is the load event a
+// provisional load fails in, and WEBKIT_NETWORK_ERROR_CANCELLED is a load
+// stopped on purpose.
+const (
+	loadEventStarted      = 0
+	networkErrorCancelled = 302
+)
+
+// loadFailed handles a main-frame load that failed before its page
+// committed, and reports whether it did; when it did not, WebKit shows its
+// error page. A page on an origin the view does not trust, which the policy
+// hands to the system, is handed over here too: a link to a host that does
+// not resolve fails before any response, so decidePolicy never judged it,
+// and would otherwise do nothing. A failure the policy caused (an ignored
+// decision) and a cancelled load are left alone, as is a trusted page.
+func (w *webview) loadFailed(loadEvent int32, uri string, gerror uintptr) bool {
+	if loadEvent != loadEventStarted || gerror == 0 {
+		return false
+	}
+	// GError: GQuark domain (guint32), gint code, gchar *message.
+	e := *(*unsafe.Pointer)(unsafe.Pointer(&gerror))
+	domain, code := *(*uint32)(e), *(*int32)(unsafe.Add(e, 4))
+	if domain == webkitPolicyErrorQuark() ||
+		(domain == webkitNetworkErrorQuark() && code == networkErrorCancelled) {
+		return false
+	}
+	u, err := url.Parse(uri)
+	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) {
+		return false
+	}
+	action := w.navigationPolicy(uri)
+	if action != navExternal {
+		return false
+	}
+	refuseNavigation(uri, action)
+	return true
+}
+
 func (w *webview) loadHTML(html string) {
 	w.trust(loadHTMLBase)
 	webkitWebViewLoadHTML(w.webview, html, loadHTMLBase)
@@ -1758,11 +1811,37 @@ func (w *webview) handleInternal(method string, params json.RawMessage) bool {
 		if w.frameless {
 			w.toggleMaximize()
 		}
+	case internalOpenExternal:
+		var args []string
+		if json.Unmarshal(params, &args) == nil && len(args) == 1 {
+			w.openOutside(args[0])
+		}
 	default:
 		return false
 	}
 	return true
 }
+
+// openOutside hands a navigation the page's bridge caught leaving the trusted
+// origins (internalOpenExternal) to the system. The page's word is not taken
+// for it: only an http or https URL the navigation policy would itself hand
+// over is opened.
+func (w *webview) openOutside(rawurl string) {
+	u, err := url.Parse(rawurl)
+	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) {
+		log.Printf("tuohi: outside link %q refused: not an http or https URL", rawurl)
+		return
+	}
+	if action := w.navigationPolicy(rawurl); action == navExternal {
+		refuseNavigation(rawurl, action)
+	}
+}
+
+// interceptOutsideLinks: WebKitGTK judges a top-level page only at its
+// response (see decidePolicy), after the request has gone out, so the bridge
+// hands the navigations a page visibly starts to Go before they are requested
+// (see initOutsideLinks).
+const interceptOutsideLinks = true
 
 // bridgePostFn for the WebKit backends (macOS WKWebView, Linux WebKitGTK): the
 // script message handler registered under the name "__webview__".

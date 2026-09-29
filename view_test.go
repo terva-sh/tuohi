@@ -250,7 +250,7 @@ func TestBridgeScriptsBehavior(t *testing.T) {
 	bindJS := createInitScript(`function(m) {
   assert(m.slice(0, `+strconv.Itoa(bridgeTokenLen)+`) === '`+token+`', 'post carries the token');
   posts.push(JSON.parse(m.slice(`+strconv.Itoa(bridgeTokenLen)+`)));
-}`, token, []string{"http://127.0.0.1:8080"})
+}`, token, []string{"http://127.0.0.1:8080"}, false)
 
 	harness := `
 const posts = [];

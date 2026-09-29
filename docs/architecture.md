@@ -294,11 +294,25 @@ call a view's Go bindings) carries out:
   rule. The decisions behind it, and the alternatives rejected, are in the
   ticket.
   - **WebKitGTK** cannot tell a frame's navigation from the top-level one
-    when it starts. It judges the top-level document at its response,
-    marked as the main frame's main resource. So on Linux the untrusted
-    server has received the request before the view cancels it, although
-    nothing is shown. It judges new windows, and schemes with no response
-    such as `mailto:`, when they start.
+    when it starts: both arrive as navigation actions, and neither names its
+    frame (measured on both stacks, 2.52.6). It judges the top-level document
+    at its response, marked as the main frame's main resource, and judges new
+    windows, and schemes with no response such as `mailto:`, when they start.
+    Two more pieces keep an outside page from being requested first:
+    - The bridge, in a trusted document only, catches a plain link click, a
+      GET form, and the Navigation API's `navigate` event that would leave
+      the trusted origins. It cancels each one and posts
+      `__appkitOpenExternal`, and Go applies the policy again before opening
+      anything (`initOutsideLinks`, `webview.openOutside`). The Navigation
+      API alone was not enough: on the GTK4 stack it does not fire for a
+      link click.
+    - `load-failed` hands over an untrusted http(s) page whose load failed
+      before any response, such as a host that does not resolve, which the
+      response check never sees.
+
+    What the page does not start visibly, a server redirect or a
+    `<meta http-equiv=refresh>` to a reachable host, is still requested
+    before the response hands it over.
   - **WebView2** judges the top-level document in `NavigationStarting`,
     before any request is sent, and marks every `NewWindowRequested`
     handled.

@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T00:01:27Z
+updated_at: 2026-09-29T02:28:19Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -76,6 +76,29 @@ TKT-01M3HWWRT7X1RZZYY6KFEP0ERE (Let only trusted origins call a view's Go bindin
 - [ ] A link to a host that does not resolve still reaches the system browser on every engine
 - [ ] A GUI scenario on each engine covers the unresolvable-host case
 
+## Implementation plan
+
+### Approach (the owner's choice, 2026-09-29: page intercept plus load-failed)
+
+1. **Page intercept** (`initOutsideLinks` in bind_gen.go), appended to the bridge only where `interceptOutsideLinks` is true. That is WebKitGTK only: WebView2 and WKWebView already decide before any request. It runs only in a document the bridge was installed in, a trusted top-level one. It catches three kinds of navigation that would leave the trusted origins, cancels each, and posts `__appkitOpenExternal`:
+   - a plain left click on `a[href]` or `area[href]` that opens in the same window and is not a download;
+   - a GET form submit;
+   - the Navigation API's `navigate` event, for push and replace navigations, not hash changes or form posts.
+
+   Its listeners are on `window` in the bubble phase, so a page that handled the click itself keeps it.
+2. **Go** (`webview.openOutside`) does not take the page's word for the URL. It opens only an http or https URL for which the navigation policy returns `navExternal`.
+3. **`load-failed`** (`webview.loadFailed`) handles a main-frame load that failed before commit, when the URL is untrusted http(s) and the policy hands it to the system. It hands the URL over and suppresses WebKit's error page. It skips policy errors, including the response-time ignore, and cancelled loads.
+4. **Tests:**
+   - `TestOutsideLinksNotRequested`, a GUI scenario shared by all engines, runs four steps: a link, a `location.href` assignment, an unresolvable link, and a trusted URL that redirects to an unresolvable host. The outside server must receive no request.
+   - `TestOutsideLinksScript` runs the intercept's rules in node.
+
+### Alternatives rejected
+
+- **Cancelling every untrusted http(s) navigation action.** It would also cancel, or hand to the browser, cross-origin iframes, and the action cannot tell them apart (see the measurements note).
+- **The Navigation API alone.** On WebKitGTK 6.0 it does not fire for a link click.
+- **Stopping the load at `load-changed` STARTED.** The request is already on its way by then.
+- **Capture-phase listeners.** They would take clicks that a page's own router handles.
+
 ## Notes
 
 **agent:claude-code/t3code-72958710** at 2026-09-29T00:01:27Z
@@ -100,3 +123,22 @@ I ran a throwaway probe, not committed; its source is kept in scratch. A tempora
 1. **Page-side interception in the bridge script,** which runs in the main frame of trusted pages only. A capture-phase `click` listener on `a[href]`, and a `submit` listener, prevent a main-frame navigation to an untrusted http(s) origin and post an internal message asking Go to hand the URL to the browser. The Navigation API's `navigate` event covers scripted navigations where it fires. What stays at the response, as today: server redirects, `<meta http-equiv=refresh>`, and a link click on 6.0 that no listener catches.
 2. **A `load-failed` fallback** for the unresolvable-host criterion. `load-failed` is main-frame only. When the failing URI is untrusted http(s), hand it to the browser and suppress WebKit's error page. This fixes "a link that does nothing" on its own, without closing the request leak.
 3. **Accept the response-time decision** and document that Linux requests an outside page before handing it over. Macs and Windows do not.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:28:19Z
+
+### Evidence (Linux, both stacks)
+
+- **`TestOutsideLinksNotRequested`** passes on both stacks.
+- **Negative controls:**
+  - With `interceptOutsideLinks = false` it reports `requested=2`: the link and the assignment reached the outside server.
+  - With the `load-failed` handler disconnected it reports `deadredirect=none`.
+  - The unresolvable *link* is caught by the page intercept before any request, so it passes either way. The redirect step is the one that needs `load-failed`.
+- **`TestOutsideLinksScript`** covers 19 cases:
+  - handed to Go: an outside link, `target=_top`, a GET form, and `navigate` push and replace;
+  - left alone: trusted links and forms, modifier clicks, middle clicks, `target=_blank`, `download`, links the page already handled, `mailto:`, POST forms, traversals, hash changes, and navigations that cannot be cancelled.
+
+  With the modifier and already-handled checks removed from the script, it fails on exactly those two cases.
+- **`TestBridgeGate`** runs the platform's real bridge in node, whose stub window has no `addEventListener`. The intercept now returns early in that case.
+- **`just ci`**, **`just test-gui`** on both stacks, and **golangci-lint** on three GOOS all pass.
+
+Not verified here: the new scenario on macOS and Windows. They should hand everything over natively, before any request. Whether WKWebView sees a server redirect that fails before any response is the open question, and GitHub CI will answer it.

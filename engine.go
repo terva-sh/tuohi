@@ -192,7 +192,7 @@ func (c *viewCore) bridgeScriptLocked(postFn string) string {
 		origins = append(origins, o)
 	}
 	sort.Strings(origins)
-	return createInitScript(postFn, c.token, origins)
+	return createInitScript(postFn, c.token, origins, interceptOutsideLinks)
 }
 
 // checkToken strips the view's bridge token from the front of body and

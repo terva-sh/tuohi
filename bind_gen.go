@@ -366,7 +366,74 @@ const initBridgeTail = `)(token + message);
     return Webview_;
   })();
   window.__webview__ = new Webview();
-})()`
+`
+
+// initOutsideLinks, appended to the bridge on an engine that decides a
+// top-level navigation only at its response (WebKitGTK; see
+// interceptOutsideLinks), hands a navigation that leaves the view's trusted
+// origins to Go before the view requests it. It runs only in a document the
+// bridge was installed in, a trusted top-level one, and covers what a page
+// can be seen starting: a plain click on a link, a GET form, and, where the
+// engine fires it, the Navigation API's navigate event. Each is cancelled and
+// posted as internalOpenExternal; Go applies the navigation policy again
+// before opening anything. A listener runs after the page's own, so a page
+// that handles a click itself keeps it. Anything not caught here, such as a
+// server redirect or a meta refresh, is still decided at its response.
+const initOutsideLinks = `
+  (function() {
+    var bridge = window.__webview__;
+    if (typeof window.addEventListener !== 'function') { return; }
+    function outside(href) {
+      var u;
+      if (typeof href !== 'string') { return ''; }
+      try { u = new URL(href, loc.href); } catch (e) { return ''; }
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') { return ''; }
+      if (Object.prototype.hasOwnProperty.call(trusted, u.protocol + '//' + u.host)) { return ''; }
+      return u.href;
+    }
+    function handOff(href) {
+      bridge.post(JSON.stringify({method: METHOD, params: [href]}));
+    }
+    function sameWindow(target) {
+      target = (target || '').toLowerCase();
+      return !target || target === '_self' || target === '_top' || target === '_parent';
+    }
+    window.addEventListener('click', function(e) {
+      if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) { return; }
+      var a = e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
+      if (!a || a.hasAttribute('download') || !sameWindow(a.getAttribute('target'))) { return; }
+      var href = outside(a.href);
+      if (!href) { return; }
+      e.preventDefault();
+      handOff(href);
+    });
+    window.addEventListener('submit', function(e) {
+      var form = e.target, submitter = e.submitter || null;
+      if (e.defaultPrevented || !form || !form.getAttribute) { return; }
+      var method = (submitter && submitter.getAttribute('formmethod')) || form.getAttribute('method') || 'get';
+      var target = (submitter && submitter.getAttribute('formtarget')) || form.getAttribute('target');
+      if (method.toLowerCase() !== 'get' || !sameWindow(target)) { return; }
+      var href = outside((submitter && submitter.formAction) || form.action);
+      if (!href) { return; }
+      var u = new URL(href), data;
+      try { data = new FormData(form, submitter); } catch (err) { data = new FormData(form); }
+      u.search = new URLSearchParams(data).toString();
+      e.preventDefault();
+      handOff(u.href);
+    });
+    var nav = window.navigation;
+    if (nav && typeof nav.addEventListener === 'function') {
+      nav.addEventListener('navigate', function(e) {
+        if (!e.cancelable || e.hashChange || e.formData || e.downloadRequest != null) { return; }
+        if (e.navigationType !== 'push' && e.navigationType !== 'replace') { return; }
+        var href = outside(e.destination && e.destination.url);
+        if (!href) { return; }
+        e.preventDefault();
+        handOff(href);
+      });
+    }
+  })();
+`
 
 // createInitScript returns the document-start bridge. It exposes
 // window.__webview__ with Promise-based call()/onReply(), the binding
@@ -380,16 +447,20 @@ const initBridgeTail = `)(token + message);
 // The bridge is installed only in a top-level document whose origin is one of
 // origins (see initBridgeGate). post() prefixes token to every message, and
 // the Go side drops any message without it (see webview.onMessage).
-func createInitScript(postFn, token string, origins []string) string {
+func createInitScript(postFn, token string, origins []string, outsideLinks bool) string {
 	trusted := make(map[string]bool, len(origins))
 	for _, o := range origins {
 		trusted[o] = true
 	}
 	trustedJSON, _ := json.Marshal(trusted) // a map of strings to bools always marshals
-	return "(function() {\n  'use strict';\n" +
+	script := "(function() {\n  'use strict';\n" +
 		"  var token = " + marshalJSON(token) + ";\n" +
 		"  var trusted = " + string(trustedJSON) + ";\n" +
 		initBridgeGate + initBridgeHead + postFn + initBridgeTail
+	if outsideLinks {
+		script += strings.Replace(initOutsideLinks, "METHOD", marshalJSON(internalOpenExternal), 1)
+	}
+	return script + "})()"
 }
 
 // createBindScript returns the document-start script that installs every
