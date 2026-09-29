@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T02:50:41Z
-updated_at: 2026-09-29T04:53:53Z
+updated_at: 2026-09-29T05:00:42Z
 created_by:
   id: agent:claude-code/t3code-83e85fc3
   name: ""
@@ -116,3 +116,22 @@ An untrusted document never holds the key:
   Want: `blank=control call=5 event=after`. With the guard disabled on GTK4, it got `blank=event secret-event,control,reply "secret-result"`.
 
 Checks passed: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T05:00:42Z
+
+### Review disposition for PR #29, round 1 (terva-review run on c9ce209)
+
+GitHub run 36523666803 on c9ce209 passed every job, including `TestRepliesOnlyToTrusted` on macOS and Windows.
+
+1. **Medium: wait for the pending reply before leaving the untrusted page.** Fixed. The blank page no longer relies on a fixed sleep. It leaves for the report page only when both of these hold:
+   - the unguarded control reply has arrived;
+   - the reply and the event have each been tried there.
+
+   Every guarded delivery reads the fake `__key`, and an unguarded one is received, so either counts as tried. After 10 s without both, the page reports `untried` and the step fails.
+
+   Controls on GTK4:
+   - With the guard disabled, the page receives both the reply and the event.
+   - With the guard disabled and the reply held back 1.5 s after release, the page still receives the late reply (`blank=event secret-event,control,reply "secret-result"`). This is the case the 500 ms sleep missed.
+   - With the guard in place and the reply 1.5 s late, the test passes.
+
+Checks after the fix: `just ci` and golangci-lint pass, and the scenario passes on both WebKitGTK stacks.
