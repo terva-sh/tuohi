@@ -334,6 +334,53 @@ func TestWaylandIdentitySystemEntry(t *testing.T) {
 	}
 }
 
+// TestWaylandIdentitySubdirEntry checks that an entry whose desktop id comes
+// from a subdirectory (applications/vendor/app.desktop is vendor-app) counts
+// as the same id, in a system directory and in the user's.
+func TestWaylandIdentitySubdirEntry(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for _, where := range []string{"system", "user"} {
+		data, system := t.TempDir(), t.TempDir()
+		t.Setenv("XDG_DATA_HOME", data)
+		t.Setenv("XDG_DATA_DIRS", system)
+		t.Setenv("PATH", t.TempDir())
+		dir := system
+		if where == "user" {
+			dir = data
+		}
+		entry := filepath.Join(dir, "applications", "vendor", "app.desktop")
+		if err := os.MkdirAll(filepath.Dir(entry), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(entry, []byte("[Desktop Entry]\nType=Application\nName=App\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if id := installWaylandIdentity("Vendor App", img); id != "vendor-app" {
+			t.Fatalf("%s: id %q, want vendor-app", where, id)
+		}
+		want := 0
+		if where == "user" {
+			want = 1 // the foreign entry itself
+		}
+		if n := countFiles(t, data); n != want {
+			t.Fatalf("%s: %d files under XDG_DATA_HOME beside a vendor/app.desktop entry, want %d", where, n, want)
+		}
+	}
+	// A different id in a subdirectory does not count.
+	system := t.TempDir()
+	t.Setenv("XDG_DATA_DIRS", system)
+	other := filepath.Join(system, "applications", "vendor", "other.desktop")
+	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("[Desktop Entry]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if systemEntry("vendor-app") {
+		t.Fatal("vendor/other.desktop taken for vendor-app")
+	}
+}
+
 // TestIsGenerated checks that only the key itself, in the [Desktop Entry]
 // group, marks an entry as tuohi's.
 func TestIsGenerated(t *testing.T) {

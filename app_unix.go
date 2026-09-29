@@ -126,7 +126,7 @@ func installWaylandIdentity(appName string, img *image.NRGBA) string {
 	desktopPath := filepath.Join(dataHome, "applications", id+".desktop")
 	old, err := os.ReadFile(desktopPath)
 	ours := err == nil && isGenerated(old)
-	if err == nil && !ours {
+	if err == nil && !ours || hasEntry(dataHome, id, desktopPath) {
 		return id
 	}
 	if systemEntry(id) {
@@ -276,11 +276,37 @@ func xdgDataDirs() []string {
 // with this id.
 func systemEntry(id string) bool {
 	for _, d := range xdgDataDirs() {
-		if _, err := os.Stat(filepath.Join(d, "applications", id+".desktop")); err == nil {
+		if hasEntry(d, id, "") {
 			return true
 		}
 	}
 	return false
+}
+
+// hasEntry reports whether dataDir's applications tree holds a desktop entry
+// with this id, other than the file at skip. The Desktop Entry Specification
+// forms an id from the file's path below applications, with each separator
+// turned into a hyphen, so applications/foo/bar.desktop has the id foo-bar
+// and shadows or is shadowed like applications/foo-bar.desktop.
+func hasEntry(dataDir, id, skip string) bool {
+	root := filepath.Join(dataDir, "applications")
+	found := false
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || path == skip {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return nil
+		}
+		stem, ok := strings.CutSuffix(filepath.ToSlash(rel), ".desktop")
+		if ok && strings.ReplaceAll(stem, "/", "-") == id {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // encodeAppIconPNG re-encodes the normalized icon as PNG bytes.

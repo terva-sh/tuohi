@@ -551,7 +551,9 @@ headers if it wants cross-origin isolation.
   `App.DesktopEntry`, false by default, TKT-01M3HWWRYD7GNZEZA2JCGWGDJS. An
   entry of that name that tuohi did not write is left alone, whether in
   `~/.local/share` or in a system directory from `XDG_DATA_DIRS`, where a
-  user entry would shadow a package's. tuohi recognises its own entries by
+  user entry would shadow a package's. An entry in a subdirectory counts
+  under the id the spec gives it: `applications/vendor/app.desktop` is
+  `vendor-app`. tuohi recognises its own entries by
   an `X-Tuohi-Generated=true` key in the `[Desktop Entry]` group, not by
   the text appearing anywhere. `kbuildsycoca` is reaped when it exits, and
   the files stay after the app does.
