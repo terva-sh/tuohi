@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T03:47:48Z
+updated_at: 2026-09-29T03:57:06Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -110,3 +110,32 @@ The native route was rejected on cost:
   - A GUI scenario on every engine, which reads the native title back and walks through: the default Name; the page title; the Go title winning; `SetTitle("")` handing back to the page; an untrusted about:blank not renaming the window.
   - A negative control for each.
 - `docs/architecture.md` and the View doc comment.
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T03:57:06Z
+
+### Implementation (feat/view-title)
+
+As planned, with these details settled while building it:
+
+- **Internal message name.** It is `__tuohiPageTitle`, not `__appkit...`. The repository rule is not to add new uses of the inherited appkit name.
+- **The script watches narrowly.** An observer on the whole document subtree, with `characterData`, would make the engine record every DOM change a busy page makes. So after DOMContentLoaded, one observer watches the first HTML `<title>`'s text, and another watches the child lists of the document, its root and its head, finding the title again when it is added, removed or replaced. The cost is that a `<title>` a script adds outside `<head>` after load is not seen until one of those child lists changes.
+- **about:blank.** A trusted document reports `""` at document start, so each trusted page starts from App.Name. An untrusted page, such as about:blank, reports nothing, so the window keeps the last trusted title. That satisfies "cannot rename"; the page title is not cleared at each engine's commit, because that would need a hook on every engine.
+- **Title applied only on change.** `applyTitle` sets the native title only when it changes. An owned window with no App.Name can be set back to `""` after having had a title. A host window is never blanked.
+
+### Tests and controls
+
+- `TestApplyTitle` (headless, stub engine) covers the precedence steps, including a host window and an owned window with no App.Name.
+- `TestPageTitleScript` (Node) is checked by four controls, each of which fails:
+  - removing the "same title" check;
+  - not observing the title text;
+  - not observing head;
+  - adding a whole-subtree observer.
+- `TestWindowTitle` (GUI, every engine) walks through: App.Name before the page; the page title; the page title changed; the Go title; a page change under the Go title (not applied); SetTitle("") handing back to the page; the title removed (App.Name); retitled; and about:blank (keeps "Fourth"). On GTK4 it is checked by three controls, each of which fails at the expected steps:
+  - no page script;
+  - the page winning over Go;
+  - no App.Name default.
+- The untrusted-page guarantee is the bridge gate's, which TestBridgeGate and the origin-gate scenario already cover.
+
+Checks passed: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS.
