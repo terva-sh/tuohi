@@ -47,6 +47,11 @@ func requireGUI(t *testing.T, got string) {
 func TestMain(m *testing.M) {
 	flag.Parse()
 	runtime.LockOSThread()
+	// A fake camera and microphone for the permissions scenario, set before
+	// the first WebView2 environment exists.
+	if os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") == "" {
+		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--use-fake-device-for-media-stream")
+	}
 	repeatStatus := 0
 	if !testing.Short() && guiAvailable() {
 		resWinBridge.Store(winBridgeScenario())
@@ -62,6 +67,7 @@ func TestMain(m *testing.M) {
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
+		resPermissions.Store(permissionsScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
 			repeatStatus = repeatDataURL(n)
 		}
@@ -461,3 +467,7 @@ func windowTitle(e engine) string {
 func pageURL(e engine) string {
 	return e.(*webview).committedURI
 }
+
+// enableFakeCapture does nothing on Windows: TestMain gives every WebView2 a
+// fake camera and microphone through WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS.
+func enableFakeCapture(engine) {}

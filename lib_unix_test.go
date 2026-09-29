@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/terva-sh/tuohi/pure"
 	"os"
 	"os/exec"
 	"runtime"
@@ -110,6 +111,7 @@ func TestMain(m *testing.M) {
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
+		resPermissions.Store(permissionsScenario())
 	}
 	os.Exit(m.Run())
 }
@@ -389,4 +391,23 @@ func windowTitle(e engine) string {
 // pageURL reads the URL of the view's page, on the UI thread.
 func pageURL(e engine) string {
 	return cstr(webkitWebViewGetURI(e.(*webview).webview))
+}
+
+var webkitSettingsSetEnableMockCaptureDevices func(settings uintptr, enabled bool)
+
+// enableFakeCapture gives the view WebKitGTK's mock camera and microphone, so
+// a granted capture succeeds with no hardware.
+func enableFakeCapture(e engine) {
+	if webkitSettingsSetEnableMockCaptureDevices == nil {
+		soname := "libwebkit2gtk-4.1.so.0"
+		if gtk4 {
+			soname = "libwebkitgtk-6.0.so.4"
+		}
+		lib, err := openFirst(soname)
+		if err != nil {
+			return
+		}
+		pure.RegisterLibFunc(&webkitSettingsSetEnableMockCaptureDevices, lib, "webkit_settings_set_enable_mock_capture_devices")
+	}
+	webkitSettingsSetEnableMockCaptureDevices(webkitWebViewGetSettings(e.(*webview).webview), true)
 }

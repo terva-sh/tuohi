@@ -399,25 +399,41 @@ entry.
 
 ## Permissions are denied unless the app grants them
 
-Each engine loosens something different, and none asks the application:
-
-- **Linux** turns on `enable_media_stream` and
-  `javascript_can_access_clipboard` (`lib_unix.go:1775-1776`) and registers no
-  `permission-request` handler.
-- **macOS** grants every camera and microphone request from any origin
-  (`lib_darwin.go:468-472`) and turns `fullScreenEnabled` on against the
-  native default.
-- **Windows** registers no `PermissionRequested` handler, so WebView2 shows
-  its own prompts.
-- **Every platform** turns dev tools on when the environment sets
-  `APPKIT_DEBUG=1` (`app.go:167`), whatever the build.
-
 TKT-01M3HWWRTVWVYSEDPRKSDPE783 (Deny media and clipboard permissions unless the
-app allows them) replaces this with a per-view policy the application sets,
-denying by default, enforced in one handler per engine. The review leans
-against letting an environment variable turn dev tools on in a release build.
-`View.Debug` is the application's decision, and an environment variable is
-whoever launched it.
+app allows them) made permissions a policy the application sets.
+`View.Permissions` lists what a page may use: `PermissionCamera`,
+`PermissionMicrophone`, and `PermissionClipboard`. A permission is granted only
+when it is listed and the page asking is on an origin the view trusts.
+`viewCore.permits` holds that rule, and every engine's handler asks it.
+Everything else is denied, and no engine shows a prompt of its own.
+
+- **Linux.** A `permission-request` handler decides user media (video needs
+  the camera, audio the microphone), device labels, and clipboard requests,
+  for the top-level page. It denies geolocation, notifications, DRM key
+  systems, and storage access, and leaves pointer lock to WebKit.
+  `javascript_can_access_clipboard`, which tuohi used to turn on for every
+  view, is on only when the view lists the clipboard. Measured on both
+  stacks, with the setting on any page could `execCommand('paste')` with no
+  user gesture and read the system clipboard. A copy made on a real click
+  works with the setting off. WebKitGTK names no frame, so a frame the
+  trusted page delegates a feature to with `allow=` shares the page's grant.
+- **Windows.** A `PermissionRequested` handler decides the microphone, the
+  camera, and clipboard reads for the origin asking (a frame's own), and
+  denies every other kind.
+- **macOS.** `requestMediaCapturePermission` decides camera and microphone
+  requests for the frame's security origin, where it used to grant every
+  request. WKWebView has no clipboard permission: a script read always shows
+  the system's Paste button.
+
+Two neighbours of this policy were split out, because the ticket's acceptance
+criteria do not cover them:
+
+- macOS turns `fullScreenEnabled` on against the native default:
+  TKT-01M3NSA8JEDJJEBA47SVA4EZ7T.
+- `APPKIT_DEBUG=1` turns dev tools on in any build:
+  TKT-01M3NSA8HE52CHVQZ2A6T8H5NS. The review leans against letting an
+  environment variable do that. `View.Debug` is the application's decision,
+  and an environment variable is whoever launched it.
 
 ## Serving: the loopback consumer first, `App.FS` kept
 

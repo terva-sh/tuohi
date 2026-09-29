@@ -92,6 +92,8 @@ var (
 	iidNavigationStarting = guid{0x9ADBE429, 0xF36D, 0x432B, [8]byte{0x9D, 0xDC, 0xF8, 0x88, 0x1F, 0xBD, 0x76, 0xE3}}
 	iidNewWindowRequested = guid{0xD4C185FE, 0xC81C, 0x4989, [8]byte{0x97, 0xAF, 0x2D, 0x3F, 0xA7, 0xAB, 0x56, 0x51}}
 	iidContentLoading     = guid{0x364471E7, 0xF2BE, 0x4910, [8]byte{0xBD, 0xBA, 0xD7, 0x20, 0x77, 0xD5, 0x1C, 0x4B}}
+	// ICoreWebView2PermissionRequestedEventHandler
+	iidPermissionRequested = guid{0x15E1C6A3, 0xC72A, 0x4DF3, [8]byte{0x91, 0xD7, 0xD0, 0x97, 0xFB, 0xEC, 0x6B, 0xFD}}
 
 	// The ICoreWebView2Settings extension interfaces. Values come verbatim from
 	// Microsoft's WebView2.idl: the Base settings object implements all of them
@@ -440,6 +442,59 @@ func (i *newWindowRequestedArgs) Handle() {
 	pure.SyscallN(i.vtbl.PutHandled, uintptr(unsafe.Pointer(i)), 1)
 }
 
+// permissionRequestedArgsVtbl mirrors
+// ICoreWebView2PermissionRequestedEventArgs in IDL order: get_Uri,
+// get_PermissionKind, get_IsUserInitiated, get_State, put_State, GetDeferral.
+type permissionRequestedArgsVtbl struct {
+	unknownVtbl
+	GetUri             uintptr
+	GetPermissionKind  uintptr
+	GetIsUserInitiated uintptr
+	GetState           uintptr
+	PutState           uintptr
+	GetDeferral        uintptr
+}
+
+type permissionRequestedArgs struct {
+	vtbl *permissionRequestedArgsVtbl
+}
+
+func asPermissionRequestedArgs(p uintptr) *permissionRequestedArgs {
+	return (*permissionRequestedArgs)(ptr(p))
+}
+
+// COREWEBVIEW2_PERMISSION_KIND values tuohi decides by View.Permissions, and
+// the COREWEBVIEW2_PERMISSION_STATE it answers every request with.
+const (
+	permissionKindMicrophone    = 1
+	permissionKindCamera        = 2
+	permissionKindClipboardRead = 6
+
+	permissionStateAllow = 1
+	permissionStateDeny  = 2
+)
+
+// URI returns the origin of the content asking, a frame's own when a frame
+// asks, or "" when WebView2 cannot say.
+func (i *permissionRequestedArgs) URI() string {
+	return comString(i.vtbl.GetUri, uintptr(unsafe.Pointer(i)))
+}
+
+// Kind returns the COREWEBVIEW2_PERMISSION_KIND asked for, or -1.
+func (i *permissionRequestedArgs) Kind() int {
+	var k int32 = -1
+	r, _, _ := pure.SyscallN(i.vtbl.GetPermissionKind, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&k)))
+	if int32(r) < 0 {
+		return -1
+	}
+	return int(k)
+}
+
+// SetState answers the request, so WebView2 shows no prompt of its own.
+func (i *permissionRequestedArgs) SetState(state int) {
+	pure.SyscallN(i.vtbl.PutState, uintptr(unsafe.Pointer(i)), uintptr(state))
+}
+
 // comString calls a COM getter that returns an LPWSTR the caller frees with
 // CoTaskMemFree, and returns it as a Go string, or "" on failure.
 func comString(getter, this uintptr) string {
@@ -603,6 +658,9 @@ func (i *coreWebView2) AddContentLoading(handler uintptr, token *uint64) {
 func (i *coreWebView2) AddNewWindowRequested(handler uintptr, token *uint64) {
 	pure.SyscallN(i.vtbl.AddNewWindowRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
+func (i *coreWebView2) AddPermissionRequested(handler uintptr, token *uint64) {
+	pure.SyscallN(i.vtbl.AddPermissionRequested, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
+}
 func (i *coreWebView2) AddNavigationCompleted(handler uintptr, token *uint64) {
 	pure.SyscallN(i.vtbl.AddNavigationCompleted, uintptr(unsafe.Pointer(i)), handler, uintptr(unsafe.Pointer(token)))
 }
@@ -717,6 +775,7 @@ const (
 	kindNavigationStarting
 	kindNewWindowRequested
 	kindContentLoading
+	kindPermissionRequested
 )
 
 type comHandlerVtbl struct {
@@ -840,6 +899,11 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 				w.newWinH = newHandler(w.id, kindNewWindowRequested, &iidNewWindowRequested)
 				var newWinTok uint64
 				cw.AddNewWindowRequested(handlerPtr(w.newWinH), &newWinTok)
+				// Every permission a page asks for is answered here, so
+				// WebView2 never shows its own prompt (see permissionRequested).
+				w.permH = newHandler(w.id, kindPermissionRequested, &iidPermissionRequested)
+				var permTok uint64
+				cw.AddPermissionRequested(handlerPtr(w.permH), &permTok)
 				// App-content serving: intercept the app scheme's https vhost
 				// and answer from the app-scope resolver (serveSchemeWindows).
 				if w.serve != nil {
@@ -957,6 +1021,11 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 			args.Handle()
 			w.handleNewWindow(args.URI())
 		}
+	case kindPermissionRequested:
+		// Invoke(this, ICoreWebView2* sender, ICoreWebView2PermissionRequestedEventArgs* args)
+		if b != 0 {
+			w.permissionRequested(asPermissionRequestedArgs(b))
+		}
 	case kindScript:
 		// Invoke(this, HRESULT res, LPCWSTR id)
 		if int32(a) >= 0 && b != 0 {
@@ -970,6 +1039,32 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		}
 	}
 	return 0 // S_OK
+}
+
+// permissionRequested answers a page's permission request, on the UI thread.
+// The microphone, the camera, and clipboard reads are decided by the view's
+// policy (viewCore.permits) for the origin asking, which WebView2 gives per
+// frame. Every other kind, such as geolocation or notifications, is denied.
+func (w *webview) permissionRequested(args *permissionRequestedArgs) {
+	state := permissionStateDeny
+	uri := args.URI()
+	switch kind := args.Kind(); kind {
+	case permissionKindMicrophone:
+		if w.permits(uri, PermissionMicrophone) {
+			state = permissionStateAllow
+		}
+	case permissionKindCamera:
+		if w.permits(uri, PermissionCamera) {
+			state = permissionStateAllow
+		}
+	case permissionKindClipboardRead:
+		if w.permits(uri, PermissionClipboard) {
+			state = permissionStateAllow
+		}
+	default:
+		log.Printf("tuohi: permission kind %d for %q denied", kind, uri)
+	}
+	args.SetState(state)
 }
 
 // --- extra Win32 / COM functions (ole32, advapi32, user32 RECT) ------------
@@ -2241,6 +2336,7 @@ type webview struct {
 	wrrH        *comHandler // WebResourceRequested handler (custom schemes)
 	navH        *comHandler // NavigationCompleted handler (View.Ready)
 	navStartH   *comHandler // NavigationStarting handler (the navigation policy)
+	permH       *comHandler // PermissionRequested handler (View.Permissions)
 	contentH    *comHandler // ContentLoading handler (a data: page's sender)
 	newWinH     *comHandler // NewWindowRequested handler (the navigation policy)
 	ready       bool

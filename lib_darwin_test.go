@@ -65,6 +65,7 @@ func TestMain(m *testing.M) {
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())
+		resPermissions.Store(permissionsScenario())
 		resBadMessages.Store(badMessagesScenario())
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
@@ -766,3 +767,7 @@ func pageURL(e engine) string {
 	})
 	return u
 }
+
+// enableFakeCapture does nothing on macOS, where the permissions test only
+// checks denials (see TestPermissions).
+func enableFakeCapture(engine) {}

@@ -684,6 +684,9 @@ func (a *App) showFirst(view *View) error {
 	w.core().titleGo = view.Title
 	w.core().titleDefault = cfg.Name
 	w.core().hostWindow = view.window != nil
+	w.core().mu.Lock()
+	w.core().permissions = permissionSet(view.Permissions)
+	w.core().mu.Unlock()
 	a.registerView(view, w)
 	// Publish the engine, so the View's methods delegate to the window (and
 	// can be called right after Show).
@@ -772,6 +775,19 @@ type View struct {
 	// browser opens it. A redirect to another scheme or host, such as http
 	// to https, or 127.0.0.1 to localhost, counts as another origin.
 	Origins []string
+
+	// Permissions lists what a page in this view may use that the web engine
+	// would otherwise ask the user for: the camera, the microphone, and
+	// script access to the clipboard (see Permission). Only a page on an
+	// origin the view trusts (see Origins) receives one, and only if it is
+	// listed here. Everything else a page asks for, such as geolocation or
+	// notifications, is denied, and no engine shows a prompt of its own.
+	// Empty, the default, denies everything.
+	//
+	// On macOS, a program that lists the camera or the microphone also needs
+	// NSCameraUsageDescription or NSMicrophoneUsageDescription in its
+	// Info.plist.
+	Permissions []Permission
 
 	// Title is the window's title. It names the window in its title bar,
 	// the taskbar or Dock, the window switcher, and accessibility tools, so

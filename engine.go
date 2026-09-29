@@ -146,6 +146,10 @@ type viewCore struct {
 	// message from any other document or frame lacks it. Guarded by mu.
 	token string
 
+	// permissions is the set of View.Permissions the application listed
+	// (see permits). Guarded by mu.
+	permissions map[Permission]bool
+
 	// replyKey is the view's second secret, made with token and the same
 	// length. The bridge sets it on window.__webview__, and every script Go
 	// evaluates to hand the page something checks it first (bridgeOnly),
