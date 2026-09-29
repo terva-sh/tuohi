@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3J59M1H9PZ04J2C9JJZ7V13
 title: Move desktop services out of the root package
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -17,10 +17,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: feat/split-services
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/tmp.ajBevkVLCb/wt-split
+  commit: 03a0219ef0a9a34038a4bbcc6890aba910c31b98
+  session: null
+  claimed_at: 2026-09-29T21:44:35Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T21:13:07Z
+updated_at: 2026-09-29T21:44:35Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
@@ -58,6 +65,50 @@ Where a service needs the UI thread (a macOS tray, a GTK clipboard), the subpack
 
 ## Acceptance criteria
 
-- [ ] A program that imports only tuohi and opens one window links neither godbus nor atotto, shown with go list -deps
-- [ ] Single instance, autostart, and clipboard live in their own subpackages, and notify and tray are no longer imported by the root
-- [ ] Every feature the root offered before is still reachable, and the README says where each moved
+- [x] A program that imports only tuohi and opens one window links neither godbus nor atotto, shown with go list -deps
+- [x] Single instance, autostart, and clipboard live in their own subpackages, and notify and tray are no longer imported by the root
+- [x] Every feature the root offered before is still reachable, and the README says where each moved
+
+## Implementation plan
+
+The API was chosen before the move, following docs/architecture.md:
+
+- **`tuohi/instance`.**
+  - `Acquire(id, func(Message)) (*Lock, error)`, `Lock.Release`, `Send(id, args)`, and `ErrAlreadyRunning`.
+  - `Message` is a struct, so TKT-01M3HWWRVGMZTXBYJ86FCTH0V8 can add the working directory without breaking callers. The wire format becomes `{"args":[...]}`.
+  - The library no longer calls `os.Exit` or reads `--new-instance`. The consumer writes that pattern, and the README shows it.
+- **`tuohi/autostart`.** `New(id)` with the old five methods, and `ErrUnsupported`. The id is exactly what the consumer passes, validated as before. The name, executable and "appkit-app" fallbacks go.
+- **`tuohi/clipboard`.** `Copy(string)` and `Paste() (string, error)`, on strings, because the native backends in TKT-01M3J59M2BR91XQBDT1TPPM4G5 are text clipboards. It wraps atotto until that ticket.
+- **Notify.** `App.Notify` goes, and consumers call `notify.Show(app.Name, ...)`.
+- **Tray.**
+  - `App.Tray` goes. The new `App.Start func() error` runs on the UI thread as `Wait` starts, before its loop; an error ends `Wait`.
+  - The tray is set up there, and `tray.Remove` runs after `Wait`.
+  - The tray icon is no longer derived from `App.Icon`.
+- **Why a hook on App.** A tray must be set up on the thread whose loop dispatches its events, which `Wait` pins. The alternatives:
+  - A consumer calling `tray.Set` before `Wait` can land on another OS thread on Windows.
+  - An `App.Do(func())` method cannot run before a loop exists.
+
+The move itself was done by a subagent under a written brief, then reviewed and re-verified in this session.
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T21:44:35Z
+
+### Decisions made during the move
+
+- **Unix and macOS single instance are one file**, `instance/instance_unix.go`. The one real difference: macOS used `XDG_RUNTIME_DIR` without checking that it was writable. It now takes the Linux path. Solaris and AIX lack `syscall.Flock`, so they would not build `instance`, but the root does not build there either.
+- **The root's Windows `ensureInit` is a no-op.** It loaded only the named-pipe functions, which moved with single instance. The engine loads its own libraries when it creates the first window.
+- **SMAppService on macOS was broken, and is now defensive.** The root looked the class up with `class()`, which panics on a missing class, and nothing loaded ServiceManagement.framework. The package now loads the framework once, and treats a missing class as unavailable, which falls back to the LaunchAgent. It only runs for a bundled app on macOS 13 or later, so nothing here tests it.
+- **The XDG autostart entry's `Name=`** is now the executable's base name. That was already the fallback when `App.Name` was empty.
+- **`autostart_other.go`** returns `ErrUnsupported` on platforms without a backend.
+- **The demo.**
+  - It registers autostart as "tuohi-demo". `Enable` removes any older entry for the same executable.
+  - It embeds a 32px `tray.png`, made from `app.png` with the removed resizer, so its tray looks the same.
+- **Test coverage.** The Linux wait GUI scenario now checks that `App.Start` runs on the UI thread, and that its error ends `Wait`.
+
+### Verified at this head
+
+- `just ci` passes. `just test-gui` passes on both stacks for tuohi, autostart, dialog, instance, notify, and tray.
+- golangci-lint reports 0 issues for linux, darwin, windows, netbsd, and freebsd.
+- **Criterion 1.** A program that imports only `github.com/terva-sh/tuohi` and shows one View was checked with `GOOS=$os go list -deps . | grep -E 'godbus|atotto|terva-sh'`. For linux, darwin, and windows, it lists only `tuohi` and `tuohi/dialog`. Against the base commit, the same program listed atotto on all three, and godbus on Linux.
+- macOS and Windows code only builds, vets, and lints here. It moved rather than changed, apart from SMAppService. GitHub CI tests it after the merge.
