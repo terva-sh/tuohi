@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T20:28:58Z
-updated_at: 2026-09-29T02:51:13Z
+updated_at: 2026-09-29T02:56:46Z
 created_by:
   id: agent:claude-code/c04aed4f
   name: ""
@@ -177,5 +177,18 @@ The round-1 findings were reported handled: finding 1 resolved, and finding 2 de
    - **`TestOutsideLinksScript`** gains three cases: an SVG link, an SVG link with only `xlink:href`, and a trusted SVG link. With the old read, both outside cases fail.
    - **`TestOutsideLinksNotRequested`** gains an `svglink` step, which dispatches a click on the text inside an SVG `<a>`. On WebKitGTK 6.0 with the `navigate` listener off, the old read let `/svg` reach the server, and `hrefOf` does not.
 2. **Medium: GET forms with file inputs are handed off with a different URL.** Fixed. The query is built pair by pair from the `FormData` entries, and a file value is written as its `name`, as a browser's GET submission does. `URLSearchParams(FormData)` had written `[object File]`. `TestOutsideLinksScript` gains a GET form with a file field, whose expected result is `?q=x&f=a+b.txt`.
+
+Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T02:56:46Z
+
+### Review disposition for PR #26, round 3 (terva-review run on de49c72)
+
+Both round-2 findings were reported resolved. GitHub run 36514519417 on de49c72 passed every job.
+
+1. **Medium: use the effective form method when deciding whether to intercept.** Fixed. The listener reads `form.method`, or `submitter.formMethod` when the submitter has `formmethod`. Those properties report a browser's effective method, so an invalid or missing value reads as `get`.
+
+   `TestOutsideLinksScript` gains four cases: `method="bogus"`, which is handed over, a GET form with a POST submitter, which is not, a POST form with a GET submitter, which is, and an uncancelable submit. With the raw-attribute check, the invalid-method case fails.
+2. **Medium: do not hand off a click that cannot be cancelled.** Fixed. The click and submit listeners return when `!e.cancelable`, as the `navigate` listener already did. With the checks removed, the new uncancelable click and submit cases both fail.
 
 Checks after the fixes: `just ci`, `just test-gui` on both stacks, and golangci-lint on three GOOS all pass.
