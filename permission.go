@@ -43,6 +43,10 @@ func (p Permission) String() string {
 	return "permission(" + strconv.Itoa(int(p)) + ")"
 }
 
+// permissionDecided, when set, is told of every decision permits makes. Only
+// tests set it, before any view exists.
+var permissionDecided func(requester string, perms []Permission, granted bool)
+
 // permissionSet turns View.Permissions into the set viewCore.permits reads.
 func permissionSet(perms []Permission) map[Permission]bool {
 	set := make(map[Permission]bool, len(perms))
@@ -66,6 +70,9 @@ func (c *viewCore) permits(requester string, perms ...Permission) bool {
 		granted = granted && c.permissions[p]
 	}
 	c.mu.Unlock()
+	if permissionDecided != nil {
+		permissionDecided(requester, perms, granted)
+	}
 	if !granted {
 		names := make([]string, len(perms))
 		for i, p := range perms {

@@ -47,11 +47,6 @@ func requireGUI(t *testing.T, got string) {
 func TestMain(m *testing.M) {
 	flag.Parse()
 	runtime.LockOSThread()
-	// A fake camera and microphone for the permissions scenario, set before
-	// the first WebView2 environment exists.
-	if os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") == "" {
-		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--use-fake-device-for-media-stream")
-	}
 	repeatStatus := 0
 	if !testing.Short() && guiAvailable() {
 		resWinBridge.Store(winBridgeScenario())
@@ -468,6 +463,8 @@ func pageURL(e engine) string {
 	return e.(*webview).committedURI
 }
 
-// enableFakeCapture does nothing on Windows: TestMain gives every WebView2 a
-// fake camera and microphone through WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS.
+// enableFakeCapture does nothing on Windows: tuohi creates the WebView2
+// environment through the runtime's internal export, which does not read
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so there is no way to give it fake
+// devices (see TestPermissions).
 func enableFakeCapture(engine) {}

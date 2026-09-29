@@ -2,7 +2,9 @@ package tuohi
 
 import (
 	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -98,6 +100,8 @@ window.addEventListener('load', async function() {
   var ran = false;
   try { ran = document.execCommand('paste'); } catch (e) {}
   out.push('paste=' + (ran && pasted));
+  try { await navigator.clipboard.readText(); out.push('read=ok'); } catch (e) { out.push('read=' + (e.name === 'NotAllowedError' ? 'denied' : e.name)); }
+  out.push('notify=' + (typeof Notification === 'undefined' ? 'none' : await Notification.requestPermission()));
   var frame = await new Promise(function(resolve) {
     window.addEventListener('message', function(e) { resolve(String(e.data)); });
     var f = document.createElement('iframe');
@@ -116,6 +120,22 @@ window.addEventListener('load', async function() {
 	}
 	defer closeTrusted()
 
+	var askedMu sync.Mutex
+	var asked []string
+	permissionDecided = func(_ string, ps []Permission, granted bool) {
+		names := make([]string, len(ps))
+		for i, p := range ps {
+			names[i] = p.String()
+		}
+		verdict := "no"
+		if granted {
+			verdict = "yes"
+		}
+		askedMu.Lock()
+		asked = append(asked, strings.Join(names, "+")+":"+verdict)
+		askedMu.Unlock()
+	}
+	defer func() { permissionDecided = nil }()
 	w := &View{Permissions: perms}
 	if err := testApp().Show(w); err != nil {
 		return "new error: " + err.Error()
@@ -130,6 +150,10 @@ window.addEventListener('load', async function() {
 		defer w.Close()
 		select {
 		case r := <-res:
+			askedMu.Lock()
+			sort.Strings(asked)
+			r += " asked=" + strings.Join(asked, ",")
+			askedMu.Unlock()
 			result <- r
 		case <-time.After(40 * time.Second):
 			result <- "no report"
@@ -160,16 +184,20 @@ func TestPermissions(t *testing.T) {
 	var want string
 	switch runtime.GOOS {
 	case "windows":
-		want = "none: video=denied audio=denied paste=false frame=denied; " +
-			"camera: video=ok audio=denied paste=false frame=denied; " +
-			"clipboard: video=denied audio=denied paste=false frame=denied"
+		// No capture devices on the runner: Chromium fails the capture
+		// before it asks, and tuohi cannot give WebView2 fake ones (it loads
+		// the runtime without the loader that reads browser arguments). The
+		// clipboard read and the notification reach the handler.
+		want = "none: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError asked=clipboard:no; " +
+			"camera: video=NotFoundError audio=NotFoundError paste=false read=denied notify=denied frame=NotFoundError asked=clipboard:no; " +
+			"clipboard: video=NotFoundError audio=NotFoundError paste=false read=ok notify=denied frame=NotFoundError asked=clipboard:yes"
 	case "darwin":
-		want = "none: video=denied audio=denied paste=false frame=denied"
+		want = "none: video=OverconstrainedError audio=denied paste=false read=denied notify=none frame=OverconstrainedError asked=microphone:no"
 		got, _, _ = strings.Cut(got, ";")
 	default:
-		want = "none: video=denied audio=denied paste=false frame=denied; " +
-			"camera: video=ok audio=denied paste=false frame=ok; " +
-			"clipboard: video=denied audio=denied paste=true frame=denied"
+		want = "none: video=denied audio=denied paste=false read=denied notify=denied frame=denied asked=camera:no,camera:no,microphone:no; " +
+			"camera: video=ok audio=denied paste=false read=denied notify=denied frame=ok asked=camera:yes,camera:yes,microphone:no; " +
+			"clipboard: video=denied audio=denied paste=true read=denied notify=denied frame=denied asked=camera:no,camera:no,microphone:no"
 	}
 	if got != want {
 		t.Fatalf("permissions:\n got %s\nwant %s", got, want)
