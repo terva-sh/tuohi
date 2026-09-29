@@ -182,9 +182,9 @@ a later one gets `instance.ErrAlreadyRunning`, hands its arguments over and
 exits. The package does not exit for you, and the old `--new-instance`
 override went with `App.Exec`: check your own arguments before `Acquire` if
 you want one. On Unix the lock and socket live in a directory only the user
-can use, never in `/tmp`, and the running instance takes messages only from
-the same user; the package documentation says what that does and does not
-guarantee.
+can use, never in `/tmp`, and on Windows the pipe is open to the user alone.
+Either way the running instance takes messages only from the same user; the
+package documentation says what that does and does not guarantee.
 
 ```go
 const id = "com.example.app"

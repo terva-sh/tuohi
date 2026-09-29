@@ -51,10 +51,19 @@
 // user where the system reports the peer's user, which Linux, macOS and
 // FreeBSD do; elsewhere the private directory is the only check. It reads at
 // most 1 MiB per message and gives a sender 5 seconds to finish, so a stalled
-// or oversized send is dropped rather than held. None of this stops a process
-// running as the same user from sending a message: that is how the user's own
-// later launch gets through, and such a process can already do anything the
-// user can.
+// or oversized send is dropped rather than held.
+//
+// On Windows the pipe is named for the user, so each user on a shared machine
+// has an instance of their own. Its security descriptor makes the user its
+// owner and gives the user, and nobody else, access; remote clients are
+// refused. Send writes only to a pipe the user owns, so a pipe another user
+// created first under the name does not receive the arguments. The running
+// instance serves one sender at a time, with the same size cap and time limit
+// as on Unix, and a later launch that finds it busy waits for its turn.
+//
+// None of this stops a process running as the same user from sending a
+// message: that is how the user's own later launch gets through, and such a
+// process can already do anything the user can.
 package instance
 
 import (
@@ -63,8 +72,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
+	"time"
 )
 
 // ErrAlreadyRunning is returned by Acquire when another process holds id.
@@ -80,6 +91,13 @@ var errEmptyID = errors.New("instance: empty id")
 // exceed it, and a cap this size still bounds what a sender can make the
 // running instance buffer.
 const maxMessage = 1 << 20
+
+// ioTimeout bounds how long the running instance waits for a sender to finish
+// its message, and how long Send waits to connect and write; on Windows, Send
+// waits up to twice as long for a busy pipe. A launch writes its message at
+// once, so the only sender that takes longer is one that has stalled. It is a
+// variable so that tests can shorten it.
+var ioTimeout = 5 * time.Second
 
 // Message is what a later launch hands the running instance.
 type Message struct {
@@ -142,6 +160,21 @@ func Send(id string, args []string) error {
 		return fmt.Errorf("instance: message is %d bytes, over the %d-byte limit", len(data), maxMessage)
 	}
 	return send(id, data)
+}
+
+// readMessage reads one encoded Message from r, which the sender closes once
+// it has written it. It reports false for a message over maxMessage, one that
+// does not decode, and a read that fails, including one a deadline cut short.
+func readMessage(r io.Reader) (Message, bool) {
+	data, err := io.ReadAll(io.LimitReader(r, maxMessage+1))
+	if err != nil || len(data) > maxMessage {
+		return Message{}, false
+	}
+	var m Message
+	if json.Unmarshal(data, &m) != nil {
+		return Message{}, false
+	}
+	return m, true
 }
 
 // key derives a short, filesystem- and pipe-name-safe key from an arbitrary

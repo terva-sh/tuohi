@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:25:30Z
+updated_at: 2026-09-29T22:37:36Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -164,3 +164,7 @@ Disposition for the terva-review findings at f8ac13d (run cc6af096), fixed in 60
   - Removing the check makes the test fail.
 
 The package doc and architecture.md say both. `just ci` passes, and `go vet ./instance/` passes for darwin, freebsd and netbsd.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:37:36Z
+
+Windows branch fix/instance-windows, rebased onto main at 2d34a7e after PR #42 merged. just ci passes. go vet ./instance/ passes, and the instance test binary compiles for windows amd64 and arm64. Nothing here can run it: the new Windows tests (pipe security, per-user pipe name, owner check, oversized message, stalled sender, Release while a sender stalls) run on GitHub after the merge, in the new 'Run single-instance tests' step. AC3 stays unticked until GitHub main is green with them. I checked the write deadline's dependency: os.NewFile detects overlapped handles through windows.IsNonblock in Go 1.26, go.mod's minimum, not only in 1.27.

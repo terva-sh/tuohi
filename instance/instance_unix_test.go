@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -318,18 +317,6 @@ func TestLockFileSurvivesRelease(t *testing.T) {
 	_ = again.Release()
 }
 
-// acquireCollect acquires id and returns a channel of what it receives.
-func acquireCollect(t *testing.T, id string) <-chan Message {
-	t.Helper()
-	got := make(chan Message, 4)
-	lock, err := Acquire(id, func(m Message) { got <- m })
-	if err != nil {
-		t.Fatalf("Acquire: %v", err)
-	}
-	t.Cleanup(func() { _ = lock.Release() })
-	return got
-}
-
 // dial connects to id's socket directly, as a sender Send does not model.
 func dial(t *testing.T, id string) *net.UnixConn {
 	t.Helper()
@@ -354,25 +341,6 @@ func waitClosed(t *testing.T, conn *net.UnixConn, within time.Duration) {
 	_, err := io.Copy(io.Discard, conn)
 	if errors.Is(err, os.ErrDeadlineExceeded) {
 		t.Fatalf("the running instance did not close the connection within %v", within)
-	}
-}
-
-// expectOnly waits for a message with args want, and fails if any other
-// message arrives first or soon after.
-func expectOnly(t *testing.T, got <-chan Message, want []string) {
-	t.Helper()
-	select {
-	case m := <-got:
-		if !slices.Equal(m.Args, want) {
-			t.Fatalf("received args %.40q, want %q", m.Args, want)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for the message")
-	}
-	select {
-	case m := <-got:
-		t.Fatalf("received an extra message with %d args", len(m.Args))
-	case <-time.After(200 * time.Millisecond):
 	}
 }
 
