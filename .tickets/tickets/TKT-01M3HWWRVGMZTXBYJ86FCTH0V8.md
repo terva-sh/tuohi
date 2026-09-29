@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-29T22:18:41Z
+updated_at: 2026-09-29T22:25:30Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -150,3 +150,17 @@ Unix branch `fix/instance-unix`, rebased onto main at 669905a. The work was done
 - **Cross-user cases** cannot run as a non-root user. They are covered by a unit test of the uid comparison and a fake uid for the owner check.
 - **macOS `LOCAL_PEERCRED`** runs on GitHub only after the merge.
 - **The Windows write deadline.** I checked that Go 1.26, `go.mod`'s minimum, already detects overlapped handles in `os.NewFile` through `windows.IsNonblock`. The subagent had confirmed this only for 1.27.
+
+**agent:claude-code/t3code-72958710** at 2026-09-29T22:25:30Z
+
+Disposition for the terva-review findings at f8ac13d (run cc6af096), fixed in 604d558:
+
+- **Accepted, high: "Do not fall back when the XDG lock directory fails its privacy check".** When the user's own `XDG_RUNTIME_DIR` already holds `tuohi`, an instance may hold its lock there. A failed check on that directory, or on `XDG_RUNTIME_DIR` itself, is now an error rather than a move to the cache directory.
+  - A missing `XDG_RUNTIME_DIR`, or one that belongs to another user or is not private and holds nothing of ours, still falls back. A read-only one where the directory cannot be created does too. That covers the `su` and container cases.
+  - `TestXDGDirNoFallback` holds a lock there and opens each of the two directories to 0755 in turn. `paths` must fail, and so must a second `Acquire`. Restoring the fallback makes it fail.
+- **Accepted, high: "Validate writable ancestors before trusting the private directory".** `checkAncestors` walks the base directory and every parent, both as written and with symbolic links resolved. It accepts only directories owned by the user or root that nobody else can write to, unless the sticky bit stops them renaming others' entries, as on `/tmp`.
+  - It applies to both bases.
+  - `TestAncestorsChecked` covers a cache below a 0777 directory, directly and through a symbolic link: refused. The same with the sticky bit set: accepted. A directory of another non-root uid: refused.
+  - Removing the check makes the test fail.
+
+The package doc and architecture.md say both. `just ci` passes, and `go vet ./instance/` passes for darwin, freebsd and netbsd.
