@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -141,6 +142,16 @@ func autorelease(f func()) {
 }
 
 // --- one-time runtime initialization ---------------------------------------
+
+// init keeps the main goroutine on the process's main thread, the only
+// thread AppKit accepts UI work from. Package initialization runs on the main
+// goroutine, on the main thread, and the lock holds from here until the
+// process exits, so a program that calls App.Show and App.Wait from main (or
+// from functions main calls) runs its UI where AppKit requires. See
+// ErrNotMainThread for what happens when it does not.
+func init() {
+	runtime.LockOSThread()
+}
 
 var (
 	initOnce sync.Once
@@ -711,30 +722,25 @@ func onMainThread() bool {
 	return class("NSThread").Send(sel("isMainThread")) != 0
 }
 
-// uiIsMain records, at first webview creation, whether the UI runs on the
-// process main thread. True in both supported shapes: creation on the main
-// thread (the normal contract), and creation marshaled to the main thread
-// because an external owner's run loop (e.g. the tray package's) is already
-// there. False only when the whole UI lifecycle is pinned to a secondary
-// thread whose main dispatch queue is never drained - marshaling to the main
-// thread would hang, so every call runs inline instead (see onUIThread).
-var (
-	uiIsMainOnce sync.Once
-	uiIsMain     atomic.Bool
-)
-
 // onUIThread is the dispatcher's onUI hook (see uiDispatcher). The UI thread
-// is the main thread, except when uiIsMain is false: then there is no other
-// thread to defer to, which includes the time before the first webview.
-//
-// A first webview created off the main thread with no loop running leaves
-// uiIsMain false for good, and every goroutine then counts as the UI thread:
-// nothing drains a queue on the thread that created the view, so there is
-// nowhere to marshal to. That shape runs AppKit off the main thread whatever
-// tuohi does, and TKT-01M3J59M5V12QW1WRBEJPJ5H38 (Make the macOS main-thread
-// rule explicit and enforced) refuses it.
+// is the process's main thread: App.Show refuses to create a window anywhere
+// else unless a run loop there takes the work (ErrNotMainThread), so no
+// window's UI ever lives on another thread.
 func onUIThread() bool {
-	return onMainThread() || !uiIsMain.Load()
+	return onMainThread()
+}
+
+// uiThreadErr reports ErrNotMainThread when the caller is off the main thread
+// and no run loop is running there to hand UI work to. App.Show and App.Wait
+// check it.
+func uiThreadErr() error {
+	if onMainThread() {
+		return nil
+	}
+	if class("NSApplication").Send(sel("sharedApplication")).Send(sel("isRunning")) != 0 {
+		return nil
+	}
+	return ErrNotMainThread
 }
 
 // postUI is the dispatcher's post hook. The main dispatch queue always takes
@@ -765,10 +771,9 @@ func performOnMain(f func()) {
 // --- process-wide lifecycle bookkeeping ------------------------------------
 
 var (
-	firstMu      sync.Mutex
-	notFirst     bool
-	windowCount  int32
-	uiThreadOnce sync.Once
+	firstMu     sync.Mutex
+	notFirst    bool
+	windowCount int32
 
 	// appkitRunsLoop is true while OUR Run() drives [NSApp run]. When the
 	// loop belongs to someone else (e.g. the tray package's Run started it
@@ -1860,21 +1865,22 @@ const bridgePostFn = `function(message) {
 // documented there. Like the Windows and Linux backends, the darwin engine
 // registers the "app" scheme (serving App.FS) on the web view's
 // configuration and applies the window settings at creation (see newWebView).
-// The first successful call pins the
-// calling goroutine to its OS thread; keep all direct UI calls on that
-// goroutine and re-enter through Dispatch from background goroutines.
+// It must run on the main thread, which init keeps the main goroutine on.
 // Exception: when the application run loop is already running (started by a
 // tray loop or another owner), newView may be called from any goroutine -
 // creation and the UI-touching methods marshal themselves to the main thread.
+// Off the main thread with no loop running it returns ErrNotMainThread.
 func newView(v *View, serve serveFunc) (*webview, error) {
 	err := ensureInit()
 	if err != nil {
 		return nil, err
 	}
+	if err := uiThreadErr(); err != nil {
+		return nil, err
+	}
 
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	loopRunning := app.Send(sel("isRunning")) != 0
-	uiIsMainOnce.Do(func() { uiIsMain.Store(onMainThread() || loopRunning) })
 
 	if !onMainThread() && loopRunning {
 		// Someone else's run loop is draining the main queue: build the whole
@@ -1886,7 +1892,6 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 		return w, nil
 	}
 
-	uiThreadOnce.Do(runtime.LockOSThread)
 	return newWebView(v, serve, app, loopRunning), nil
 }
 
@@ -1911,6 +1916,13 @@ func appUIWait() {
 		return
 	}
 	for !appExitRequested() {
+		if !onMainThread() {
+			// The owner's loop on the main thread drains the main queue, which
+			// is all tuohi needs from it; pumping events from here would run
+			// AppKit off the main thread. Wait for the exit, as Run does.
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
 		autorelease(func() {
 			deadline := class("NSDate").Send(sel("dateWithTimeIntervalSinceNow:"), 0.05)
 			ev := app.Send(sel("nextEventMatchingMask:untilDate:inMode:dequeue:"),

@@ -3023,6 +3023,10 @@ func uiThreadID() uint32 {
 
 // appUIWait pumps Windows messages until WM_QUIT. App.Wait calls it
 // repeatedly and re-checks the app-scope exit flag between calls.
+// uiThreadErr is nil: Win32 has no main-thread rule, and each window belongs
+// to the thread that created it (see ErrNotMainThread).
+func uiThreadErr() error { return nil }
+
 func appUIWait() {
 	uiThreadID()
 	var m msgStruct

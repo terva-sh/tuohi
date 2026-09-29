@@ -184,7 +184,7 @@ once, for all three engines, through three hooks each engine supplies:
 | Engine | UI thread | `postUI` |
 |---|---|---|
 | Unix | the GThread the first `newView` pinned | a GLib idle source |
-| macOS | the main thread, or any thread when the UI never ran on main (`uiIsMain`) | the main dispatch queue |
+| macOS | the main thread, which the darwin `init` keeps the main goroutine on | the main dispatch queue |
 | Windows | the thread the first `newView` pinned | WM_APP to a message-only window created on that thread |
 
 Windows uses a message-only window rather than a thread message because a
@@ -228,14 +228,25 @@ the UI thread).
 Running the native call in place when the loop is not running was also
 considered. It is the crash the rule exists to prevent.
 
-macOS adds one more rule. AppKit must run on the process's main thread, and
-tuohi does nothing to put it there: there is no `init` that locks the main
-goroutine, and the documentation does not say so. A loopback consumer that
-starts its HTTP server on the main goroutine and opens the window from another
-gets AppKit on a secondary thread. TKT-01M3J59M5V12QW1WRBEJPJ5H38 (Make the
-macOS main-thread rule explicit and enforced) adds the `init`, an error when
-`Show` or `Wait` is called off the main thread, and an example of the right
-shape: the server in a goroutine, the window on main.
+macOS adds one more rule: AppKit must run on the process's main thread.
+TKT-01M3J59M5V12QW1WRBEJPJ5H38 (Make the macOS main-thread rule explicit and
+enforced) settled how:
+
+- **An `init` in the darwin engine locks the main goroutine** to the main
+  thread, the usual Go pattern for macOS UI libraries.
+- **Off the main thread, `Show` and `Wait` return `ErrNotMainThread`** unless
+  a run loop is already running on the main thread to take the work, as the
+  tray package's or an embedding host's does.
+  - A loopback consumer that started its HTTP server on the main goroutine
+    and opened the window from another used to get AppKit on a secondary
+    thread. It now gets an error that names the rule.
+  - `Wait` off the main thread under such a loop waits for the exit and leaves
+    the events to the owner, as `Run` already did, instead of pumping AppKit
+    events off the main thread.
+- **The dispatcher no longer special-cases a UI that never ran on main**
+  (`uiIsMain`), because that shape is now refused.
+- **The package doc shows the right shape:** the server in a goroutine, the
+  window on main.
 
 ## The bridge answers only the origins a view trusts
 

@@ -2094,6 +2094,10 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 
 // appUIWait runs one iteration of the GTK main context; App.Wait loops on it
 // until the app scope asks to exit.
+// uiThreadErr is nil: GTK has no main-thread rule, and the UI thread is
+// whichever thread created the first window (see ErrNotMainThread).
+func uiThreadErr() error { return nil }
+
 func appUIWait() {
 	gMainContextIteration(0, true)
 }

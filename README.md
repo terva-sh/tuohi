@@ -411,10 +411,15 @@ func main() {
 }
 ```
 
-appkit pins the goroutine that creates the first window to its current OS
-thread. Keep direct window calls on that goroutine, and use `Window(func(unsafe.Pointer))`
-to re-enter the UI thread from background work (it hands you the native
-window handle).
+Call `Show` and `Wait` from `main` and run everything else, such as an HTTP
+server, in goroutines. macOS requires it: AppKit runs only on the process's
+main thread, tuohi keeps the main goroutine there, and off it `Show` and
+`Wait` return `ErrNotMainThread` unless a run loop already runs on the main
+thread. On Linux and Windows the goroutine that creates the first window is
+pinned to its OS thread and becomes the UI thread. View methods such as
+`Eval`, `Navigate` and `Close` are safe from any goroutine, and
+`Window(func(unsafe.Pointer))` re-enters the UI thread from background work
+(it hands you the native window handle).
 
 ## Desktop helpers
 
