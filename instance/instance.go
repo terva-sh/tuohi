@@ -59,6 +59,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 )
 
@@ -81,6 +82,11 @@ type Message struct {
 	// Args are the later launch's command-line arguments, without the program
 	// name.
 	Args []string `json:"args"`
+
+	// Dir is the later launch's working directory, against which a relative
+	// path in Args is resolved. It is empty when the later launch could not
+	// read its working directory. Like Args, it is untrusted input.
+	Dir string `json:"dir"`
 }
 
 // Lock is a held single-instance lock. Get one from Acquire.
@@ -115,14 +121,16 @@ func (l *Lock) Release() error {
 }
 
 // Send delivers args to the instance running under id, for use after Acquire
-// returned ErrAlreadyRunning. It returns an error when no instance is
-// listening, and when the encoded message is over the 1 MiB the running
-// instance accepts. An empty id is an error.
+// returned ErrAlreadyRunning, together with this process's working directory
+// as Message.Dir. It returns an error when no instance is listening, and when
+// the encoded message is over the 1 MiB the running instance accepts. An empty
+// id is an error.
 func Send(id string, args []string) error {
 	if id == "" {
 		return errEmptyID
 	}
-	data, err := json.Marshal(Message{Args: args})
+	dir, _ := os.Getwd()
+	data, err := json.Marshal(Message{Args: args, Dir: dir})
 	if err != nil {
 		return err
 	}
