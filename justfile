@@ -79,6 +79,7 @@ ci: vet fmt-check check-imports js-check test cross tickets-check
 
 # Never force-pushes, and stops if the two have diverged.
 # Fast-forward whichever of Forgejo and GitHub main is behind; --yes to push.
+[positional-arguments]
 sync-github *flags:
     #!/usr/bin/env bash
     set -euo pipefail
