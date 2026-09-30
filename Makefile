@@ -46,13 +46,14 @@ js-check:
 # test files included. The examples' own examples/internal is theirs to use.
 # It also fails when examples/go.mod or go.sum is not tidy.
 check-examples:
-	@forbidden="$$(cd examples && go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./... | sort -u | grep -E '^github\.com/terva-sh/tuohi/internal(/|$$)')"; \
+	@imports="$$(cd examples && go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./...)" || exit 1; \
+	forbidden="$$(printf '%s\n' "$$imports" | sort -u | grep -E '^github\.com/terva-sh/tuohi/internal(/|$$)')"; \
 	if [ -n "$$forbidden" ]; then \
 		echo "check-examples: examples import tuohi internals:"; \
 		echo "$$forbidden"; \
 		exit 1; \
 	fi; \
-	cd examples && go mod tidy -diff; \
+	(cd examples && go mod tidy -diff) || { echo "check-examples: examples/go.mod is not tidy; run make tidy"; exit 1; }; \
 	echo "check-examples: ok (public API only, go.mod tidy)"
 
 # check-imports ensures the module does not import net/http or crypto/tls.
@@ -62,7 +63,8 @@ check-examples:
 # imports of every package, test files included, for the current GOOS, so
 # prose comments mentioning these packages cannot trigger it.
 check-imports:
-	@forbidden="$$(go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./... | sort -u | grep -E '^(net/http|crypto/tls)$$')"; \
+	@imports="$$(go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./...)" || exit 1; \
+	forbidden="$$(printf '%s\n' "$$imports" | sort -u | grep -E '^(net/http|crypto/tls)$$')"; \
 	if [ -n "$$forbidden" ]; then \
 		echo "check-imports: forbidden stdlib imports found:"; \
 		echo "$$forbidden"; \
