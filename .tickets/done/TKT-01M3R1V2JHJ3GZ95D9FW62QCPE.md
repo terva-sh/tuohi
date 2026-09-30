@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3R1V2JHJ3GZ95D9FW62QCPE
 title: Move the demos into examples/ as tuohi's reference implementation
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -19,17 +19,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-72958710
-  branch: feat/examples
-  worktree: /home/sothr/.cache/agent-scratch/tuohi/examples.0tzR/wt
-  commit: b0f60312c63325b1da72b86a99fdb5e0e0fefc36
-  session: null
-  claimed_at: 2026-09-30T02:21:08Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-30T02:21:02Z
-updated_at: 2026-09-30T02:40:15Z
+updated_at: 2026-09-30T02:51:41Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -72,7 +65,7 @@ A single module with `examples/` excluded from the import check was the alternat
 
 - [x] Every former demo builds from examples/ on every target GitHub's build matrix covers
 - [x] examples/loopback serves its page over net/http and reaches a binding from it
-- [ ] The showcase self test and the loopback program run in Forgejo's GUI job on both WebKitGTK stacks, and in GitHub's Linux, macOS and Windows jobs
+- [x] The showcase self test and the loopback program run in Forgejo's GUI job on both WebKitGTK stacks, and in GitHub's Linux, macOS and Windows jobs
 - [x] No example imports a tuohi internal package
 - [x] make clean removes only build outputs
 
@@ -131,3 +124,11 @@ Dispositions for the Terva review of 894e21de (review 1534):
 **high, justfile loops hide a module's failure: no change.** The justfile sets `set shell := ["bash", "-eu", "-o", "pipefail", "-c"]`, and under `-e` a failing `( ... )` in a `for` body ends the recipe; it is not part of an `&&` list in the outer shell. Reproduced with the same shell and a two-module loop whose first module fails: just reported `recipe 'vet' failed ... exit code 1`, and the second module never ran. `cross` had the same pattern before this change and relies on the same thing. `test-gui` accumulates deliberately, so both stacks run, and exits 1 when any fails.
 
 **medium, check-examples masks failures: fixed in the new head.** Make runs a recipe with `sh -c` and no `-e`, so the success line followed a failed `go mod tidy -diff`, and a failed `go list` left nothing for grep to find. Reproduced: a recipe of `cd /nonexistent && true; echo ok` printed ok and exited 0. `go list` now runs on its own with `|| exit 1`, and `go mod tidy -diff` fails the recipe with a message. `check-imports` had the same `go list` masking and gets the same guard. Checked: passes on the tree; fails on an untidy go.mod, on an example whose import cannot resolve, and on one importing `tuohi/internal/toolkit`.
+
+**agent:claude-code/t3code-72958710** at 2026-09-30T02:51:40Z
+
+Merged in PR #54 as 71e3bef, synced to GitHub. GitHub run 36661497421 on that commit passed every job, and each GUI job ran the examples as programs. Showcase self test 23/23 and loopback -check ok=true on macOS, Windows, and ubuntu-latest and ubuntu-24.04-arm on both GTK stacks. Forgejo's gui job ran them on both WebKitGTK stacks for the PR, under TUOHI_REQUIRE_GUI=1, where run.Program has no path that skips.
+
+## Summary
+
+The demos are now examples/, a module of its own that uses tuohi only through its public API, as consumers do. It holds showcase, the former demo, plus tray, notify, dialog, and the new loopback, which is terva's net/http shape. CI builds them for all 19 targets and runs the showcase self test and the loopback program in every GUI job: Forgejo on both WebKitGTK stacks, and GitHub on Linux (x86 and ARM, GTK3 and GTK4), macOS and Windows. make check-examples refuses an import of a tuohi internal package, which Go allows by path, and an untidy examples/go.mod. Running the showcase found that its self test had been broken on main, because a bare app:// page loses its bridge. The showcase now uses the documented URL, and the library side is draft TKT-01M3R23M9 (A bare app:// URL loads its page without the bridge). Landed in PR #54.
