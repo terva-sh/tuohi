@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-30T02:21:02Z
-updated_at: 2026-09-30T02:34:12Z
+updated_at: 2026-09-30T02:40:15Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -123,3 +123,11 @@ The showcase now navigates to `app://app/index.html`, the form the App.FS docume
 - `make examples` then `make clean` leaves every tracked file in place.
 
 macOS and Windows run the examples only after the merge, on GitHub.
+
+**agent:claude-code/t3code-72958710** at 2026-09-30T02:40:15Z
+
+Dispositions for the Terva review of 894e21de (review 1534):
+
+**high, justfile loops hide a module's failure: no change.** The justfile sets `set shell := ["bash", "-eu", "-o", "pipefail", "-c"]`, and under `-e` a failing `( ... )` in a `for` body ends the recipe; it is not part of an `&&` list in the outer shell. Reproduced with the same shell and a two-module loop whose first module fails: just reported `recipe 'vet' failed ... exit code 1`, and the second module never ran. `cross` had the same pattern before this change and relies on the same thing. `test-gui` accumulates deliberately, so both stacks run, and exits 1 when any fails.
+
+**medium, check-examples masks failures: fixed in the new head.** Make runs a recipe with `sh -c` and no `-e`, so the success line followed a failed `go mod tidy -diff`, and a failed `go list` left nothing for grep to find. Reproduced: a recipe of `cd /nonexistent && true; echo ok` printed ok and exited 0. `go list` now runs on its own with `|| exit 1`, and `go mod tidy -diff` fails the recipe with a message. `check-imports` had the same `go list` masking and gets the same guard. Checked: passes on the tree; fails on an untidy go.mod, on an example whose import cannot resolve, and on one importing `tuohi/internal/toolkit`.
