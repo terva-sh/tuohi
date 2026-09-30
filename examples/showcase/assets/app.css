@@ -1,4 +1,4 @@
-/* tuohi demo styles. The titlebar rules double as the drag-region contract:
+/* tuohi showcase styles. The titlebar rules double as the drag-region contract:
    tuohi's app-region tracker reads the raw stylesheet text and turns
    "-app-region: drag/no-drag" into native window-drag boxes (the legacy
    "-webkit-app-region" / "-webview-app-region" spellings are also accepted),

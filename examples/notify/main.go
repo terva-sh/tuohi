@@ -1,4 +1,4 @@
-// Example notification demonstrates OS-level notifications through the
+// Command notify demonstrates OS-level notifications through the
 // notify subpackage.
 //
 // Notifications are standalone - no tray icon and no window are needed - so

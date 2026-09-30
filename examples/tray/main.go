@@ -1,4 +1,4 @@
-// Basic tray example: one declarative tray icon with light/dark icon
+// Command tray is a basic tray example: one declarative tray icon with light/dark icon
 // variants, tray-level click handlers, and a menu with a submenu, a checkbox
 // and a notification item.
 package main

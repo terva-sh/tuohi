@@ -1,4 +1,4 @@
-// Command demo exercises the dialog subpackage end to end: it opens each of
+// Command dialog exercises the dialog subpackage end to end: it opens each of
 // the four native panels - open, multi-select open, save-as and choose
 // directory - one after another and prints what the user picked.
 //
@@ -8,9 +8,9 @@
 // reports it. Cancel a panel to move to the next one; cancel them all to
 // finish.
 //
-// Run it from the repository root:
+// Run it from the examples directory:
 //
-//	go run ./dialog/demo
+//	go run ./dialog
 package main
 
 import (

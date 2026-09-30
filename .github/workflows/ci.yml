@@ -5,15 +5,17 @@
 # appkit's copy: no Coveralls upload, everything builds and tests without cgo,
 # and a release carries no binaries. Everything CI runs from this one file: the
 # lint/Tier-1 platform matrix that validates every push and pull request, the
-# demo build, and the release the first two gate.
+# examples build, and the release the first two gate. Every job covers both
+# modules: the library, and examples/, its reference programs, which use tuohi
+# from outside the way a consumer does and run as programs in the GUI jobs.
 #
 # The release is a job here rather than a separate workflow on purpose. Jobs in
 # one run are ordered by `needs:`, so `release` cannot start unless the tests
-# AND the demo build have already succeeded in the same run - there is no
+# AND the examples build have already succeeded in the same run - there is no
 # window in which a failing matrix and a published release can coexist, and no
 # second workflow to keep in sync.
 #
-#   every run          -> lint + unix + macos + windows + demo
+#   every run          -> lint + unix + macos + windows + build
 #   vX.Y.Z tag         -> the same, plus release: skipped when anything above
 #                         failed, so a broken build can never publish
 #   workflow_dispatch  -> as above; the release fires when the dispatched ref
@@ -21,10 +23,10 @@
 #
 # tuohi is a library, so a release publishes its tag and generated notes, and
 # no binaries: consumers build from source through the Go module proxy. The
-# demo still builds for every target on every run, so a target that stopped
+# examples still build for every target on every run, so a target that stopped
 # compiling is caught on the pull request that broke it.
 #
-# Every build here - the demo matrix, the `go build ./...` checks, the test
+# Every build here - the examples matrix, the `go build ./...` checks, the test
 # binaries, and the go invocations inside `make` and golangci-lint - shares the
 # single GOFLAGS definition below, so no step spells the flags out.
 #
@@ -95,6 +97,7 @@ jobs:
           for os in darwin linux windows; do
             echo "== GOOS=$os =="
             GOOS=$os $(go env GOPATH)/bin/golangci-lint run ./...
+            (cd examples && GOOS=$os $(go env GOPATH)/bin/golangci-lint run ./...)
           done
 
       # Ensure no unwanted HTTP/TLS imports creep in per platform
@@ -105,10 +108,16 @@ jobs:
             GOOS=$os make check-imports
           done
 
+      # The examples use only tuohi's public API, and their go.mod is tidy.
+      - name: Verify the examples' imports
+        run: make check-examples
+
       # The headless-safe tests (the GUI scenarios skip here, as this runner
-      # has no display).
+      # has no display, and so do the examples, without TUOHI_REQUIRE_GUI).
       - name: Run unit tests
-        run: go test ./...
+        run: |
+          go test ./...
+          cd examples && go test ./...
 
       # Tier 2 (FreeBSD/NetBSD): cgo-disabled cross-builds and lint. FreeBSD
       # needs purego's fakecgo compiled with -std (see README "Supported
@@ -141,14 +150,16 @@ jobs:
         run: |
           sudo apt-get update
           if [ "${{ matrix.stack }}" = "gtk4" ]; then
-            sudo apt-get install -y --no-install-recommends xvfb xauth libxtst6 libgtk-4-1 libwebkitgtk-6.0-4 libjavascriptcoregtk-6.0-1
+            sudo apt-get install -y --no-install-recommends xvfb xauth dbus libxtst6 libgtk-4-1 libwebkitgtk-6.0-4 libjavascriptcoregtk-6.0-1
           else
-            sudo apt-get install -y --no-install-recommends xvfb xauth libxtst6 libgtk-3-0 libgtk-4-1 libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0
+            sudo apt-get install -y --no-install-recommends xvfb xauth dbus libxtst6 libgtk-3-0 libgtk-4-1 libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0
           fi
 
       # Build and vet first (fast checks before heavier tests)
       - run: go build ./...
       - run: go vet ./...
+      - run: go vet ./...
+        working-directory: examples
 
       # On Ubuntu 24.04, unprivileged user namespaces are restricted by default.
       # WebKitGTK's bubblewrap sandbox (used by GTK4/webkitgtk-6.0 network process)
@@ -160,7 +171,9 @@ jobs:
       # This validates the headless/CI-safe path. Use -count=1 to avoid caching
       # these skips for the subsequent Xvfb run.
       - name: Headless run (GUI tests must skip)
-        run: go test -count=1 ./...
+        run: |
+          go test -count=1 ./...
+          cd examples && go test -count=1 ./...
 
       # Second test run: actually exercise GUI functionality under Xvfb.
       # Use a shorter timeout to catch hangs (e.g., gtk_init blocking on D-Bus).
@@ -175,6 +188,19 @@ jobs:
           WEBKIT_DISABLE_COMPOSITING_MODE: '1'
           TUOHI_REQUIRE_GUI: '1'
         run: xvfb-run -a go test -count=1 -timeout 150s -v ./...
+
+      # The reference programs in examples/, run as a consumer's binary runs:
+      # the showcase's self test and the loopback program. A private session
+      # bus keeps GTK4's portal queries from waiting out D-Bus timeouts.
+      - name: Examples under Xvfb
+        timeout-minutes: 6
+        working-directory: examples
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+          WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+          TUOHI_REQUIRE_GUI: '1'
+        run: dbus-run-session -- xvfb-run -a go test -count=1 -timeout 240s -v ./...
 
   # ---------------------------------------------------------------------------
   # MacOS – native WebKit
@@ -193,6 +219,14 @@ jobs:
       # -v names every test and whether it ran, and TUOHI_REQUIRE_GUI=1 fails
       # a GUI scenario that would skip.
       - run: go test -v ./...
+        env:
+          TUOHI_REQUIRE_GUI: '1'
+      # The reference programs in examples/, run as a consumer's binary runs.
+      - name: Examples
+        working-directory: examples
+        run: |
+          go vet ./...
+          go test -count=1 -timeout 240s -v ./...
         env:
           TUOHI_REQUIRE_GUI: '1'
 
@@ -215,6 +249,17 @@ jobs:
       # package, whose Windows backend nothing else exercises, runs here.
       - name: Run single-instance tests
         run: go test -count=1 -timeout 120s ./instance/
+
+      # The reference programs in examples/, run as a consumer's binary runs.
+      # Each test bounds its program, and -timeout bounds the tests.
+      - name: Examples
+        timeout-minutes: 6
+        working-directory: examples
+        env:
+          TUOHI_REQUIRE_GUI: '1'
+        run: |
+          go vet ./...
+          go test -count=1 -timeout 240s -v ./...
 
       # The test opens a real WebView2 window and exercises the JS↔Go bridge.
       # Windows runners come with the Edge WebView2 Runtime preinstalled.
@@ -255,10 +300,10 @@ jobs:
           exit $p.ExitCode
 
   # ---------------------------------------------------------------------------
-  # Demo build + release.
+  # Examples build + release.
   #
-  # `demo` cross-builds the demo app for the targets the README ships, on every
-  # run. `release` - only on a vX.Y.Z tag, and only once every test job AND the
+  # `build` cross-builds every program in examples/, and through them the
+  # library, for the targets the README ships, on every run. `release` - only on a vX.Y.Z tag, and only once every test job AND the
   # build have succeeded - publishes a GitHub release for the tag with notes
   # GitHub generates from the commits since the previous tag, and no binaries.
   # Consumers install the library through the Go module proxy against the same
@@ -274,7 +319,7 @@ jobs:
       fail-fast: false
       matrix:
         # One leg per target: a failure names the target, and the legs build in
-        # parallel. Mirrors the Makefile's `build` target.
+        # parallel. The targets are the ones the README lists.
         include:
           - { target: linux_amd64, goos: linux, goarch: amd64 }
           - { target: linux_arm64, goos: linux, goarch: arm64 }
@@ -316,7 +361,7 @@ jobs:
           # fakecgo compiled with -std when cgo is off.
           flags=""
           if [ "$GOOS" = freebsd ]; then flags="-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std"; fi
-          GOARM="${{ matrix.goarm }}" go build $flags -o /dev/null ./demo
+          cd examples && GOARM="${{ matrix.goarm }}" go build $flags ./...
 
   release:
     name: Release ${{ github.ref_name }}

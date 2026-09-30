@@ -1,4 +1,4 @@
-/* tuohi demo page script.
+/* tuohi showcase page script.
  *
  * The page is served by App.FS from the same uniform "app://" origin on every
  * platform. Serving is scheme-first on Windows and Linux (WebView2's https
@@ -125,7 +125,7 @@ function wireBridgeSections() {
   // Clipboard
   $('clipCopy').addEventListener('click', async () => {
     try {
-      await window.demoCopyText('tuohi demo clipboard payload');
+      await window.demoCopyText('tuohi showcase clipboard payload');
       $('clipResult').textContent = 'copied';
     } catch (e) { $('clipResult').textContent = 'copy failed: ' + e; }
   });
@@ -231,7 +231,7 @@ $('btnClose').addEventListener('click', () => {
  * Runs a scripted suite of checks against the live bridge and reports each
  * step through reportSelfTest(name, pass, detail) - the Go side collects the
  * verdicts. Run it manually with the button, or automatically by loading the
- * page with #selftest (./demo --selftest). Everything here must stay free of
+ * page with #selftest (./showcase --selftest). Everything here must stay free of
  * timing assumptions beyond its own awaits, so it stays deterministic for UI
  * automation.
  */
@@ -472,10 +472,10 @@ async function runSelfTest() {
     results.push({ name, pass: true, detail });
     return Promise.resolve();
   };
-  await skip('dialog: native panels', 'modal panel - use the Dialogs section or dialog/demo');
+  await skip('dialog: native panels', 'modal panel - use the Dialogs section or examples/dialog');
   await skip('open / reveal', 'launches the desktop handler - use the Files section');
-  await skip('tray Show / Hide', '--selftest runs without a tray host; use ./demo -tray');
-  await skip('window State (fixed/min/max)', 'creation-time View.State - use ./demo --framed');
+  await skip('tray Show / Hide', '--selftest runs without a tray host; use ./showcase -tray');
+  await skip('window State (fixed/min/max)', 'creation-time View.State - use ./showcase --framed');
   await skip('run modes (--framed / -http)', 'launch-time flags, not page-testable');
   await skip('single instance', 'launch-time; see the tuohi/instance package');
 
