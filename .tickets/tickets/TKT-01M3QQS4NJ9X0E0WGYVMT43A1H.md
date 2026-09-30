@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3QQS4NJ9X0E0WGYVMT43A1H
 title: Stop make clean from deleting the demo source directory
 type: bug
-status: draft
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -17,10 +17,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-72958710
+  branch: feat/examples
+  worktree: /home/sothr/.cache/agent-scratch/tuohi/examples.0tzR/wt
+  commit: b0f60312c63325b1da72b86a99fdb5e0e0fefc36
+  session: null
+  claimed_at: 2026-09-30T02:21:08Z
+  expires_at: null
 archive: null
 created_at: 2026-09-29T23:25:13Z
-updated_at: 2026-09-29T23:25:13Z
+updated_at: 2026-09-30T02:21:08Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
