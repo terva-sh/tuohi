@@ -29,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-30T02:21:02Z
-updated_at: 2026-09-30T02:21:08Z
+updated_at: 2026-09-30T02:34:12Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -70,14 +70,56 @@ A single module with `examples/` excluded from the import check was the alternat
 
 ## Acceptance criteria
 
-- [ ] Every former demo builds from examples/ on every target GitHub's build matrix covers
-- [ ] examples/loopback serves its page over net/http and reaches a binding from it
+- [x] Every former demo builds from examples/ on every target GitHub's build matrix covers
+- [x] examples/loopback serves its page over net/http and reaches a binding from it
 - [ ] The showcase self test and the loopback program run in Forgejo's GUI job on both WebKitGTK stacks, and in GitHub's Linux, macOS and Windows jobs
-- [ ] No example imports a tuohi internal package
-- [ ] make clean removes only build outputs
+- [x] No example imports a tuohi internal package
+- [x] make clean removes only build outputs
+
+## Implementation plan
+
+### Layout
+
+- `examples/` is a module, `github.com/terva-sh/tuohi/examples`, requiring tuohi through `replace github.com/terva-sh/tuohi => ../`.
+- `examples/showcase` (was `demo/`), `examples/tray`, `examples/notify` and `examples/dialog` (were `<pkg>/demo`), and a new `examples/loopback`.
+- `examples/internal/run` lets a test run its example as a program. The example's TestMain hands itself to `run.Main`. `run.Program` re-executes the test binary with the example's arguments, and the child calls `main` on the main goroutine, where macOS needs it. The child gets its own XDG config and data directories. `run.Program` skips unless `TUOHI_REQUIRE_GUI=1`.
+
+### The contract checks
+
+- Go's internal rule goes by path, and `examples/` sits under tuohi's, so an example could import `tuohi/internal/...` and compile; probed and confirmed. `make check-examples` lists every example's imports, tests included, and fails on one. It also runs `go mod tidy -diff` in `examples/`.
+- `just` recipes (vet, test, test-gui, cross, ci) loop over `. examples`. Forgejo's check job adds the examples to vet, test and cross, plus a check-examples step, and its gui job runs `examples/` on both stacks. GitHub's lint job lints and tests `examples/` and runs check-examples. Its unix job runs an "Examples under Xvfb" step under dbus-run-session, macOS and Windows gain an Examples step, and the build matrix builds `examples/...` per target.
+
+### Makefile
+
+`clean` drops `rm -rf ./demo` (TKT-01M3QQS4). `demo` becomes `examples`, building into `./build`. `xdemo` is removed: it built release binaries, which releases no longer carry, and the GitHub build matrix already builds every target. `tidy` tidies both modules.
 
 ## Notes
 
 **agent:claude-code/t3code-72958710** at 2026-09-30T02:21:08Z
 
 The owner asked for this on 2026-09-29: move the demo into an examples directory, as an in-tree reference implementation that shows usage and holds tuohi to its contract. That request is the promotion. TKT-01M3QQS4 (Stop make clean from deleting the demo source directory) is folded in, because the move rewrites the same Makefile targets.
+
+**agent:claude-code/t3code-72958710** at 2026-09-30T02:34:11Z
+
+### What running the showcase found
+
+The showcase's self test had stopped working on main, and nothing ran it. `./demo --selftest` from origin/main 181f715 timed out at "page never became ready" on both WebKitGTK stacks, while the same binary with `-http` passed 23/23. The page was navigated to `app://#selftest`. `originOf("app://")` is `app:`, since the URL has no host, and the bridge was withheld from the page the engine actually showed.
+
+The showcase now navigates to `app://app/index.html`, the form the App.FS documentation gives, and passes 23/23 on both stacks. The library side, whether a bare `app://` should be normalized or refused, is filed as TKT-01M3R23M9 (A bare app:// URL loads its page without the bridge) and left in draft.
+
+### Other changes to the showcase
+
+- `pairValue` and `maximized` were written from binding goroutines unguarded, and now have mutexes.
+- `w` was assigned after `App.Show` returned, though the page can call a binding that uses it as soon as Show navigates. It is now assigned first.
+- The user-visible names changed: the app is "tuohi showcase" and the autostart id is `tuohi-showcase`. The page's `window.demo*` bindings and `demo:` events keep their names, because renaming them would churn 500 lines of page script for no change in what is exercised.
+
+### Verified locally
+
+- `just ci` passes, now covering `examples/`.
+- `just test-gui` passes on webkitgtk-6.0 and webkit2gtk-4.1: the library suite, loopback -check, and showcase 23/23.
+- golangci-lint v2.13.1 reports 0 issues in `examples/` for linux, darwin and windows.
+- `examples/...` builds for all 19 targets in GitHub's matrix (s390x with Go 1.27.1).
+- `make check-examples` fails on a probe example importing `tuohi/internal/toolkit`.
+- `make examples` then `make clean` leaves every tracked file in place.
+
+macOS and Windows run the examples only after the merge, on GitHub.

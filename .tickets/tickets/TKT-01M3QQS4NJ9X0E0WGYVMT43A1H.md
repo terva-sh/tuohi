@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-29T23:25:13Z
-updated_at: 2026-09-30T02:21:08Z
+updated_at: 2026-09-30T02:34:12Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -51,4 +51,14 @@ Remove the line. The demo's build outputs go to `./build`, which `clean` already
 
 ## Acceptance criteria
 
-- [ ] make clean removes only build outputs and leaves every tracked file in place
+- [x] make clean removes only build outputs and leaves every tracked file in place
+
+## Implementation plan
+
+Remove rm -rf ./demo from clean; nothing else in the Makefile writes under a source directory (demo now builds into ./build). Done inside TKT-01M3R1V2 (Move the demos into examples/ as tuohi's reference implementation), which rewrote the same targets.
+
+## Notes
+
+**agent:claude-code/t3code-72958710** at 2026-09-30T02:34:12Z
+
+Fixed in commit e5e37be on feat/examples: clean removes ./build and ./coverage.out only. Checked by running make examples then make clean, after which git status shows no deleted tracked file.
