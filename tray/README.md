@@ -97,12 +97,12 @@ Notifications are deliberately not part of this package - see
 
 ## Example
 
-A runnable demo lives in [`demo/`](demo/): icons (light + dark + macOS
+A runnable example lives in [`examples/tray`](../examples/tray/): icons (light + dark + macOS
 template), click handlers, a nested submenu, a checkbox and a notification
 item:
 
 ```bash
-go run ./tray/demo
+cd examples && go run ./tray
 ```
 
 The menu is deliberately **static**: the Config is read once by `Set`/`Run`,
