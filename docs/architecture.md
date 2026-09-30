@@ -703,8 +703,8 @@ both workflows match. The README carries the tiers for consumers.
   fix lands on Forgejo, so new macOS and Windows code lands in small pull
   requests, one engine per pull request where possible.
 - **A release publishes source.** A `v*` tag makes a GitHub release with
-  generated notes and no binaries. The demo still builds for every target on
-  every run.
+  generated notes and no binaries. The examples still build for every target
+  on every run.
 - **Actions stay pinned by tag,** not by SHA.
 - **The Alpine job keeps `gcompat`.** A binary that reaches purego asks for
   glibc's loader even without cgo, so tuohi targets glibc desktops. The

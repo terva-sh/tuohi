@@ -90,11 +90,11 @@ ebiten.RunOnMainThread(func() {
 
 ## Demo
 
-A runnable demo in [`demo/`](demo/) walks through all four `Type` values -
+A runnable example in [`examples/dialog`](../examples/dialog/) walks through all four `Type` values -
 open, multi-select, save-as and choose-directory - printing each result:
 
 ```bash
-go run ./dialog/demo
+cd examples && go run ./dialog
 ```
 
 Run it on a desktop session; on a headless machine every panel returns `nil`

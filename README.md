@@ -359,7 +359,7 @@ If the pinned backend's libraries cannot be loaded - or the value is anything
 other than the two above - tuohi prints a warning to stderr and continues
 with the auto-detected stack that works. macOS and Windows always use their
 single built-in backend (WKWebView / WebView2) and ignore the variable.
-`App.Backend()` reports the stack that was actually loaded (the demo logs it
+`App.Backend()` reports the stack that was actually loaded (the showcase logs it
 on every start).
 
 The `TUOHI_*` environment variables were named `APPKIT_*` in v0.1.0-alpha.1,
@@ -691,7 +691,7 @@ custom CSS attribute `-app-region`:
   the correct `resize` cursor when hovering the edges/corners (`State`
   controls resizability as usual; `StateFixed` turns edge resizing off).
 
-The [demo](demo/) application runs frameless by default (fully transparent,
+The [showcase](examples/showcase/) application runs frameless by default (fully transparent,
 custom chrome) with a complete runnable title bar (drag anywhere on it, click
 the dot to close) - the same chrome on every platform.
 
@@ -744,7 +744,7 @@ and a long-standing WebKit bug keeps SharedArrayBuffer off plain pages - and
 `App.HTTP` opts Linux and Windows into that same loopback origin, whose
 responses carry the COOP/COEP/CORP isolation headers. `SharedArrayBuffer` is
 available on every platform. The
-[demo](demo/) app serves its own UI through this one `App.FS` on every
+[showcase](examples/showcase/) serves its own UI through this one `App.FS` on every
 platform.
 
 ### First click on an inactive window (macOS)
@@ -822,7 +822,7 @@ events.emit("ui:save", "untitled.txt");
 `On` returns a function that cancels that one subscription; `Off(name)` drops
 all of them. Go handlers run on the goroutine that emitted (or the binding
 goroutine for events coming from JS), so re-enter the UI thread with
-`Dispatch` if a handler touches the window. The [demo](demo/) Events card
+`Dispatch` if a handler touches the window. The [showcase](examples/showcase/) Events card
 shows both directions live.
 
 ### File dialogs
@@ -852,8 +852,8 @@ Backends: `NSOpenPanel`/`NSSavePanel` (macOS), `IFileOpenDialog`/
 `IFileSaveDialog` (Windows), `GtkFileChooserNative` (Linux). Each shows the
 modal dialog, blocks the calling goroutine, and returns the chosen path(s) or
 `nil` on cancel. Call the View method from `Bind` callbacks (a background
-goroutine), never from the UI thread. The [demo](demo/) Dialogs card drives
-all four panel kinds; [`dialog/demo`](dialog/demo/) shows the standalone
+goroutine), never from the UI thread. The [showcase](examples/showcase/) Dialogs card drives
+all four panel kinds; [`examples/dialog`](examples/dialog/) shows the standalone
 package on its own.
 
 ## System tray
@@ -861,7 +861,7 @@ package on its own.
 A tray icon with a menu is the [`tray`](tray/) package's job
 (`github.com/terva-sh/tuohi/tray`). Standalone, `tray.Run` owns the
 process's UI event loop and blocks until `tray.Stop` (see
-[tray/demo](tray/demo/)); macOS, Windows and Linux are implemented. Linux runs
+[examples/tray](examples/tray/)); macOS, Windows and Linux are implemented. Linux runs
 over a D-Bus StatusNotifierItem + `com.canonical.dbusmenu` export, so no
 desktop is excluded.
 
@@ -913,7 +913,7 @@ Only one tray may be active per process; a second `Set`/`Run` returns
 `ErrAlreadyRunning`. `tray.Bounds` reports the icon's on-screen rectangle
 where the OS exposes one (Windows). See [tray/README.md](tray/README.md) for
 the full API table, threading rules and per-platform behavior, and
-[tray/demo](tray/demo/) for a runnable demo.
+[examples/tray](examples/tray/) for a runnable example.
 
 ## Desktop notifications
 
@@ -939,55 +939,64 @@ if err := notify.Show(app.Name, "Backup finished", "Snapshot complete"); err != 
 
 Reach for `notify.ShowOpts`/`notify.Alert`/`notify.Beep` when you need icons,
 urgency or a sound. See
-[notify/README.md](notify/README.md) and [notify/demo](notify/demo/) for a
+[notify/README.md](notify/README.md) and [examples/notify](examples/notify/) for a
 runnable example.
 
-## Running the demos
+## Examples
 
-One application showcases the whole package: [`demo/`](demo/) is a single
-borderless, cross-platform window (custom chrome whose maximize button
-toggles into a restore button, its UI served through the one app-scoped
-`App.FS`, JS bridge, events, clipboard, native dialogs, notifications,
-an opt-in tray (`./demo -tray`) that hides / un-minimizes / shows the window
-and open/reveal - every feature in one UI, see the comments in
-`demo/main.go`):
+[`examples/`](examples/) holds tuohi's reference programs. They are a Go
+module of their own, so they use tuohi the way a consumer does, from outside
+and through its public API only; `make check-examples` refuses an example that
+reaches into a tuohi internal package. CI builds them for every target and,
+wherever a window can open, runs them as programs, so a change that breaks how
+a consumer uses tuohi fails in tuohi's own CI. Run them from `examples/`:
 
 ```bash
-go run ./demo                      # windowed showcase (custom chrome)
-go run ./demo -http                # same, served over a per-view loopback
+cd examples
+go run ./loopback                  # an existing net/http interface in a window
+go run ./showcase                  # every feature in one borderless window
+go run ./showcase -http            # same, served over a per-view loopback
                                    # http://localhost server (App.HTTP) -
                                    # Linux/Windows opt in; macOS always does
-go run ./demo -tray                # same + a tray menu (Show / Hide / Quit)
-go run ./demo --framed             # same, with the OS window frame
-go run ./demo --selftest           # showcase + automated self test (exit 0/1)
+go run ./showcase -tray            # same + a tray menu (Show / Hide / Quit)
+go run ./showcase --framed         # same, with the OS window frame
+go run ./showcase --selftest       # showcase + automated self test (exit 0/1)
+go run ./tray                      # tray icons, menus, checkboxes
+go run ./notify                    # notifications
+go run ./dialog                    # all four native file panels
 ```
 
-The page is the demo's `App.FS`, loaded from the same uniform `app://index.html`
-URL on every platform - scheme-first on Windows and Linux (Linux's scheme is
-not `crossOriginIsolated`, but SharedArrayBuffer works via the JSC option),
-macOS via the loopback origin (WKWebView SAB bug), with
-SharedArrayBuffer available everywhere.
+[`loopback`](examples/loopback/) is the shape terva uses: the program keeps
+its `net/http` server on 127.0.0.1, points the window at it, and binds what
+the page needs from Go. `go run ./loopback -check` loads the page, checks that
+it reached both the server and Go, and exits 0 or 1.
+
+[`showcase`](examples/showcase/) is a single borderless, cross-platform window:
+custom chrome whose maximize button toggles into a restore button, its UI
+served through the one app-scoped `App.FS`, the JS bridge, events, clipboard,
+autostart, native dialogs, notifications, an opt-in tray (`-tray`) that
+hides, un-minimizes and shows the window, and open/reveal. The page is loaded
+from `app://app/index.html` on every platform - scheme-first on Windows and
+Linux (Linux's scheme is not `crossOriginIsolated`, but SharedArrayBuffer
+works via the JSC option), macOS via the loopback origin (WKWebView SAB bug),
+with SharedArrayBuffer available everywhere.
 
 The tray is opt-in via `-tray`: by default the windowed showcase keeps its
 Dock/taskbar icon. Configuring a tray runs the app as a menu-bar "accessory"
 app (no Dock icon) on macOS, so pass `-tray` only when you want that
 hide/show-from-menu example.
 
-`./demo --selftest` drives a real view and is the project's UI-automation
-hook: the page exposes stable ids and a `#selftest` suite whose verdicts are
-reported back to Go (it prints `selftest N/N passed` and exits 0/1). The
-suite covers the bridge add/echo, every binding form (constant, function,
-accessor pair), the events round trip, clipboard, autostart, the drag
-region, stable ids, the isolated context (SharedArrayBuffer) and the
-maximize toggle. Run it headlessly with
-`xvfb-run -a go run ./demo --selftest`.
+`--selftest` drives a real view and is the project's UI-automation hook: the
+page exposes stable ids and a `#selftest` suite whose verdicts are reported
+back to Go (it prints `selftest N/N passed` and exits 0/1). The suite covers
+the bridge add/echo, every binding form (constant, function, accessor pair),
+the events round trip, clipboard, autostart, the drag region, stable ids, the
+isolated context (SharedArrayBuffer) and the maximize toggle.
 
-The standalone subpackage demos remain: `tray/demo` (tray icons, menus,
-checkboxes), `notify/demo` (notifications) and `dialog/demo` (all four panel
-kinds via the `dialog` package).
-
-Each demo spawns a real tuohi window (which needs the platform view:
-WebKitGTK on Linux, WebView2 on Windows, WKWebView on macOS).
+Each example opens real platform UI (WebKitGTK on Linux, WebView2 on Windows,
+WKWebView on macOS). The showcase and loopback tests run their program only
+when `TUOHI_REQUIRE_GUI=1` says a window can open, as `just test-gui` and the
+GUI jobs in CI do, and skip otherwise.
 
 ## Testing
 
@@ -1047,18 +1056,18 @@ go build -ldflags="-H windowsgui" .
   and the `App.Start` hook, `Open`/`Reveal`, the runtime icon, the
   `serveAppFS` content resolver for `App.FS` and the remaining framework glue
   (the per-view events bridge `On`/`Off`/`Emit`, the app-wide `App.Bind` map)
-- `demo/` - the single showcase application: one borderless, cross-platform
-  window (custom chrome, UI served by `App.FS`, JS bridge + events,
-  clipboard, native dialogs, notifications, open/reveal) with a
-  `--selftest` UI-automation hook; `demo/assets/` holds its static page
+- `examples/` - the reference programs, a module of their own (see
+  [Examples](#examples)): `showcase` (every feature in one window, with a
+  `--selftest` UI-automation hook), `loopback` (an existing `net/http`
+  interface in a window), and `tray`, `notify` and `dialog`
 - `tray/` - the standalone declarative system-tray package; macOS/Windows/
-  Linux backends, `tray/demo/` inside
+  Linux backends
 - `notify/` - the standalone desktop-notification package: plain `Show`,
-  `ShowOpts` with icon/urgency, `Alert` and `Beep`; `notify/demo/` inside
+  `ShowOpts` with icon/urgency, `Alert` and `Beep`
 - `instance/` - single instance: `Acquire`, `Lock.Release` and `Send`
 - `autostart/` - launch at login: `New(id)` and the per-platform backends
 - `clipboard/` - text `Copy` and `Paste`
-- `dialog/` - the standalone native file-dialog package; `dialog/demo/` inside
+- `dialog/` - the standalone native file-dialog package
 
 tuohi loads the OS view framework directly and bundles or extracts no native
 library, so there is no extracted file to verify or swap.

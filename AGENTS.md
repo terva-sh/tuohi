@@ -188,13 +188,20 @@ licensing or attribution.
   error prefixes, `__tuohi` page internals. appkit is named only in NOTICE,
   docs/provenance.md, and statements of history such as the fork line above.
   AppKit with a capital K is Apple's framework and stays as it is.
+- **examples/ is the reference implementation.** It is a module of its own,
+  so its programs use tuohi from outside, through the public API only, as
+  terva and every other consumer do. `make check-examples` refuses an import
+  of a tuohi internal package, which Go itself would allow. A change to the
+  public API updates the examples in the same pull request, and a change that
+  breaks one has broken a consumer. CI builds them for every target and runs
+  the showcase's self test and the loopback program wherever a window opens.
 
 ### Commands
 
 `just` lists the recipes. `just ci` runs what Forgejo CI's `check` job runs:
-vet, gofmt, the import check, the embedded-JavaScript check, the headless
-tests, the cross builds, and `git ticket check`. Its `gui` job runs the steps
-of `just test-gui`. Both build and test with Go 1.26 language rules, the
+vet, gofmt, the import checks, the embedded-JavaScript check, the headless
+tests, the cross builds, and `git ticket check`, in the library and in
+`examples/`. Its `gui` job runs the steps of `just test-gui`. Both build and test with Go 1.26 language rules, the
 minimum `go.mod` declares, so do not use a newer language feature.
 
 The GUI scenarios need a display, a session bus, and a working WebKitGTK.

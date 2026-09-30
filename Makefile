@@ -1,4 +1,4 @@
-.PHONY: all build vet test test-short cover lint lint-bsd fmt tidy check-imports cross cross-bsd js-check demo xdemo clean
+.PHONY: all build vet test test-short cover lint lint-bsd fmt tidy check-imports check-examples cross cross-bsd js-check examples clean
 
 # Default target: runs the CI checks for the library.
 all: build vet test check-imports cross js-check
@@ -8,30 +8,6 @@ build:
 
 vet:
 	go vet ./...
-
-# xdemo cross-builds the demo for every build target into ./build.
-xdemo:
-	mkdir -p ./build && rm -f ./build/*
-	GOOS=windows GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_windows_amd64.exe ./demo/
-	GOOS=windows GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_windows_arm64.exe ./demo/
-	GOOS=windows GOARCH=386         go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_windows_386.exe ./demo/
-	GOOS=darwin  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_darwin_amd64 ./demo/
-	GOOS=darwin  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_darwin_arm64 ./demo/
-	GOOS=linux   GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_amd64 ./demo/
-	GOOS=linux   GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_arm64 ./demo/
-	GOOS=linux   GOARCH=386         go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_386 ./demo/
-	GOOS=linux   GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_armv7 ./demo/
-	GOOS=linux   GOARCH=arm GOARM=6 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_armv6 ./demo/
-	GOOS=linux   GOARCH=arm GOARM=5 go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_armv5 ./demo/
-	GOOS=linux   GOARCH=loong64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_loong64 ./demo/
-	GOOS=linux   GOARCH=ppc64le     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_ppc64le ./demo/
-	GOOS=linux   GOARCH=riscv64     go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_riscv64 ./demo/
-	GOOS=linux   GOARCH=s390x       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_linux_s390x ./demo/
-	GOOS=freebsd GOARCH=amd64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_freebsd_amd64 ./demo/
-	GOOS=freebsd GOARCH=arm64       go build $(FAKECGO_STD) -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_freebsd_arm64 ./demo/
-	GOOS=netbsd  GOARCH=amd64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_netbsd_amd64 ./demo/
-	GOOS=netbsd  GOARCH=arm64       go build -trimpath -ldflags="-s -w -buildid=" -o ./build/tuohi_netbsd_arm64 ./demo/
-
 
 # FreeBSD needs purego's fakecgo compiled with -std when cgo is off: it
 # exports environ and __progname with a directive the compiler otherwise
@@ -64,6 +40,22 @@ js-check:
 	@command -v node >/dev/null 2>&1 || { echo "js-check: node is required (the injected JS is parsed and behavior-tested with it)"; exit 1; }
 	go test -run 'Script|Bridge' -count=1 .
 
+# check-examples ensures the examples use only tuohi's public API. Go's
+# internal rule goes by import path, and examples/ sits under tuohi's, so the
+# compiler would let an example import tuohi/internal/...; this refuses it,
+# test files included. The examples' own examples/internal is theirs to use.
+# It also fails when examples/go.mod or go.sum is not tidy.
+check-examples:
+	@imports="$$(cd examples && go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./...)" || exit 1; \
+	forbidden="$$(printf '%s\n' "$$imports" | sort -u | grep -E '^github\.com/terva-sh/tuohi/internal(/|$$)')"; \
+	if [ -n "$$forbidden" ]; then \
+		echo "check-examples: examples import tuohi internals:"; \
+		echo "$$forbidden"; \
+		exit 1; \
+	fi; \
+	(cd examples && go mod tidy -diff) || { echo "check-examples: examples/go.mod is not tidy; run make tidy"; exit 1; }; \
+	echo "check-examples: ok (public API only, go.mod tidy)"
+
 # check-imports ensures the module does not import net/http or crypto/tls.
 # tuohi must remain independent of the stdlib HTTP/TLS stack: its per-view
 # loopback server (always on macOS, under App.HTTP on Linux and Windows) and
@@ -71,7 +63,8 @@ js-check:
 # imports of every package, test files included, for the current GOOS, so
 # prose comments mentioning these packages cannot trigger it.
 check-imports:
-	@forbidden="$$(go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./... | sort -u | grep -E '^(net/http|crypto/tls)$$')"; \
+	@imports="$$(go list -f '{{range .Imports}}{{println .}}{{end}}{{range .TestImports}}{{println .}}{{end}}{{range .XTestImports}}{{println .}}{{end}}' ./...)" || exit 1; \
+	forbidden="$$(printf '%s\n' "$$imports" | sort -u | grep -E '^(net/http|crypto/tls)$$')"; \
 	if [ -n "$$forbidden" ]; then \
 		echo "check-imports: forbidden stdlib imports found:"; \
 		echo "$$forbidden"; \
@@ -106,15 +99,17 @@ lint-bsd:
 fmt:
 	gofmt -w .
 
-# The library and demo are in the same module, so one tidy covers both.
+# The library and examples/ are separate modules; tidy both.
 tidy:
 	go mod tidy
+	cd examples && go mod tidy
 
-# Build the demonstration application in ./demo (see its flags for run modes).
-demo:
-	go build ./demo
+# Build the reference programs in examples/ (see each one's doc for how to
+# run it). The binaries go to ./build.
+examples:
+	mkdir -p ./build
+	cd examples && go build -o ../build/ ./...
 
 clean:
 	rm -rf ./build
 	rm -rf ./coverage.out
-	rm -rf ./demo

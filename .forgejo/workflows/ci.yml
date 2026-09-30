@@ -3,7 +3,8 @@
 # The steps match `just ci`. The commands are inline because the container
 # does not install just, so a change to one belongs in the other.
 #
-# Everything runs with CGO_ENABLED=0, the way consumers build tuohi. The check
+# Everything runs with CGO_ENABLED=0, the way consumers build tuohi, and
+# in both modules: the library and examples/, its reference programs. The check
 # job's Alpine container has no display or WebKitGTK, so its GUI scenarios
 # skip; the gui job runs them on Debian, on both WebKitGTK stacks, so they gate
 # a pull request before it merges. The macOS and Windows engines are exercised
@@ -44,9 +45,9 @@ jobs:
 
       - name: go vet (linux, darwin, windows)
         run: |
-          go vet ./...
-          GOOS=darwin go vet ./...
-          GOOS=windows go vet ./...
+          for m in . examples; do
+            (cd $m && go vet ./... && GOOS=darwin go vet ./... && GOOS=windows go vet ./...)
+          done
 
       - name: gofmt check
         run: test -z "$(gofmt -l . | tee /dev/stderr)"
@@ -54,11 +55,16 @@ jobs:
       - name: Import restrictions
         run: make --no-print-directory check-imports
 
+      - name: Examples use the public API only
+        run: make --no-print-directory check-examples
+
       - name: Embedded JavaScript
         run: make --no-print-directory js-check
 
       - name: go test
-        run: go test ./...
+        run: |
+          go test ./...
+          cd examples && go test ./...
 
       # FreeBSD needs purego's fakecgo compiled with -std when cgo is off.
       - name: Cross-build every target
@@ -67,7 +73,9 @@ jobs:
             echo "== $t"
             flags=""
             if [ "${t%/*}" = freebsd ]; then flags="-gcflags=github.com/ebitengine/purego/internal/fakecgo=-std"; fi
-            GOOS=${t%/*} GOARCH=${t#*/} go build $flags ./...
+            for m in . examples; do
+              (cd $m && GOOS=${t%/*} GOARCH=${t#*/} go build $flags ./...)
+            done
           done
 
       - name: Ticket store
@@ -99,12 +107,15 @@ jobs:
 
       # The steps of `just test-gui`. TUOHI_REQUIRE_GUI=1 fails a scenario
       # that would skip, so the job cannot pass by testing nothing, and both
-      # stacks run even when the first fails.
-      - name: GUI scenarios
+      # stacks run even when the first fails. The examples run as programs
+      # here, so a change that breaks how a consumer uses tuohi fails too.
+      - name: GUI scenarios and examples
         run: |
           failed=""
           for backend in webkitgtk-6.0 webkit2gtk-4.1; do
-            echo "== $backend"
-            TUOHI_REQUIRE_GUI=1 TUOHI_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 ./... || failed="$failed $backend"
+            for m in . examples; do
+              echo "== $backend $m"
+              (cd $m && TUOHI_REQUIRE_GUI=1 TUOHI_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 ./...) || failed="$failed $backend:$m"
+            done
           done
           if [ -n "$failed" ]; then echo "GUI scenarios failed on:$failed" >&2; exit 1; fi

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>tuohi loopback</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem; }
+    dt { font-weight: 600; }
+    dd { margin: 0 0 1rem; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <h1>Served over loopback</h1>
+  <p>This page comes from the program's own HTTP server. It reads one value
+    from that server and one from Go through a tuohi binding.</p>
+  <dl>
+    <dt>From the server, <code>GET /api/greeting</code></dt>
+    <dd id="greeting">…</dd>
+    <dt>From Go, <code>await window.loopback.hostname()</code></dt>
+    <dd id="hostname">…</dd>
+  </dl>
+  <script>
+    async function load() {
+      const res = await fetch('/api/greeting');
+      if (!res.ok) throw new Error(`GET /api/greeting: ${res.status}`);
+      const { greeting } = await res.json();
+      document.getElementById('greeting').textContent = greeting;
+
+      const hostname = await window.loopback.hostname();
+      document.getElementById('hostname').textContent = hostname;
+      return `greeting=${JSON.stringify(greeting)} hostname=${JSON.stringify(hostname)}`;
+    }
+
+    load()
+      .then((detail) => window.loopback.report({ ok: true, detail }))
+      .catch((e) => {
+        document.body.append(`Failed: ${e}`);
+        window.loopback.report({ ok: false, detail: String(e) });
+      });
+  </script>
+</body>
+</html>

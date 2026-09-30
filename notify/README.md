@@ -120,13 +120,13 @@ if err := notify.Show(app.Name, "Backup finished", "Snapshot complete"); err != 
 
 ## Example
 
-A runnable demo lives in [`demo/`](demo/): it fires a plain notification, one
+A runnable example lives in [`examples/notify`](../examples/notify/): it fires a plain notification, one
 with a custom icon, an alert and a beep, exiting after short pauses so the
 desktop can present them. It also exits cleanly (exit code 0) when no
 notification service exists in the environment.
 
 ```bash
-go run ./notify/demo
+cd examples && go run ./notify
 ```
 
 ## Conventions

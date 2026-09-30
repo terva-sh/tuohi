@@ -1,34 +1,37 @@
-// Command demo is the single tuohi showcase application.
-//
-// It replaces the old per-feature demos with ONE app that exercises the whole
-// main package behind a single, borderless, cross-platform window, and doubles
-// as the UI-automation target for the project:
+// Command showcase is tuohi's reference application. It exercises the whole
+// main package, and the tray, notify, dialog, clipboard and autostart
+// services, behind a single borderless, cross-platform window, using only the
+// public API a consumer has. It doubles as the project's UI-automation target:
 //
 //   - every interactive control has a stable id (see assets/index.html), so an
 //     external driver (or the built-in self test) can find it deterministically;
 //   - loading the page with "#selftest" runs a scripted suite whose verdicts
-//     are reported back to Go (see main and assets/app.js);
+//     are reported back to Go (see main and assets/app.js), and main_test.go
+//     runs that suite in CI;
 //   - because the window is frameless and the chrome is drawn by the page
 //     itself, the app looks (almost) the same on macOS, Windows and Linux.
 //
-// Run modes:
+// Run modes, from the examples directory:
 //
-//	./demo                 windowed showcase - the page is the embedded UI,
-//	                       served by App.FS from the uniform "app://" origin
-//	                       on every platform.
-//	./demo --framed        keep the OS window frame instead of the custom chrome
-//	./demo --selftest      showcase + automated self test, exit 0/1
-//	./demo -http           serve the window's app:// content over a per-view
-//	                       loopback http://localhost server (App.HTTP) instead
-//	                       of the native app scheme - an opt-in on Linux and
-//	                       Windows; macOS always serves that way.
-//	./demo -tray           windowed showcase + a tray menu (Show / Hide /
-//	                       Quit) next to the window, exercising View.Show /
-//	                       View.Hide. Opt-in: off by default so windowed runs
-//	                       keep their Dock/taskbar icon (a tray configures the
-//	                       macOS app as a menu-bar "accessory", which hides the
-//	                       Dock icon). Ignored under --selftest, which runs
-//	                       headless with no tray host.
+//	go run ./showcase             windowed showcase - the page is the
+//	                              embedded UI, served by App.FS from the
+//	                              uniform "app://" origin on every platform.
+//	go run ./showcase --framed    keep the OS window frame instead of the
+//	                              custom chrome
+//	go run ./showcase --selftest  showcase + automated self test, exit 0/1
+//	go run ./showcase -http       serve the window's app:// content over a
+//	                              per-view loopback http://localhost server
+//	                              (App.HTTP) instead of the native app
+//	                              scheme - an opt-in on Linux and Windows;
+//	                              macOS always serves that way.
+//	go run ./showcase -tray       windowed showcase + a tray menu (Show /
+//	                              Hide / Quit) next to the window,
+//	                              exercising View.Show / View.Hide. Opt-in:
+//	                              off by default so windowed runs keep their
+//	                              Dock/taskbar icon (a tray configures the
+//	                              macOS app as a menu-bar "accessory", which
+//	                              hides the Dock icon). Ignored under
+//	                              --selftest, which runs with no tray host.
 //
 // How the showcase is served: the demo sets ONE app-scoped App.FS (the
 // embedded UI) and navigates the window to the uniform "app://" origin. The
@@ -118,7 +121,7 @@ type testReport struct {
 }
 
 // demoID names the demo's autostart registration.
-const demoID = "tuohi-demo"
+const demoID = "tuohi-showcase"
 
 // autostartInfo is the JSON payload the page reads to render the Autostart
 // section (see the tuohi/autostart package).
@@ -149,9 +152,9 @@ func main() {
 	// tray shows trayIcon, the same mark downscaled to 32 pixels. The Dock
 	// icon stays by default; it disappears only when -tray is requested (the
 	// tray package runs the app under the menu-bar "accessory" policy).
-	app := &tuohi.App{Name: "tuohi demo x", Exit: true}
+	app := &tuohi.App{Name: "tuohi showcase", Exit: true}
 
-	// The tray menu captures w; it is assigned right after App.Show returns.
+	// The tray menu captures w; it is assigned before App.Show.
 	// It is OFF by default (the windowed showcase keeps its Dock/taskbar
 	// icon); pass -tray to showcase View.Show/View.Hide from a menu-bar
 	// (macOS) tray. Skipped under --selftest (runs headless, no tray host).
@@ -162,7 +165,7 @@ func main() {
 	if withTray {
 		cfg := tray.Config{
 			Icon:    trayIcon,
-			Tooltip: "tuohi demo",
+			Tooltip: "tuohi showcase",
 			Items: []tray.Item{
 				{Label: "Show", OnClick: func() {
 					// Bringing the window back from the tray also un-minimizes
@@ -195,6 +198,9 @@ func main() {
 	// The demo state the handlers share (d) and the bindings themselves are
 	// set up before Show; the closures only run once the page calls them,
 	// by which time d is assigned and w points at the spawned window.
+	// maximized tracks the toggle state of the maximize / unmaximize button;
+	// the button's binding runs off the UI thread, so it is guarded too.
+	maxMu := &sync.Mutex{}
 	maximized := false
 	// --- Accessor bindings (readable / writable Go state) ------------------
 	// A Bind value can be a length-2 array of two functions -
@@ -222,7 +228,7 @@ func main() {
 		themeMu.Unlock()
 		// A Go-side log runs on every write, whether it came from the page
 		// (window.demo.theme = v) or from Go code (writeTheme).
-		log.Printf("demo: theme -> %q", s)
+		log.Printf("showcase: theme -> %q", s)
 		return nil
 	}
 
@@ -256,9 +262,9 @@ func main() {
 	}
 
 	// demo.pair's backing value: the accessor pair's getter reads it and its
-	// setter writes it (see the Bind map below). It is plain closure state,
-	// guarded by nothing - bindings run off the UI thread but Go's string
-	// writes are atomic enough for a showcase.
+	// setter writes it (see the Bind map below). Bindings run off the UI
+	// thread, so it is guarded like the others.
+	pairMu := &sync.Mutex{}
 	pairValue := "left"
 
 	var d *windowDemo
@@ -287,20 +293,26 @@ func main() {
 			//   - demo.setp: a one-argument function - write-only setter; its
 			//     effect shows through demo.setpState, a zero-argument getter
 			//     over the same backing value.
-			// maximized tracks the toggle state of the maximize / unmaximize
-			// button; this custom chrome is the only thing that maximizes the
-			// window.
 			"demoAdd":    func(a, b float64) float64 { return a + b },
 			"demoEcho":   func(s string) string { return s },
 			"demo.clock": func() string { return time.Now().Format("15:04:05.000") },
 			"demo.mark":  func(s string) string { return "marked: " + s },
-			"demo.meta":  map[string]any{"app": "tuohi demo", "ui": "app://app/index.html"},
+			"demo.meta":  map[string]any{"app": "tuohi showcase", "ui": "app://app/index.html"},
 			// demo.pair: the accessor-pair form - [2]any{getter, setter}.
 			// Reading the property runs the getter over the bridge, assigning
 			// runs the setter; the value lives in this Go closure state.
 			"demo.pair": [2]any{
-				func() (string, error) { return pairValue, nil },
-				func(v string) error { pairValue = v; return nil },
+				func() (string, error) {
+					pairMu.Lock()
+					defer pairMu.Unlock()
+					return pairValue, nil
+				},
+				func(v string) error {
+					pairMu.Lock()
+					pairValue = v
+					pairMu.Unlock()
+					return nil
+				},
 			},
 			"demo.theme":     [2]any{readTheme, writeTheme}, // getter + setter: read + write
 			"demo.counter":   readCounter,                   // zero-arg func: read only
@@ -317,7 +329,7 @@ func main() {
 			"demoNotify": func() string {
 				// notify.Show names the source after the app; unsupported
 				// platforms surface errors.Is(err, notify.ErrUnsupported).
-				if err := notify.Show(app.Name, "tuohi demo", "Hello from the tuohi demo window!"); err != nil {
+				if err := notify.Show(app.Name, "tuohi showcase", "Hello from the tuohi showcase window!"); err != nil {
 					return err.Error()
 				}
 				return ""
@@ -344,7 +356,7 @@ func main() {
 				// View.Dialog blocks the calling goroutine until the user
 				// dismisses the panel, so it must NOT run on the UI thread - a
 				// Bind callback (this goroutine) is exactly the right place.
-				opts := dialog.Options{Title: "tuohi demo"}
+				opts := dialog.Options{Title: "tuohi showcase"}
 				switch kind {
 				case "save":
 					opts.Type = dialog.TypeSave
@@ -397,6 +409,8 @@ func main() {
 				// request aimed at a minimized window would otherwise only
 				// make the window manager flash the taskbar entry - the button
 				// always brings the window back on screen.
+				maxMu.Lock()
+				defer maxMu.Unlock()
 				maximized = !maximized
 				if maximized {
 					w.Unminimize()
@@ -430,6 +444,9 @@ func main() {
 			},
 		},
 	}
+	// The page can call a binding as soon as Show navigates it, before Show
+	// returns, so every handle the bindings and the tray use is set first.
+	w = view
 	d = &windowDemo{
 		w:     view,
 		app:   app,
@@ -442,10 +459,13 @@ func main() {
 		},
 	}
 
-	// The first page: the uniform "app://" URL (with #selftest appended when
-	// the automated suite runs). It is the declarative View.URL, navigated by
-	// App.Show once the window is up.
-	page := "app://"
+	// The first page: index.html under the uniform "app://" origin (with
+	// #selftest appended when the automated suite runs). It is the
+	// declarative View.URL, navigated by App.Show once the window is up. The
+	// URL names the "app" host, as the App.FS documentation does: the bridge
+	// reaches only the origin the view was navigated to, and a bare "app://"
+	// has no host to be one.
+	page := "app://app/index.html"
 	if d.self.active {
 		page += "#selftest"
 	}
@@ -459,11 +479,10 @@ func main() {
 	// loading. From here on the same *View is the window handle (Navigate,
 	// Show/Hide, On/Emit, ...).
 	if err := app.Show(view); err != nil {
-		log.Fatalf("demo: %v", err)
+		log.Fatalf("showcase: %v", err)
 	}
-	w = view
 
-	log.Printf("demo: webview backend: %s", app.Backend())
+	log.Printf("showcase: webview backend: %s", app.Backend())
 
 	// --- Events: subscribe to the JS side ------------------------------------
 	// JS emits "demo:uiGreet" (e.g. from the Events card); we log it and reply
@@ -479,7 +498,7 @@ func main() {
 				text = s
 			}
 		}
-		log.Printf("demo: JS greeted with %q", text)
+		log.Printf("showcase: JS greeted with %q", text)
 		_ = d.w.Emit("demo:goEvent", "pong:"+text)
 	})
 
@@ -489,7 +508,7 @@ func main() {
 			select {
 			case <-d.self.ready:
 			case <-time.After(20 * time.Second):
-				log.Println("demo: page never became ready; aborting self test")
+				log.Println("showcase: page never became ready; aborting self test")
 				d.app.Quit()
 				return
 			}
@@ -498,7 +517,7 @@ func main() {
 			select {
 			case <-d.self.done:
 			case <-time.After(60 * time.Second):
-				log.Println("demo: self test timed out")
+				log.Println("showcase: self test timed out")
 				d.app.Quit()
 			}
 		}()
@@ -522,7 +541,7 @@ func main() {
 		tray.Remove()
 	}
 	if err != nil {
-		log.Printf("demo: wait: %v", err)
+		log.Printf("showcase: wait: %v", err)
 		code = 1
 	} else if !d.self.active {
 		code = 0
@@ -531,7 +550,7 @@ func main() {
 		case reports := <-d.self.reports:
 			code = summarize(reports)
 		default:
-			log.Println("demo: no self-test report received")
+			log.Println("showcase: no self-test report received")
 			code = 1
 		}
 	}
