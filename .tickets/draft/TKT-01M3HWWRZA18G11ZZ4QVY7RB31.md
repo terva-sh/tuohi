@@ -37,12 +37,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-28T19:08:54Z
+updated_at: 2026-09-30T02:18:43Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/bridge-trust-3
+  id: agent:claude-code/t3code-72958710
   name: ""
 extensions: {}
 ---
@@ -70,3 +70,7 @@ Tag and publish tuohi v0.1.0 as the first terva-sh release, so git-ticket-canvas
 **agent:claude-code/bridge-trust-3** at 2026-09-28T19:08:54Z
 
 The owner asked, 2026-09-28, for a pre-release so another agent can start integrating tuohi before v0.1.0: v0.1.0-alpha.1, cut from main after the bridge trust work, TKT-01M3HWWRT7X1RZZYY6KFEP0ERE, landed. This ticket's v0.1.0 gate is unchanged. The permission policy (TKT-01M3HWWRTV), single-instance hardening (TKT-01M3HWWRVG), and reply-side trust (TKT-01M3JYQWZB) remain open. The release notes name those, the Linux goroutine-safety bug (TKT-01M3J1H8CP), the unguarded App.FS server (TKT-01M3J59M4E), and the coming API changes as limits of the alpha. The GitHub release job now publishes a tag with a pre-release part as a GitHub pre-release.
+
+**agent:claude-code/t3code-72958710** at 2026-09-30T02:18:43Z
+
+The owner asked, 2026-09-29, for the binaries on the GitHub pre-release v0.1.0-alpha.1 to be deleted, following the decision that releases publish notes only. They were the 19 tuohi-demo_<os>_<arch> builds of ./demo, attached by the release job before that decision. The release, its tag, and its notes stay. Forgejo carries no release for the tag, so nothing was deleted there. The tag's source is what integrators consume, through the module proxy.
