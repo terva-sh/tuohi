@@ -621,19 +621,22 @@ func (a *App) Show(view *View) error {
 	if err := uiThreadErr(); err != nil {
 		return err
 	}
-	if ui.onUI() {
-		if uiThreadPinned() {
-			return a.show(view)
-		}
+	// The pin is read before the thread: an unpinned thread counts as the UI
+	// thread, so a Show that saw itself on it before another Show pinned a
+	// thread would go on to create its window on the wrong one.
+	if !uiThreadPinned() {
 		// No UI thread yet: this Show may become it. Two first Shows at once
 		// would each count as the UI thread and create a window on their own
 		// thread, so they take turns, and the one that waited checks again.
 		firstShowMu.Lock()
-		if ui.onUI() {
+		if !uiThreadPinned() {
 			defer firstShowMu.Unlock()
 			return a.show(view)
 		}
 		firstShowMu.Unlock()
+	}
+	if ui.onUI() {
+		return a.show(view)
 	}
 	// Creating a window, binding it and loading its page all touch the
 	// engine, which only the UI thread may do, so the whole Show runs there.
