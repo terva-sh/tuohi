@@ -65,7 +65,7 @@ func menuQuit() {
 // as its button would close it. A frameless window has none, so performClose:
 // would only beep; it is sent close, which its delegate reports the same way.
 func menuClose() {
-	win := class("NSApplication").Send(sel("sharedApplication")).Send(sel("keyWindow"))
+	win := menuWindow()
 	if win == 0 {
 		return
 	}
@@ -79,7 +79,7 @@ func menuClose() {
 // menuMinimize is ⌘M on the key window. A frameless tuohi window cannot be
 // miniaturized by AppKit, so it uses the engine's own Minimize.
 func menuMinimize() {
-	win := class("NSApplication").Send(sel("sharedApplication")).Send(sel("keyWindow"))
+	win := menuWindow()
 	if win == 0 {
 		return
 	}
@@ -88,6 +88,17 @@ func menuMinimize() {
 		return
 	}
 	win.Send(sel("performMiniaturize:"), objc.ID(0))
+}
+
+// menuWindow is the window Close and Minimize act on: the key window, or the
+// main window when no window is key, as a menu item a person chooses with
+// the mouse may find it.
+func menuWindow() objc.ID {
+	app := class("NSApplication").Send(sel("sharedApplication"))
+	if win := app.Send(sel("keyWindow")); win != 0 {
+		return win
+	}
+	return app.Send(sel("mainWindow"))
 }
 
 // installMainMenu installs the default main menu unless NSApp already has
@@ -156,12 +167,17 @@ func addSubmenu(bar objc.ID, title string) objc.ID {
 	return sub
 }
 
+// menuItemTag marks the items tuohi adds, so they can be told from those
+// AppKit adds to an Edit or Window menu by itself.
+const menuItemTag = 0x7475 // "tu"
+
 // addItem adds an item to menu. A key equivalent's modifiers default to ⌘,
 // and an upper-case key adds ⇧. A zero target sends the action to the first
 // responder.
 func addItem(menu objc.ID, title, action, key string, mods uint, target objc.ID) {
 	item := class("NSMenuItem").Send(sel("alloc")).Send(
 		sel("initWithTitle:action:keyEquivalent:"), nsstr(title), sel(action), nsstr(key)).Send(sel("autorelease"))
+	item.Send(sel("setTag:"), menuItemTag)
 	if mods != 0 {
 		item.Send(sel("setKeyEquivalentModifierMask:"), mods)
 	}

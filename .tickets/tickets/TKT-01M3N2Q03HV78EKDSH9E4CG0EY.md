@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T06:36:00Z
+updated_at: 2026-10-01T06:45:44Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -102,3 +102,7 @@ The owner decided, 2026-10-01. Ship the default the ticket describes: an applica
 Untested candidates: the app may not be active on the runner, so NSApp may not dispatch key equivalents, or keyWindow may be nil and menuClose does nothing. The events may also need a real timestamp, or need posting with postEvent:atStart: instead of sendEvent:. Calling [[NSApp mainMenu] performKeyEquivalent:] directly would test the menu's routing without depending on event delivery. menuClose and menuMinimize could fall back to mainWindow when there is no keyWindow.
 
 The run also failed on Windows, from TKT-01M3V1Z4 (App.Wait sometimes misses a Close from Go on Windows), which is unrelated to this PR. No criterion is ticked.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T06:45:44Z
+
+Follow-up to GitHub run 36825339187. The structure test now ignores items AppKit adds to Edit. The key tests hand each key to [[NSApp mainMenu] performKeyEquivalent:], which tests the menu's own routing without depending on how the runner delivers synthesized events. pressKey reports whether the menu handled the key and whether the window was key, main, and the app active, and the failure messages include that. Close and Minimize fall back to the main window when no window is key. The pasteboard is polled for up to 2 s after copy and cut. The no-menu record still goes through [NSApp sendEvent:], because with no menu that is the only path.
