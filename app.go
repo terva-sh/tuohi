@@ -139,7 +139,8 @@ func boxDownscale(src *image.NRGBA, size int) *image.NRGBA {
 	return dst
 }
 
-// envDebug reports whether TUOHI_DEBUG=1 override-enables the dev tools.
+// envDebug reports whether TUOHI_DEBUG=1 is set. It turns the dev tools on
+// only for an App that sets AllowEnvDebug.
 func envDebug() bool { return os.Getenv("TUOHI_DEBUG") == "1" }
 
 // App configures a tuohi application and carries its runtime scope.
@@ -167,8 +168,8 @@ type App struct {
 	// Debug turns the platform web inspector / developer tools on for every
 	// window of this app (the app-wide default for View.Debug): set it once
 	// for "every window is debuggable". A view's own View.Debug ORs over it,
-	// and the TUOHI_DEBUG=1 environment variable forces the tools on for
-	// every view no matter what.
+	// and so does the TUOHI_DEBUG=1 environment variable when AllowEnvDebug
+	// is set.
 	//
 	// Like every App field it is committed when the app scope opens (later
 	// edits have no effect) and it is read exactly once per view, at window
@@ -176,6 +177,16 @@ type App struct {
 	// WebKitGTK enable-developer-extras (Linux), WKPreferences
 	// developerExtrasEnabled (macOS).
 	Debug bool
+
+	// AllowEnvDebug lets whoever launches the program turn the developer
+	// tools on for every view by setting the TUOHI_DEBUG=1 environment
+	// variable. It is off by default, so a release build opens its web
+	// inspector only when the application itself sets Debug or View.Debug:
+	// the environment belongs to the person launching the program, and the
+	// inspector reaches every page and binding. Set it in a development
+	// build, or when debugging an installed build is worth that. It is
+	// committed when the app scope opens, like every App field.
+	AllowEnvDebug bool
 
 	// Events names the JavaScript global the tuohi events bridge installs on
 	// every page of this app: window.<Events> with on/off/emit (see
@@ -328,8 +339,8 @@ type appConfig struct {
 }
 
 // snapshotConfig copies an App's exported settings into a plain appConfig.
-// Debug commits App.Debug OR the TUOHI_DEBUG=1 environment override (the
-// environment variable forces the dev tools on for every view).
+// Debug commits App.Debug OR, when App.AllowEnvDebug is set, the
+// TUOHI_DEBUG=1 environment variable.
 func snapshotConfig(a *App) appConfig {
 	return appConfig{
 		Name:         a.Name,
@@ -339,7 +350,7 @@ func snapshotConfig(a *App) appConfig {
 		DesktopEntry: a.DesktopEntry,
 		FS:           a.FS,
 		HTTP:         a.HTTP,
-		Debug:        a.Debug || envDebug(),
+		Debug:        a.Debug || (a.AllowEnvDebug && envDebug()),
 		Events:       a.Events,
 		Bind:         a.Bind,
 	}

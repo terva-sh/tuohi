@@ -595,8 +595,10 @@ The per-window knobs tuohi reads at window creation live directly on the
 
 - `App.Debug` and `View.Debug` (default **false**) - the dev-tools /
   inspector switch. `View.Debug` opens one window's inspector; `App.Debug`
-  applies app-wide; the two OR together, and the `TUOHI_DEBUG=1`
-  environment variable forces the tools on for every view no matter what.
+  applies app-wide; the two OR together. The `TUOHI_DEBUG=1` environment
+  variable turns the tools on for every view only when the program sets
+  `App.AllowEnvDebug`, so a release build is not opened to the inspector
+  by whoever launches it.
   Backend mapping: WebView2 `DevTools`, WebKitGTK
   `enable-developer-extras`, `WKPreferences.developerExtrasEnabled`.
 - `View.FirstMouse` (default **false**) - macOS first-click passthrough

@@ -472,10 +472,10 @@ criteria do not cover them:
 
 - macOS turns `fullScreenEnabled` on against the native default:
   TKT-01M3NSA8JEDJJEBA47SVA4EZ7T.
-- `TUOHI_DEBUG=1` turns dev tools on in any build:
-  TKT-01M3NSA8HE52CHVQZ2A6T8H5NS. The review leans against letting an
-  environment variable do that. `View.Debug` is the application's decision,
-  and an environment variable is whoever launched it.
+- `TUOHI_DEBUG=1` turned dev tools on in any build:
+  TKT-01M3NSA8HE52CHVQZ2A6T8H5NS. `View.Debug` is the application's
+  decision, and an environment variable belongs to whoever launched it, so
+  the variable now counts only when the program sets `App.AllowEnvDebug`.
 
 ## Serving: the loopback consumer first, `App.FS` kept
 
