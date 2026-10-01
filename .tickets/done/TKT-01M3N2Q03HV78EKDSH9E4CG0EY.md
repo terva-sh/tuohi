@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N2Q03HV78EKDSH9E4CG0EY
 title: Give macOS apps a default main menu
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -20,17 +20,10 @@ references:
   - ref: ticket:git-ticket-canvas/TKT-01M3N0ZZFZKWNRCWQQ3GY2AYJT
     path: null
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: feat/darwin-main-menu
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 973d852d9b108c01cf9d99eda9b348cc03f33a42
-  session: null
-  claimed_at: 2026-10-01T05:56:31Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T08:02:48Z
+updated_at: 2026-10-01T08:35:17Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -63,10 +56,10 @@ WKWebView normally receives ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in text fields throu
 
 ## Acceptance criteria
 
-- [ ] ⌘W closes the focused window and ⌘Q quits, on framed and frameless windows
+- [x] ⌘W closes the focused window and ⌘Q quits, on framed and frameless windows
 - [x] Whether copy and paste work in a page's text fields without a menu is checked and recorded
-- [ ] Cut, copy, paste, select all, undo and redo work in a page's text fields
-- [ ] Whether a consumer can replace or extend the menu is decided and recorded
+- [x] Cut, copy, paste, select all, undo and redo work in a page's text fields
+- [x] Whether a consumer can replace or extend the menu is decided and recorded
 
 ## Implementation plan
 
@@ -118,3 +111,11 @@ GitHub run 36831446783 (after #67): Windows is green. On macOS, ⌘W still close
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T08:02:48Z
 
 GitHub run 36833406011 (main 3bfdca1): ⌘W was handled with the window key (keyBefore=true handled=true), but menuCloseOne waited for Run to return, and on macOS Run returns only when the process-wide window count reaches zero; earlier scenarios leave windows counted. The scenario now waits on the view's own closed channel (closed by windowWillClose). Undo ran (canRedo=true afterwards) but the field was empty either way, likely because paste and cut fell in one undo group between synthesized presses. Undo and redo now act on the paste alone, before the cut. Branch fix/menu-tests-4.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T08:35:16Z
+
+GitHub run 36836953989 (main 6230e18, after #69): TestDefaultMainMenu, TestMenuCloseKey (framed and frameless both closed), TestMenuEditKeys (copy, paste, undo, redo, select all, cut) pass on macOS. TestCopyWithoutMainMenu records copy unhandled without a menu (handled=false). ⌘Q evidence is the menu structure test (q maps to tuohiQuit:, which calls App.Quit's requestExit) plus the code; the key is not pressed end to end, because quitting would end the test process's app. Criterion 4: the owner chose a fixed default only; recorded in menu_darwin.go's header and the README section 'The main menu (macOS)'.
+
+## Summary
+
+tuohi installs a fixed default main menu on macOS (App: About, Hide, Hide Others, Show All, Quit; Edit: undo, redo, cut, copy, paste, select all; Window: Minimize, Close) when it creates the first window, unless one is already installed (#62). Tests (#68, #69) drive the keys through the menu and pass on GitHub's macOS runner. No replace/extend API, by the owner's decision.
