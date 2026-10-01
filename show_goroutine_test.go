@@ -1,6 +1,7 @@
 package tuohi
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -12,10 +13,12 @@ var resShowGoroutine atomic.Value // string
 
 // showGoroutineScenario shows a second View from goroutines while the first
 // view's loop runs on the UI thread (TKT-01M3N0PTQ7ZY1X78PX70SZ56AN). Two
-// goroutines call App.Show on the same View at once: both must return nil,
-// exactly one window may be created, and its page must load and call a
-// binding, which needs a window built on the UI thread. A Show off the UI
-// thread with no loop running must refuse and create nothing.
+// goroutines call App.Show on the same View at once. Each must return nil,
+// or errShowInProgress when the first creation ran it (WebView2 pumps
+// messages while it creates), and at least one must return nil. Exactly one
+// window may be created, and its page must load and call a binding, which
+// needs a window built on the UI thread. A Show off the UI thread with no
+// loop running must refuse and create nothing.
 func showGoroutineScenario() string {
 	app := testApp()
 	first := &View{}
@@ -64,8 +67,17 @@ func showGoroutineScenario() string {
 		// A second window would load the page and report too.
 		time.Sleep(time.Second)
 		second.Close()
-		result <- fmt.Sprintf("show=%v,%v live=%v hit=%s hits=%d ready=%d",
-			errs[0], errs[1], live, hit, 1+len(hits), readies.Load())
+		shows := "ok"
+		for _, err := range errs {
+			if err != nil && !errors.Is(err, errShowInProgress) {
+				shows = err.Error()
+			}
+		}
+		if errs[0] != nil && errs[1] != nil {
+			shows = "neither Show returned nil"
+		}
+		result <- fmt.Sprintf("show=%s live=%v hit=%s hits=%d ready=%d",
+			shows, live, hit, 1+len(hits), readies.Load())
 	}()
 
 	native(first).loadHTML(`<!DOCTYPE html><html><body>first</body></html>`)
@@ -96,7 +108,7 @@ func showGoroutineScenario() string {
 func TestShowFromGoroutine(t *testing.T) {
 	got, _ := resShowGoroutine.Load().(string)
 	requireGUI(t, got)
-	want := "show=<nil>,<nil> live=true hit=two hits=1 ready=1 idle=true,false"
+	want := "show=ok live=true hit=two hits=1 ready=1 idle=true,false"
 	if got != want {
 		t.Fatalf("Show from a goroutine:\n got %s\nwant %s", got, want)
 	}

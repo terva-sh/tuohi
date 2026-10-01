@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T05:47:20Z
+updated_at: 2026-10-01T05:56:10Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -96,3 +96,13 @@ It blocks v0.1.0.
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T05:47:20Z
 
 On Linux the scenario passes on both WebKitGTK stacks. With the hand-off disabled, the Linux suite aborts with SIGABRT, because GTK is called off its thread, so the scenario catches the bug. macOS and Windows are tested on GitHub after the merge, so criterion 1 is ticked on the Linux evidence and the shared code, and criterion 2 waits for that run.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:56:10Z
+
+### Review 1662 on PR #61
+
+- **high: concurrent first Shows of different Views before the UI thread is pinned.** Fixed. Shows made before the pin take turns on `firstShowMu` and check `ui.onUI()` again after waiting. Each engine gets `uiThreadPinned()`, always true on macOS, so after the pin the path takes no lock. A Show the creation runs re-entrantly therefore never blocks on it.
+- **medium: an overlapping Show reported success when the creation could fail.** Fixed. With the mutex, a Show can see `showing` only when it runs re-entrantly on the UI thread, where waiting would deadlock. It now returns `errShowInProgress` instead of nil. The scenario accepts that for one of its two Shows and requires the other to return nil.
+- **medium: macOS refused a reveal it used to queue.** Fixed. The live-View check comes before `uiThreadErr` again.
+
+The pre-pin race has no GUI scenario. Every test process pins the UI thread in its first scenario, so the race cannot be staged there without a fake engine. The mutex is the whole fix and is small enough to read.

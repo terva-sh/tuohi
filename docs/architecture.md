@@ -228,12 +228,14 @@ thread it hands the whole creation (window, bindings, first navigation) to
 the UI thread through `ui.call` and waits, so the View is live when it returns.
 The first `Show`, before any loop runs, is what pins the UI thread on Unix and
 Windows, so it runs in place. With no loop running to take the creation, `Show`
-returns an error and creates nothing. Each `View` carries a `showing` flag
-while its window is created. A second `Show` of the same View in that time
-returns at once rather than creating a second window. It may arrive on another
-thread before the UI thread is pinned, or on the same thread when the creation
-pumps messages (WebView2 does while it installs scripts). Revealing a live
-window is queued and not waited for, as before.
+returns an error and creates nothing. Shows made before the UI thread is
+pinned take turns on a mutex, so two first Shows cannot each create a window
+on their own thread. Each `View` carries a `showing` flag while its window is
+created. A second `Show` of the same View can only see it on the UI thread,
+when the creation pumps messages (WebView2 does while it installs scripts).
+It cannot wait there, and the creation may still fail, so it returns
+`errShowInProgress`. Revealing a live window is queued and not waited for, as
+before, even on macOS off the main thread with no loop running.
 
 The other `App` methods are not yet covered. `Notify`, `Open`, and `Reveal` make
 native calls on the caller on macOS and Windows:
