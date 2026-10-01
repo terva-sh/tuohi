@@ -248,7 +248,7 @@ func menuEditScenario(noMenu bool) string {
 		w.Eval(`var f = document.getElementById('f'); f.focus(); f.select();`)
 		time.Sleep(200 * time.Millisecond)
 		press("c", keyC, 0)
-		steps := []string{"copy=" + pasteboardWait()}
+		steps := []string{"copy=" + pasteboardWait(text)}
 		if noMenu {
 			result <- strings.Join(steps, " ")
 			return
@@ -260,7 +260,7 @@ func menuEditScenario(noMenu bool) string {
 		performOnMain(func() { generalPasteboard().Send(sel("clearContents")) })
 		press("a", keyA, 0)
 		press("x", keyX, 0)
-		steps = append(steps, "cut="+value()+"/"+pasteboardWait())
+		steps = append(steps, "cut="+value()+"/"+pasteboardWait(text))
 		press("z", keyZ, 0)
 		steps = append(steps, "undo="+value())
 		press("Z", keyZ, nsEventModifierFlagShift)
@@ -290,15 +290,17 @@ func generalPasteboard() objc.ID {
 var menuEditStates sync.Map
 
 // pasteboardWait reads the pasteboard's text, waiting up to two seconds for
-// it to have some: the web process answers copy: and cut: asynchronously.
-func pasteboardWait() string {
+// it to be want: the web process answers copy: and cut: asynchronously. It
+// returns the last text it read.
+func pasteboardWait(want string) string {
+	s := ""
 	for i := 0; i < 20; i++ {
-		if s := pasteboardText(); s != "" {
-			return s
+		if s = pasteboardText(); s == want {
+			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return ""
+	return s
 }
 
 // pasteboardText reads the general pasteboard's text, "" when it has none.
