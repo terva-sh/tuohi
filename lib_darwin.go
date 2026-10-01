@@ -854,11 +854,17 @@ var (
 )
 
 // runNSApp drives [NSApp run] as tuohi's own loop until something stops it.
-func runNSApp(app objc.ID) {
+// With a non-nil terminated it returns at once instead when terminated is
+// already set: the Terminate that set it read loopGen before this loop
+// existed, so its stop is dropped.
+func runNSApp(app objc.ID, terminated *atomic.Bool) {
 	loopGen.Add(1)
 	tuohiRunsLoop.Store(true)
+	defer tuohiRunsLoop.Store(false)
+	if terminated != nil && terminated.Load() {
+		return
+	}
 	app.Send(sel("run"))
-	tuohiRunsLoop.Store(false)
 }
 
 func claimFirstInstance() bool {
@@ -919,6 +925,11 @@ type webview struct {
 	// belongs to someone else. closeOnce makes the two close paths safe.
 	closed    chan struct{}
 	closeOnce sync.Once
+
+	// terminated is set by Terminate before it reads loopGen, and read by Run
+	// after runNSApp raised loopGen: of a Run starting and a Terminate on
+	// another goroutine, one always sees the other.
+	terminated atomic.Bool
 
 	viewCore
 
@@ -1243,15 +1254,9 @@ func (w *webview) Run() {
 		<-w.closed
 		return
 	}
-	select {
-	case <-w.closed:
-		// Terminate came first, before any loop of this Run's existed to stop.
-		return
-	default:
-	}
 	ui.enterLoop()
 	defer ui.exitLoop()
-	runNSApp(w.app)
+	runNSApp(w.app, &w.terminated)
 }
 
 // pumpUntilClosed services the event queue on the UI thread until this window
@@ -1300,8 +1305,9 @@ func (w *webview) Terminate() {
 	// it (onWindowDestroyed), and so does the View.Close that follows. The
 	// second ran in the next Run and ended it at once, so a stop is dropped
 	// once the loop it was meant for has ended (GitHub runs 36839261792 and
-	// 36839839080). A Run that has not started yet sees the closed channel.
+	// 36839839080). A Run that has not started its loop yet sees terminated.
 	w.closeOnce.Do(func() { close(w.closed) })
+	w.terminated.Store(true)
 	gen := loopGen.Load()
 	dispatchMain(func() {
 		if tuohiRunsLoop.Load() && loopGen.Load() == gen {
@@ -2017,7 +2023,7 @@ func platformBackend() string { return "WKWebView" }
 func appUIWait() {
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	if app.Send(sel("isRunning")) == 0 {
-		runNSApp(app)
+		runNSApp(app, nil)
 		return
 	}
 	for !appExitRequested() {

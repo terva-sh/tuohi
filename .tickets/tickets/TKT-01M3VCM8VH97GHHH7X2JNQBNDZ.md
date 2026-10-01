@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-01T09:27:17Z
-updated_at: 2026-10-01T09:27:25Z
+updated_at: 2026-10-01T09:38:45Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -59,3 +59,9 @@ A consumer that closes its last window and then runs another window would see th
 ## Implementation plan
 
 Gate Terminate's queued stop to the loop that was running when it was called. A loopGen counter goes up each time tuohi enters [NSApp run] (runNSApp, used by Run and appUIWait), and the dispatched block stops the loop only if tuohiRunsLoop is still set and loopGen is unchanged. Terminate also closes the view's closed channel, and Run returns at once if it is already closed, so a Close that comes before Run still ends it. Considered and rejected: a per-view running flag like Windows #67 has. On macOS the loop is process-wide, so a flag does not tell one loop from the next. Also rejected: making the test avoid closing the last window. That hides a bug a consumer can hit.
+
+## Notes
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T09:38:45Z
+
+Review of #72 (high, accepted): Run checked the closed channel before loopGen was raised, so a Terminate between the two captured the old generation and its stop was dropped, leaving Run stuck. Now runNSApp raises loopGen, then reads the view's terminated flag, while Terminate sets terminated and then reads loopGen. Both are sequentially consistent atomics, so either Run sees terminated and returns, or Terminate reads the new generation and its stop applies. The channel alone could not give that guarantee, because Go's memory model orders atomics, not a channel close against an atomic.
