@@ -932,7 +932,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 	// (tuohi's one tuned divergence: it enables fullscreen so the demo's
 	// <video> can go fullscreen), deprecated javaEnabled/plugInsEnabled NO -
 	// except developerExtrasEnabled, which tracks the view's resolved Debug
-	// flag (View.Debug OR App.Debug / TUOHI_DEBUG). Every write goes
+	// flag (View.Debug OR App.Debug). Every write goes
 	// through KVC guarded by respondsToSelector: on the property's setter,
 	// so a preference the running macOS does not know (newer or removed
 	// properties, e.g. javaEnabled after 10.15) is skipped instead of

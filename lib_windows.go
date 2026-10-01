@@ -1331,7 +1331,7 @@ func (w *webview) embed(v *View) error {
 	// stay on - tuohi's JS bridge posts through it. tuohi's tuned
 	// divergences from WebView2's native defaults: the status bar is hidden
 	// (custom chrome) and dev tools open only when the view's resolved Debug
-	// flag is set (View.Debug OR App.Debug / TUOHI_DEBUG). Settings apply
+	// flag is set (View.Debug OR App.Debug). Settings apply
 	// from the next top-level navigation. Each property is written through
 	// the interface that owns its offset, obtained from the Base settings
 	// object by QueryInterface; a Runtime older than that interface skips the

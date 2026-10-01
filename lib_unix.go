@@ -2091,7 +2091,7 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 	// (navigator.clipboard, on a user gesture), and copying on a click works
 	// either way. The debug-driven pair - the dev-tools
 	// switch and console forwarding - tracks the view's resolved Debug flag
-	// (View.Debug OR App.Debug / TUOHI_DEBUG). Every other WebKitSettings
+	// (View.Debug OR App.Debug). Every other WebKitSettings
 	// property keeps the loaded library's own compiled-in defaults.
 	st := webkitWebViewGetSettings(w.webview)
 	webkitSettingsSetEnableMediaStream(st, true)

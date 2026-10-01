@@ -55,6 +55,32 @@ func TestSnapshotConfigCarriesExit(t *testing.T) {
 	}
 }
 
+// TestSnapshotConfigEnvDebug checks that TUOHI_DEBUG=1 turns the dev tools
+// on only for an App that sets AllowEnvDebug (TKT-01M3NSA8HE52CHVQZ2A6T8H5NS).
+func TestSnapshotConfigEnvDebug(t *testing.T) {
+	cases := []struct {
+		env        string
+		debug, opt bool
+		want       bool
+	}{
+		{"", false, false, false},
+		{"1", false, false, false},
+		{"1", false, true, true},
+		{"", false, true, false},
+		{"0", false, true, false},
+		{"", true, false, true},
+		{"1", true, false, true},
+	}
+	for _, c := range cases {
+		t.Setenv("TUOHI_DEBUG", c.env)
+		got := snapshotConfig(&App{Debug: c.debug, AllowEnvDebug: c.opt}).Debug
+		if got != c.want {
+			t.Errorf("TUOHI_DEBUG=%q Debug=%v AllowEnvDebug=%v: committed Debug = %v, want %v",
+				c.env, c.debug, c.opt, got, c.want)
+		}
+	}
+}
+
 // eventsFakeWV is a View that records the Init/Bind/Eval the events bridge
 // performs and runs Dispatch synchronously, so the whole Go side is testable
 // without a real window. The embedded stub supplies the rest of the interface.
