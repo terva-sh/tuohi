@@ -749,6 +749,22 @@ available on every platform. The
 [showcase](examples/showcase/) serves its own UI through this one `App.FS` on every
 platform.
 
+### The main menu (macOS)
+
+On macOS, tuohi installs a standard main menu when it creates the first
+window, so the usual keys work:
+
+- the application menu, with About, Hide (⌘H), Hide Others (⌥⌘H), Show All,
+  and Quit (⌘Q), which calls `App.Quit`;
+- Edit, with Undo (⌘Z), Redo (⇧⌘Z), Cut (⌘X), Copy (⌘C), Paste (⌘V), and
+  Select All (⌘A), which a page's text fields need;
+- Window, with Minimize (⌘M) and Close (⌘W), which also work on frameless
+  windows.
+
+The application menu takes its title from `App.Name`, or the process name.
+The menu cannot be replaced or extended yet. A main menu that something else
+installed first, such as an embedding host's, is left as it is.
+
 ### First click on an inactive window (macOS)
 
 On macOS a click on a window that does not have focus is spent *activating*

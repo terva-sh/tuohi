@@ -392,6 +392,9 @@ func registerClasses() error {
 	if err != nil {
 		return fmt.Errorf("webview: first-mouse web view class: %w", err)
 	}
+	if err := registerMenuTargetClass(); err != nil {
+		return fmt.Errorf("webview: menu target class: %w", err)
+	}
 	return nil
 }
 
@@ -1122,6 +1125,7 @@ func (w *webview) onApplicationDidFinishLaunching(app objc.ID) {
 }
 
 func (w *webview) windowInitProceed() {
+	installMainMenu()
 	autorelease(func() {
 		// Frameless windows must allocate from borderlessWindowClass: a plain
 		// NSWindow with no title bar cannot become key (see registerClasses),
