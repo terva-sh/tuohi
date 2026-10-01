@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N0PTS10TG629DVNEFSNVSZ
 title: Check that a Close from Go reaches App.Wait on macOS
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/darwin-close-wait
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 6128cae6676eb2e9412ccaa43a0dd65a9524d391
-  session: null
-  claimed_at: 2026-10-01T05:38:15Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T22:03:32Z
-updated_at: 2026-10-01T05:46:08Z
+updated_at: 2026-10-01T06:01:31Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -55,8 +48,8 @@ Found by reading, during the inventory for TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make 
 
 ## Acceptance criteria
 
-- [ ] Whether a Destroy-driven close reaches appWindowClosed on macOS is established by a scenario
-- [ ] App.Wait with Exit set returns after the last window is closed from Go
+- [x] Whether a Destroy-driven close reaches appWindowClosed on macOS is established by a scenario
+- [x] App.Wait with Exit set returns after the last window is closed from Go
 
 ## Implementation plan
 
@@ -95,3 +88,7 @@ Fix and scenario on fix/darwin-close-wait. On Linux the scenario passes on both 
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T05:46:08Z
 
 Review 1655 on PR #60 (medium): the scenario could pass when Ready never fired. Fixed: a missing Ready is now its own failure.
+
+## Summary
+
+Landed in PR #60 (merge 16ee80a). destroyOnUI in lib_darwin.go now reports an owned window's close to the App scope (appWindowClosed), as Linux's Destroy does, because clearing the delegate kept onWindowWillClose from running. closeFromGoScenario runs on all three engines: App{Exit: true}, View.Close from a goroutine after Ready, and Wait must return with the scope counting no open window. It passed on macOS in GitHub run 36822261007. git-ticket-canvas can drop its App.Quit workaround in its macOS scenarios.

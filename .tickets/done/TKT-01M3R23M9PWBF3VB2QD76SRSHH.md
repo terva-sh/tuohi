@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3R23M9PWBF3VB2QD76SRSHH
 title: A bare app:// URL loads its page without the bridge
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/bare-app-url
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 3e01fec81e75a84301f7196da88acd2d63f10e71
-  session: null
-  claimed_at: 2026-10-01T05:22:51Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-30T02:25:43Z
-updated_at: 2026-10-01T05:32:11Z
+updated_at: 2026-10-01T05:57:25Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -94,3 +87,7 @@ The ticket is linked as a dependency of TKT-01M3HWWRZ (Release tuohi v0.1.0).
 `bareAppURLScenario` (bare_app_url_test.go), run on all three engines, shows App.FS views at `app://#bare`, natively and under App.HTTP. Without the fix the native case reported "no call" on Linux, and the HTTP case already passed, because rewriteAppURL drops the host. Writing the scenario exposed TKT-01M3TZ0A (Serve app:// from the requesting view on WebKitGTK, not the first one), which is fixed in the same PR, because without that fix the native case cannot pass.
 
 Verified on Linux, on webkitgtk-6.0 and webkit2gtk-4.1: `just ci` and the GUI suite are green. The criteria are ticked on the Linux evidence and the shared code path. macOS and Windows run the same scenario on GitHub after the merge. If either fails there, reopen this ticket.
+
+## Summary
+
+Landed in PR #58 (merge 6c337b1). Each engine's Navigate reads a hostless app:// URL as the root of the app host, keeping its query and fragment, via normalizeAppURL in engine.go. bareAppURLScenario covers it natively and under App.HTTP. It passed on Linux (both WebKitGTK stacks) and on GitHub run 36820646707 on macOS and Windows.
