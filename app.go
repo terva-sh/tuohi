@@ -16,11 +16,8 @@
 // only on the process's main thread, and the package keeps the main goroutine
 // there from its init on. Off the main thread, Show and Wait return
 // ErrNotMainThread unless a run loop is already running on the main thread to
-// hand the work to. Linux and the BSDs require it too: WebKitGTK 2.54 aborts
-// the process when it is first used off the main thread, so the package keeps
-// the main goroutine there as well, and a first Show elsewhere returns
-// ErrNotMainThread. Windows has no such rule, but a program written this way
-// runs on all of them. A program that serves its interface itself,
+// hand the work to. Linux and Windows have no such rule, but a program written
+// this way runs on all three. A program that serves its interface itself,
 // over loopback HTTP, starts the server in a goroutine and opens the window
 // on main:
 //
@@ -901,15 +898,12 @@ var allowedSchemes = map[string]bool{
 	"mailto": true,
 }
 
-// ErrNotMainThread is returned by App.Show and App.Wait called off the
-// process's main thread when nothing there can take the work. On macOS that
-// is when no run loop is running on the main thread: AppKit runs only there.
-// On Linux and the BSDs it is a first Show, before any window exists:
-// WebKitGTK 2.54 aborts the process when it is first used off the main
-// thread. Call Show and Wait from main and run anything else, such as an
-// HTTP server, in a goroutine (see the package doc). It is never returned on
-// Windows.
-var ErrNotMainThread = errors.New("tuohi: the UI runs on the main thread; call App.Show and App.Wait from main")
+// ErrNotMainThread is returned on macOS by App.Show and App.Wait called off
+// the process's main thread when no run loop is running there to take the
+// work. AppKit runs only on the main thread, so call Show and Wait from main
+// and run anything else, such as an HTTP server, in a goroutine (see the
+// package doc). It is never returned on Linux or Windows.
+var ErrNotMainThread = errors.New("tuohi: on macOS the UI runs on the main thread; call App.Show and App.Wait from main")
 
 // ErrScheme is returned by Open when the URL's scheme is not in the allow-list.
 var ErrScheme = errors.New("tuohi: refused URL scheme")

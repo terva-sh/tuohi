@@ -125,7 +125,6 @@ func TestMain(m *testing.M) {
 		resLoopbackApp.Store(loopbackAppScenario())
 		resDataURL.Store(dataURLScenario())
 		resGoroutineCalls.Store(goroutineCallsScenario())
-		resShowGoroutine.Store(showGoroutineScenario())
 		resOutsideLinks.Store(outsideLinksScenario())
 		resTitle.Store(titleScenario())
 		resReplyTrust.Store(replyTrustScenario())

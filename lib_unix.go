@@ -237,16 +237,11 @@ var (
 // threads, so a program that calls App.Show from main, as the README says,
 // could otherwise create its first window elsewhere. Package initialization
 // runs on the main goroutine, on the main thread, and the lock holds until
-// the process exits (TKT-01M3W9PT4ZEDH0SVD645JW23AA). The darwin engine does
-// the same for AppKit. A first Show off the main thread returns
-// ErrNotMainThread (see uiThreadErr).
+// the process exits (TKT-01M3W9PT4ZEDH0SVD645JW23AA). The darwin engine does the same for
+// AppKit.
 func init() {
 	runtime.LockOSThread()
-	mainThreadID = osThreadID()
 }
-
-// mainThreadID is the process's main thread, recorded by init.
-var mainThreadID int64
 
 var (
 	initOnce     sync.Once
@@ -1218,9 +1213,6 @@ func onUIThread() bool {
 	return t == 0 || gThreadSelf() == t
 }
 
-// uiThreadPinned reports whether the first newView has pinned the UI thread.
-func uiThreadPinned() bool { return uiThread.Load() != 0 }
-
 // Destroy tears the window and web view down. GTK is not thread-safe, so when
 // Destroy runs on another goroutine (View.Close is documented safe from any
 // goroutine, and bindings run on their own goroutines) the GTK part is
@@ -2163,17 +2155,9 @@ func newView(v *View, serve serveFunc) (*webview, error) {
 
 // appUIWait runs one iteration of the GTK main context; App.Wait loops on it
 // until the app scope asks to exit.
-// uiThreadErr reports ErrNotMainThread when no window has pinned the UI
-// thread yet and the caller is off the main thread: WebKitGTK 2.54 aborts
-// the process when it is first used there, so the first window must be
-// created on the main thread, which then is the UI thread. Once it is
-// pinned, work from other threads is handed to it.
-func uiThreadErr() error {
-	if uiThreadPinned() || osThreadID() == mainThreadID {
-		return nil
-	}
-	return ErrNotMainThread
-}
+// uiThreadErr is nil: GTK has no main-thread rule, and the UI thread is
+// whichever thread created the first window (see ErrNotMainThread).
+func uiThreadErr() error { return nil }
 
 // startOnUI runs Wait's start step in place, on the goroutine that calls
 // Wait, which is the UI thread when the program follows the package doc.
