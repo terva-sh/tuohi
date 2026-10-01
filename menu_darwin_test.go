@@ -44,11 +44,25 @@ const (
 // NSApp, which is the path a page gets without one. It returns the state that
 // explains a key that did nothing: whether the menu handled it, and which
 // windows were key and main.
-func pressKey(win objc.ID, chars string, code uint16, mods uint) string {
+func pressKey(win objc.ID, chars string, code uint16, mods uint, makeKey ...bool) string {
 	var state string
 	performOnMain(func() {
 		autorelease(func() {
 			app := class("NSApplication").Send(sel("sharedApplication"))
+			before := ""
+			if len(makeKey) > 0 && makeKey[0] {
+				// In the same main-thread turn as the key, so nothing between
+				// them can give key status back to another window: GitHub run
+				// 36831446783 lost it between two separate turns.
+				// Activate only an inactive app: every run so far reported it
+				// active, and activating an active one can hand key status
+				// back to the window that had it.
+				if !objc.Send[bool](app, sel("isActive")) {
+					app.Send(sel("activateIgnoringOtherApps:"), true)
+				}
+				win.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+				before = fmt.Sprintf("keyBefore=%v ", app.Send(sel("keyWindow")) == win)
+			}
 			ev := class("NSEvent").Send(
 				sel("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
 				uint(nsEventTypeKeyDown), cgPoint{0, 0}, mods, float64(0),
@@ -60,7 +74,7 @@ func pressKey(win objc.ID, chars string, code uint16, mods uint) string {
 			} else {
 				app.Send(sel("sendEvent:"), ev)
 			}
-			state = fmt.Sprintf("[handled=%s key=%v main=%v active=%v]", handled,
+			state = fmt.Sprintf("[%shandled=%s key=%v main=%v active=%v]", before, handled,
 				app.Send(sel("keyWindow")) == win, app.Send(sel("mainWindow")) == win,
 				objc.Send[bool](app, sel("isActive")))
 		})
@@ -167,14 +181,11 @@ func menuCloseOne(framed bool) string {
 			state.Store("[page never loaded]")
 			return
 		}
-		// Make it key directly: GitHub run 36829402711 found it neither key
-		// nor main after Focus, with another window key in its place.
-		win := native(w).window
-		performOnMain(func() {
-			class("NSApplication").Send(sel("sharedApplication")).Send(sel("activateIgnoringOtherApps:"), true)
-			win.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
-		})
-		state.Store(pressKey(win, "w", keyW, nsEventModifierFlagCommand))
+		// pressKey makes the window key itself, in the same turn as the key:
+		// after Focus, and after a separate makeKeyAndOrderFront:, another
+		// window was key by the time ⌘W arrived (GitHub runs 36829402711
+		// and 36831446783).
+		state.Store(pressKey(native(w).window, "w", keyW, nsEventModifierFlagCommand, true))
 	}()
 	native(w).loadHTML(`<!DOCTYPE html><html><body>close me
 <script>window.addEventListener('load', function(){ window.loaded(); });</script></body></html>`)
@@ -303,6 +314,13 @@ func menuEditScenario(noMenu bool) string {
 		states = append(states, fmt.Sprintf("canUndo=%v", canUndo))
 		press("z", keyZ, 0)
 		steps = append(steps, "undo="+valueWait(text))
+		// Whether the undo manager ran the undo: after it, there is a redo.
+		performOnMain(func() {
+			if um := nw.window.Send(sel("undoManager")); um != 0 {
+				states = append(states, fmt.Sprintf("afterUndo:canUndo=%v,canRedo=%v",
+					objc.Send[bool](um, sel("canUndo")), objc.Send[bool](um, sel("canRedo"))))
+			}
+		})
 		press("Z", keyZ, nsEventModifierFlagShift)
 		steps = append(steps, "redo="+valueWait(""))
 		result <- strings.Join(steps, " ")

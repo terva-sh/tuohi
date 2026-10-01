@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T07:06:52Z
+updated_at: 2026-10-01T07:42:23Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -110,3 +110,7 @@ Follow-up to GitHub run 36825339187. The structure test now ignores items AppKit
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T07:06:52Z
 
 GitHub run 36827912989: copy, paste and select-all/cut now pass through the menu. With no main menu, ⌘C is not handled (handled=false) and nothing is copied, which answers criterion 2: pages had no copy before the menu. ⌘W reached tuohiClose: (handled=true), but the test window was neither key nor main, because the scenario pressed before the page loaded. It now waits for the page and the Focus. Undo did not restore the cut text, though the menu handled ⌘Z. The scenario now waits 1 s after the cut and records the window's canUndo, to tell 'nothing registered' from 'undo did nothing'.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T07:42:23Z
+
+GitHub run 36831446783 (after #67): Windows is green. On macOS, ⌘W still closed nothing, with the test window neither key nor main after the press, even though the scenario activated the app and sent makeKeyAndOrderFront: in its own main-thread turn. Activation likely returns key status to the window that was key before (one left from an earlier scenario) between that turn and the press. pressKey can now make the window key in the same turn as the key, and reports keyBefore. Undo: the menu handled ⌘Z with canUndo=true, but after 2 s of polling the field was still empty, and the log has no AppKit message. The scenario now records canUndo and canRedo after ⌘Z, to tell 'the undo manager never ran' from 'it ran and the page did not change'.
