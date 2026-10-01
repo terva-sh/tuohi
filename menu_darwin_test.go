@@ -168,33 +168,47 @@ func menuCloseOne(framed bool) string {
 		return "new error: " + err.Error()
 	}
 	defer w.Close()
-	var hung atomic.Bool
-	var state atomic.Value // string
-	time.AfterFunc(15*time.Second, func() { hung.Store(true); w.Close() })
+	nw := native(w)
+	result := make(chan string, 1)
+	time.AfterFunc(30*time.Second, func() { w.Close() })
 	go func() {
+		// Run ends only when the last window does, and earlier scenarios
+		// leave windows counted, so the scenario ends Run itself once it
+		// knows whether the window closed.
+		defer w.Close()
 		// Press only once the page is up and the window is key: GitHub run
 		// 36827912989 pressed before either, and ⌘W closed whatever window
 		// was key instead.
 		select {
 		case <-loaded:
 		case <-time.After(10 * time.Second):
-			state.Store("[page never loaded]")
+			result <- "not closed [page never loaded]"
 			return
 		}
 		// pressKey makes the window key itself, in the same turn as the key:
 		// after Focus, and after a separate makeKeyAndOrderFront:, another
 		// window was key by the time ⌘W arrived (GitHub runs 36829402711
 		// and 36831446783).
-		state.Store(pressKey(native(w).window, "w", keyW, nsEventModifierFlagCommand, true))
+		state := pressKey(nw.window, "w", keyW, nsEventModifierFlagCommand, true)
+		// The window's own close: onWindowWillClose closes nw.closed.
+		select {
+		case <-nw.closed:
+			result <- "closed"
+		case <-time.After(5 * time.Second):
+			result <- "not closed " + state
+		}
 	}()
-	native(w).loadHTML(`<!DOCTYPE html><html><body>close me
+	nw.loadHTML(`<!DOCTYPE html><html><body>close me
 <script>window.addEventListener('load', function(){ window.loaded(); });</script></body></html>`)
 	w.w.Run()
-	if hung.Load() {
-		s, _ := state.Load().(string)
-		return "not closed " + s
+	// Closing the last counted window ends Run on its own, possibly before
+	// the goroutine has seen the close, so wait for its report.
+	select {
+	case r := <-result:
+		return r
+	case <-time.After(10 * time.Second):
+		return "no report"
 	}
-	return "closed"
 }
 
 // TestMenuCloseKey checks that ⌘W closes the key window, framed or not.
@@ -207,8 +221,8 @@ func TestMenuCloseKey(t *testing.T) {
 }
 
 // menuEditScenario drives the Edit keys in a page's text field: copy, paste,
-// select all and cut, undo, and redo. Each step reports the field's value and
-// the pasteboard's text. With noMenu it removes the main menu first and only
+// undo and redo of the paste, then select all and cut. Each step reports the
+// field's value and the pasteboard's text. With noMenu it removes the main menu first and only
 // copies, to record what a page gets without one, then puts the menu back.
 func menuEditScenario(noMenu bool) string {
 	const text = "tuohi-menu-text"
@@ -298,31 +312,21 @@ func menuEditScenario(noMenu bool) string {
 		time.Sleep(200 * time.Millisecond)
 		press("v", keyV, 0)
 		steps = append(steps, "paste="+value())
+		// Undo and redo the paste, the one undoable edit so far (the field was
+		// emptied by script, which is not undoable). Synthesized presses are
+		// not events, so AppKit may not close an undo group between two of
+		// them, and an undo after paste and cut could revert both: GitHub run
+		// 36833406011 showed an undo that ran (canRedo=true) and left the
+		// field empty either way.
+		time.Sleep(time.Second)
+		press("z", keyZ, 0)
+		steps = append(steps, "undo="+valueWait(""))
+		press("Z", keyZ, nsEventModifierFlagShift)
+		steps = append(steps, "redo="+valueWait(text))
 		performOnMain(func() { generalPasteboard().Send(sel("clearContents")) })
 		press("a", keyA, 0)
 		press("x", keyX, 0)
 		steps = append(steps, "cut="+value()+"/"+pasteboardWait(text))
-		// Give the cut's undo registration, which arrives from the web
-		// process, time to land, and record whether the window can undo.
-		time.Sleep(time.Second)
-		var canUndo bool
-		performOnMain(func() {
-			if um := nw.window.Send(sel("undoManager")); um != 0 {
-				canUndo = objc.Send[bool](um, sel("canUndo"))
-			}
-		})
-		states = append(states, fmt.Sprintf("canUndo=%v", canUndo))
-		press("z", keyZ, 0)
-		steps = append(steps, "undo="+valueWait(text))
-		// Whether the undo manager ran the undo: after it, there is a redo.
-		performOnMain(func() {
-			if um := nw.window.Send(sel("undoManager")); um != 0 {
-				states = append(states, fmt.Sprintf("afterUndo:canUndo=%v,canRedo=%v",
-					objc.Send[bool](um, sel("canUndo")), objc.Send[bool](um, sel("canRedo"))))
-			}
-		})
-		press("Z", keyZ, nsEventModifierFlagShift)
-		steps = append(steps, "redo="+valueWait(""))
 		result <- strings.Join(steps, " ")
 	}()
 
@@ -377,7 +381,7 @@ func pasteboardText() string {
 func TestMenuEditKeys(t *testing.T) {
 	got, _ := resMenuEdit.Load().(string)
 	requireGUI(t, got)
-	want := "copy=tuohi-menu-text paste=tuohi-menu-text cut=/tuohi-menu-text undo=tuohi-menu-text redo="
+	want := "copy=tuohi-menu-text paste=tuohi-menu-text undo= redo=tuohi-menu-text cut=/tuohi-menu-text"
 	if got != want {
 		states, _ := menuEditStates.Load(false)
 		t.Fatalf("Edit keys:\n got %s\nwant %s\nkeys %v", got, want, states)
