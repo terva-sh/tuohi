@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T05:56:32Z
+updated_at: 2026-10-01T06:36:00Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -89,3 +89,16 @@ Tests (menu_darwin_test.go): the menu's key equivalents; ⌘W through [NSApp sen
 The owner decided, 2026-10-01. Ship the default the ticket describes: an application menu (About, Hide ⌘H, Hide Others, Quit ⌘Q), an Edit menu (Undo, Redo, Cut, Copy, Paste, Select All, sent to the first responder), and a Window menu (Minimize ⌘M, Close ⌘W). A consumer can neither replace nor extend it in this version. A menu API waits until a consumer asks for one, which keeps the public API small for the first tag. Both alternatives lost on that point: an opt-out field, and an API to extend the menu across every engine.
 
 ⌘Q goes through `App.Quit`. ⌘W must close frameless windows too.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T06:36:00Z
+
+### Landed in PR #62 (merge 77cad99). macOS tests fail on GitHub run 36825339187
+
+- **TestDefaultMainMenu:** the menu is installed and every expected key equivalent is there. The test fails because AppKit adds its own items to a menu titled Edit (dictation and emoji, with "d", "e" and space equivalents), which the test counted. A test bug: it should check that the expected entries are present, not that nothing else is.
+- **TestMenuCloseKey:** ⌘W sent through [NSApp sendEvent:] closed neither the framed nor the frameless window.
+- **TestMenuEditKeys:** ⌘C, ⌘V, ⌘A/⌘X, ⌘Z and ⇧⌘Z through [NSApp sendEvent:] changed nothing (`copy= paste= cut=/ undo= redo=`).
+- **TestCopyWithoutMainMenu** logged `copy=` as well, so this run cannot tell a broken menu from synthetic key events that never reach AppKit's key-equivalent dispatch on the runner. Criterion 2, whether copy works without a menu, is therefore still open.
+
+Untested candidates: the app may not be active on the runner, so NSApp may not dispatch key equivalents, or keyWindow may be nil and menuClose does nothing. The events may also need a real timestamp, or need posting with postEvent:atStart: instead of sendEvent:. Calling [[NSApp mainMenu] performKeyEquivalent:] directly would test the menu's routing without depending on event delivery. menuClose and menuMinimize could fall back to mainWindow when there is no keyWindow.
+
+The run also failed on Windows, from TKT-01M3V1Z4 (App.Wait sometimes misses a Close from Go on Windows), which is unrelated to this PR. No criterion is ticked.
