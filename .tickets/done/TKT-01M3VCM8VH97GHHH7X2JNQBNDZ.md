@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3VCM8VH97GHHH7X2JNQBNDZ
 title: "Stop a queued macOS stop: from ending the next Run"
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/darwin-stray-stop
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: b047e1f475b081a64a2bb6727449885eb2343798
-  session: null
-  claimed_at: 2026-10-01T09:27:25Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-01T09:27:17Z
-updated_at: 2026-10-01T09:38:45Z
+updated_at: 2026-10-01T09:49:36Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -53,8 +46,8 @@ A consumer that closes its last window and then runs another window would see th
 
 ## Acceptance criteria
 
-- [ ] A stop queued for one loop does not end a later Run
-- [ ] TestMenuCloseKey passes on GitHub macOS in runs where no window is left counted
+- [x] A stop queued for one loop does not end a later Run
+- [x] TestMenuCloseKey passes on GitHub macOS in runs where no window is left counted
 
 ## Implementation plan
 
@@ -65,3 +58,11 @@ Gate Terminate's queued stop to the loop that was running when it was called. A 
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T09:38:45Z
 
 Review of #72 (high, accepted): Run checked the closed channel before loopGen was raised, so a Terminate between the two captured the old generation and its stop was dropped, leaving Run stuck. Now runNSApp raises loopGen, then reads the view's terminated flag, while Terminate sets terminated and then reads loopGen. Both are sequentially consistent atomics, so either Run sees terminated and returns, or Terminate reads the new generation and its stop applies. The channel alone could not give that guarantee, because Go's memory model orders atomics, not a channel close against an atomic.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T09:49:35Z
+
+GitHub run 36844813205 (main d7aff9c, #72 merged): macOS went into the menu scenarios with 0 windows counted, the condition under which runs 36839261792 and 36839839080 failed. TestMenuCloseKey and TestMenuEditKeys passed, and the count after the menu scenarios was 0 (it was 1 in the failing runs, the frameless window left behind). One run under the failing condition is the evidence. The condition depends on timing in earlier scenarios and cannot be forced from CI.
+
+## Summary
+
+Fixed in #72. macOS Terminate's queued stop: now acts only on the loop that was running when Terminate was called (loopGen, runNSApp). A Terminate before Run's loop starts is seen through the view's terminated flag, ordered against loopGen with atomics. This is the macOS counterpart of #67 on Windows. Verified on GitHub run 36844813205 under the failing condition.
