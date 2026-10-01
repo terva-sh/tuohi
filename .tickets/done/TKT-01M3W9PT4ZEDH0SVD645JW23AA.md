@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3W9PT4ZEDH0SVD645JW23AA
 title: Keep WebKitGTK 2.54 on the process's main thread
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/gtk3-clipboard-crash
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 755a19f2e5a81f03f4d455020deb796cacb43fbd
-  session: null
-  claimed_at: 2026-10-01T17:55:35Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-01T17:55:29Z
-updated_at: 2026-10-01T18:32:14Z
+updated_at: 2026-10-01T18:58:22Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -94,3 +87,7 @@ The Unix ErrNotMainThread rule landed in #73 and was reverted with it (GitHub ru
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T18:32:14Z
 
 Review of #75 (high, accepted): the Unix main-thread guard does not depend on the hand-off that failed, so the revert keeps it, with errcheck fixed in threadid_freebsd.go. Supersedes the earlier note saying the rule left with #73.
+
+## Summary
+
+WebKitGTK 2.54 aborts when first used off the process's main thread. lib_unix.go's init locks the main goroutine there (#74), and a first App.Show elsewhere on Linux or a BSD returns ErrNotMainThread (#73, kept through the #75 revert), as on macOS. Verified in CI's Debian 13 image and on GitHub run 36910141887.

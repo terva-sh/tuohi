@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M3W87PKSJTC1ZP2AGHWETXVN
 title: Survive WebKitGTK 4.1 2.54 crashing on paste of an empty clipboard
 type: bug
-status: in-progress
-status_reason: null
+status: blocked
+status_reason: WebKit bug in webkit2gtk-4.1 2.54.0; waiting for a WebKit fix. The upstream report drafted in the notes needs a bugs.webkit.org account to file. CI holds the clipboard on GTK3 meanwhile (#74).
 priority: high
 due_on: null
 labels:
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/show-any-goroutine-2
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 1f3af9e64c11a1d82bee97bd5cfc78bbac65f5f7
-  session: null
-  claimed_at: 2026-10-01T17:34:38Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-01T17:29:45Z
-updated_at: 2026-10-01T17:41:13Z
+updated_at: 2026-10-01T18:58:22Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -99,3 +92,7 @@ The report has to be filed by someone with a bugs.webkit.org account. Component 
 - Steps: on X11 with no clipboard owner (for example xvfb with no clipboard manager), focus an input in a WebKitWebView (webkit2gtk-4.1 2.54.0, GTK 3.24.49), and press Ctrl+V or call `navigator.clipboard.readText()` on a user gesture.
 - Result: SIGSEGV in libwebkit2gtk-4.1 called from gtkclipboard.c:1332 `request_targets_received_func`, after `gtk_selection_retrieval_report(type=0, format=0, buffer=NULL, length=-1)`.
 - 2.52.6 and webkitgtk-6.0 2.54.0 do not crash.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:58:22Z
+
+in-progress to blocked: WebKit bug in webkit2gtk-4.1 2.54.0; waiting for a WebKit fix. The upstream report drafted in the notes needs a bugs.webkit.org account to file. CI holds the clipboard on GTK3 meanwhile (#74).

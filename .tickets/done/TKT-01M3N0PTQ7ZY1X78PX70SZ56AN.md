@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N0PTQ7ZY1X78PX70SZ56AN
 title: Let App.Show create a window from any goroutine
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -20,17 +20,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/show-any-goroutine-2
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 0480469db98d834d43b466350173e88e45c62995
-  session: null
-  claimed_at: 2026-10-01T16:29:46Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T18:50:37Z
+updated_at: 2026-10-01T18:58:22Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -62,8 +55,8 @@ The inventory for TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to
 
 ## Acceptance criteria
 
-- [ ] App.Show from a goroutine off the UI thread either creates the window on the UI thread or returns an error, on every engine
-- [ ] A GUI scenario covers it on every engine
+- [x] App.Show from a goroutine off the UI thread either creates the window on the UI thread or returns an error, on every engine
+- [x] A GUI scenario covers it on every engine
 
 ## Notes
 
@@ -133,3 +126,11 @@ Reverted by the owner's standing decision (revert at once if red, fix forward). 
 ### Third attempt (fix/show-any-goroutine-3b)
 
 Cause of the Windows failure in run 36905378959, from the code: the scenario took a queued ui.run as the sign that the first view's loop was up. On Windows, loadHTML calls Navigate, which calls rebuildScripts when the page's trusted origin changes, and that pumps GetMessageW before Run calls enterLoop. So the queued function ran there, the Shows called ui.call while no loop was counted, and ui.call correctly refused. The library behaved as designed. The scenario now retries ui.call(func(){}) until it succeeds, which happens only while a counted loop runs. The hand-off is restored unchanged from #73 on top of #75, which kept the Unix guard. Linux passes on both stacks. Windows and macOS run on GitHub after merge, by the owner's standing decision.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:58:21Z
+
+GitHub run 36910141887 (main d2913e3, #76): TestShowFromGoroutine passes on Windows and macOS, and Linux passes on both WebKitGTK stacks in Forgejo CI.
+
+## Summary
+
+App.Show from a goroutine off the UI thread hands the whole creation to the UI thread through ui.call and waits for it, so the View is live when Show returns. With no loop running, it returns an error and creates nothing. Shows before the UI thread is pinned take turns on firstShowMu, reading the pin before the thread. A second Show of a View still being created returns errShowInProgress. Landed in #76 after #61 and #73 were reverted. The earlier failures were bugs fixed since (#66, #67, #72) and a test race on Windows, where loadHTML pumps messages before Run counts its loop.
