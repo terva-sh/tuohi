@@ -81,6 +81,25 @@ func TestSnapshotConfigEnvDebug(t *testing.T) {
 	}
 }
 
+// TestReportClosedGoesToItsOwnScope checks that a window's close is counted
+// against the scope that counted the window, once, even after a later App
+// opened its own scope (TKT-01M3V1Z4).
+func TestReportClosedGoesToItsOwnScope(t *testing.T) {
+	first := &appScope{windows: 1}
+	var c viewCore
+	c.scope.Store(first)
+	later := &appScope{windows: 1}
+	prev := scopePtr.Swap(later)
+	defer scopePtr.Store(prev)
+
+	c.reportClosed()
+	c.reportClosed()
+	if first.windows != 0 || later.windows != 1 {
+		t.Fatalf("after two reports: first scope windows = %d, later scope windows = %d; want 0 and 1",
+			first.windows, later.windows)
+	}
+}
+
 // eventsFakeWV is a View that records the Init/Bind/Eval the events bridge
 // performs and runs Dispatch synchronously, so the whole Go side is testable
 // without a real window. The embedded stub supplies the rest of the interface.

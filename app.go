@@ -524,16 +524,20 @@ func (a *App) start(s *appScope) {
 	})
 }
 
-// scopePtr points at the currently active App scope so the per-OS engines can
-// report window close events into it (appWindowClosed). One live application
-// per process is the supported model.
+// scopePtr points at the most recently opened App scope. One live
+// application per process is the supported model.
 var scopePtr atomic.Pointer[appScope]
 
-// appWindowClosed is invoked by the per-OS engines when an owned window
-// created through App.Show is destroyed (user close or View.Close); it
-// lets Wait notice the last window closing.
-func appWindowClosed() {
-	if s := scopePtr.Load(); s != nil {
+// reportClosed is called by the per-OS engines when an owned window created
+// through App.Show is destroyed (user close or View.Close), so Wait notices
+// the last window closing. The close goes to the scope that counted the
+// window, not to the most recent one: a window from an earlier App that
+// closes late, as Windows can when its teardown waits in the message queue
+// until a later App's Show pumps it, would otherwise count against the later
+// App and keep its Wait from ever seeing zero (TKT-01M3V1Z4). Each window is
+// reported once, however many paths observe its close.
+func (c *viewCore) reportClosed() {
+	if s := c.scope.Swap(nil); s != nil {
 		s.windowClosed()
 	}
 }

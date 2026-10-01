@@ -2637,7 +2637,7 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 			atomic.AddInt32(&windowCount, -1)
 			// Single per-window close event for the App scope (App.Wait).
 			dbg("destroy: owned window %d closed, reporting to the App scope", w.id)
-			appWindowClosed()
+			w.reportClosed()
 		}
 		w.window = 0
 		setWindowLongPtrW(hwnd, gwlpUserData, 0)
