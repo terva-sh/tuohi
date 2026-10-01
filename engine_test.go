@@ -66,6 +66,35 @@ func TestOriginOf(t *testing.T) {
 	}
 }
 
+// TestNormalizeAppURL checks that an app:// URL with no host is read as the
+// root of the "app" host, keeping its query and fragment, and that its origin
+// is then the one App.FS pages report (TKT-01M3R23M9PWBF3VB2QD76SRSHH).
+func TestNormalizeAppURL(t *testing.T) {
+	cases := map[string]string{
+		"app://":                "app://app/",
+		"app://#selftest":       "app://app/#selftest",
+		"app://?q=1#f":          "app://app/?q=1#f",
+		"app:///index.html":     "app://app/index.html",
+		"APP://#x":              "app://app/#x",
+		"app://app/index.html":  "app://app/index.html",
+		"app://assets/a.css":    "app://assets/a.css",
+		"app:index.html":        "app:index.html",
+		"app:":                  "app:",
+		"apps://":               "apps://",
+		"https://example.com/":  "https://example.com/",
+		"data:text/html,app://": "data:text/html,app://",
+		"":                      "",
+	}
+	for in, want := range cases {
+		if got := normalizeAppURL(in); got != want {
+			t.Errorf("normalizeAppURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if got := originOf(normalizeAppURL("app://#selftest")); got != "app://app" {
+		t.Errorf("origin of a normalized bare app:// = %q, want %q", got, "app://app")
+	}
+}
+
 func TestViewCoreTrusts(t *testing.T) {
 	var c viewCore
 	c.trustURL("http://127.0.0.1:8080/start")

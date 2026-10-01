@@ -1584,6 +1584,7 @@ func (w *webview) Navigate(url string) {
 	// App.HTTP, or - no server up - pass
 	// through to the scheme rewrite below, which maps app:// onto the
 	// per-scheme https vhost.
+	url = normalizeAppURL(url)
 	url = w.resolveURL(url)
 	url = w.rewriteSchemeURL(url) // map a registered scheme:// to its https vhost
 	if w.webview2 == 0 {

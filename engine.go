@@ -464,6 +464,26 @@ func encodeOpaque(s string, decode bool, also string) string {
 	return b.String()
 }
 
+// normalizeAppURL gives an app:// URL with no host the host "app", and the
+// path "/" when it has none, keeping its query and fragment: app://#x becomes
+// app://app/#x. Every engine's Navigate calls it first. Without it the URL's
+// origin is "app:", which no page the engine then shows reports, so the page
+// loads from App.FS without its bridge. Any other URL is returned unchanged.
+func normalizeAppURL(rawurl string) string {
+	const prefix = appSchemeName + "://"
+	if len(rawurl) < len(prefix) || !strings.EqualFold(rawurl[:len(prefix)], prefix) {
+		return rawurl
+	}
+	rest := rawurl[len(prefix):]
+	switch {
+	case rest == "" || rest[0] == '?' || rest[0] == '#':
+		return prefix + appSchemeName + "/" + rest
+	case rest[0] == '/':
+		return prefix + appSchemeName + rest
+	}
+	return rawurl
+}
+
 // canonicalNavigateURL is the URL every engine's Navigate loads and trusts in
 // place of rawurl. For an opaque-path URL, such as a data: URL built from
 // multi-line HTML, it percent-encodes the raw tabs and newlines instead of

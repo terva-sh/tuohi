@@ -863,17 +863,46 @@ type webview struct {
 	isWindowShown bool
 	isSizeSet     bool
 
-	schemeCB uintptr // retained purego trampoline
-
 	viewCore
+}
+
+// schemeMu guards schemeContexts and schemeCB.
+var (
+	schemeMu sync.Mutex
+	// schemeContexts are the WebKitWebContexts the "app" scheme is registered
+	// on. Every view made by webkit_web_view_new shares the default context,
+	// and WebKit keeps only the first registration of a scheme on a context.
+	schemeContexts = map[uintptr]bool{}
+	// schemeCB is the one purego trampoline that answers app:// requests for
+	// every view in the process. purego callbacks are never freed and their
+	// number is limited, so it is made once.
+	schemeCB uintptr
+)
+
+// engineForWebView returns the live engine whose WebKitWebView is wv, or nil.
+func engineForWebView(wv uintptr) *webview {
+	if wv == 0 {
+		return nil
+	}
+	regMu.Lock()
+	defer regMu.Unlock()
+	for _, w := range registry {
+		if w.webview == wv {
+			return w
+		}
+	}
+	return nil
 }
 
 // registerSchemes wires the app-scope "app" scheme (when App.FS is set) onto
 // the web view's WebKitWebContext and marks the scheme as a secure context.
-// Called before the first Navigate. It returns an error when the scheme
-// cannot be registered (a missing library, handle, or symbol), rather than
-// silently leaving the scheme unregistered so app:// pages fail to load with
-// no diagnostic anywhere.
+// Called before the first Navigate. The scheme is registered once per
+// context, and its callback answers each request from the serve of the view
+// that made it, found through webkit_uri_scheme_request_get_web_view, so a
+// view still loads its pages after the view that registered the scheme has
+// closed. It returns an error when the scheme cannot be registered (a missing
+// library, handle, or symbol), rather than silently leaving the scheme
+// unregistered so app:// pages fail to load with no diagnostic anywhere.
 func (w *webview) registerSchemes() error {
 	if w.serve == nil {
 		return nil
@@ -914,6 +943,7 @@ func (w *webview) registerSchemes() error {
 		getSecurityManager       func(uintptr) uintptr
 		registerAsSecure         func(sm uintptr, scheme string)
 		requestGetURI            func(uintptr) uintptr
+		requestGetWebView        func(uintptr) uintptr
 		schemeRequestFinish      func(req, stream uintptr, streamLen int64, contentType string)
 		schemeRequestFinishError func(req, err uintptr)
 		memInputStreamNew        func(data unsafe.Pointer, length int, destroy uintptr) uintptr
@@ -928,6 +958,7 @@ func (w *webview) registerSchemes() error {
 	syms.need(&getSecurityManager, webkit, "webkit_web_context_get_security_manager")
 	syms.need(&registerAsSecure, webkit, "webkit_security_manager_register_uri_scheme_as_secure")
 	syms.need(&requestGetURI, webkit, "webkit_uri_scheme_request_get_uri")
+	syms.need(&requestGetWebView, webkit, "webkit_uri_scheme_request_get_web_view")
 	syms.need(&schemeRequestFinish, webkit, "webkit_uri_scheme_request_finish")
 	syms.need(&schemeRequestFinishError, webkit, "webkit_uri_scheme_request_finish_error")
 	syms.need(&memInputStreamNew, gio, "g_memory_input_stream_new_from_data")
@@ -948,39 +979,46 @@ func (w *webview) registerSchemes() error {
 		return errors.New("webview: register schemes: security manager is nil")
 	}
 
-	// void (*WebKitURISchemeRequestCallback)(WebKitURISchemeRequest*, gpointer).
-	// user_data is the engine id, so this resolves back to the right webview.
-	w.schemeCB = purego.NewCallback(func(req uintptr, data uintptr) uintptr {
-		eng := lookupEngine(data)
-		if eng == nil {
+	schemeMu.Lock()
+	defer schemeMu.Unlock()
+	if schemeContexts[ctx] {
+		return nil
+	}
+	if schemeCB == 0 {
+		schemeCB = purego.NewCallback(func(req uintptr, _ uintptr) uintptr {
+			// void (*WebKitURISchemeRequestCallback)(WebKitURISchemeRequest*, gpointer).
+			// WebKit waits for every request to be finished, so each path
+			// finishes it, with an error when there is nothing to serve.
+			var resp *response
+			if eng := engineForWebView(requestGetWebView(req)); eng != nil && eng.serve != nil {
+				resp = callServe(eng.serve, &request{URL: cstr(requestGetURI(req))})
+			}
+			if resp == nil {
+				// A nil response means "not found": finish with an error so the load
+				// fails, matching macOS (didFailWithError:) and Windows (default 404)
+				// instead of delivering a successful empty document.
+				const gIOErrorNotFound = 1 // G_IO_ERROR_NOT_FOUND
+				gerr := newErrorLiteral(ioErrorQuark(), gIOErrorNotFound, "resource not found")
+				schemeRequestFinishError(req, gerr)
+				freeError(gerr) // finish_error copies it; we own our reference
+				return 0
+			}
+			body, mime := resp.Body, schemeMIME(resp)
+			// Copy into glib-owned memory freed by g_free once the stream is done, so
+			// the bytes outlive this callback (the stream is read asynchronously).
+			var dataPtr unsafe.Pointer
+			if len(body) > 0 {
+				dataPtr = memdup(unsafe.Pointer(&body[0]), len(body)) // #nosec G103 -- copied into glib memory, freed by g_free
+			}
+			stream := memInputStreamNew(dataPtr, len(body), uintptr(gFreeAddr))
+			schemeRequestFinish(req, stream, int64(len(body)), mime)
+			gObjectUnref(stream)
 			return 0
-		}
-		url := cstr(requestGetURI(req))
-		resp := callServe(eng.serve, &request{URL: url})
-		if resp == nil {
-			// A nil response means "not found": finish with an error so the load
-			// fails, matching macOS (didFailWithError:) and Windows (default 404)
-			// instead of delivering a successful empty document.
-			const gIOErrorNotFound = 1 // G_IO_ERROR_NOT_FOUND
-			gerr := newErrorLiteral(ioErrorQuark(), gIOErrorNotFound, "resource not found")
-			schemeRequestFinishError(req, gerr)
-			freeError(gerr) // finish_error copies it; we own our reference
-			return 0
-		}
-		body, mime := resp.Body, schemeMIME(resp)
-		// Copy into glib-owned memory freed by g_free once the stream is done, so
-		// the bytes outlive this callback (the stream is read asynchronously).
-		var dataPtr unsafe.Pointer
-		if len(body) > 0 {
-			dataPtr = memdup(unsafe.Pointer(&body[0]), len(body)) // #nosec G103 -- copied into glib memory, freed by g_free
-		}
-		stream := memInputStreamNew(dataPtr, len(body), uintptr(gFreeAddr))
-		schemeRequestFinish(req, stream, int64(len(body)), mime)
-		gObjectUnref(stream)
-		return 0
-	})
-	registerScheme(ctx, appSchemeName, w.schemeCB, w.id, 0)
+		})
+	}
+	registerScheme(ctx, appSchemeName, schemeCB, 0, 0)
 	registerAsSecure(sm, appSchemeName)
+	schemeContexts[ctx] = true
 	return nil
 }
 
@@ -1414,6 +1452,7 @@ func (w *webview) Navigate(url string) {
 	if url == "" {
 		url = "about:blank"
 	}
+	url = normalizeAppURL(url)
 	// The uniform content origin is "app://" (see App.FS). resolveURL maps it
 	// onto this view's serving origin: this window's loopback server's
 	// http://localhost base under App.HTTP (same path, query and fragment, so the page really loads from
