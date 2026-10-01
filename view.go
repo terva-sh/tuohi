@@ -592,6 +592,9 @@ type serveFunc func(*request) *response
 // called from any goroutine - creation and the UI-touching methods marshal
 // themselves to the main thread.
 //
+// A Show of a View whose window another Show is still creating returns an
+// error rather than creating a second window.
+//
 // Every binding is applied while the window is created, deterministically:
 // the app-wide App.Bind entries first, then the view's own View.Bind entries,
 // each map iterated in alphabetical key order, so the outcome never depends
@@ -615,8 +618,24 @@ func (a *App) Show(view *View) error {
 		})
 		return nil
 	}
+	view.mu.Lock()
+	if view.w == nil && view.showing {
+		view.mu.Unlock()
+		return errShowInProgress
+	}
+	view.showing = true
+	view.mu.Unlock()
+	defer func() {
+		view.mu.Lock()
+		view.showing = false
+		view.mu.Unlock()
+	}()
 	return a.showFirst(view)
 }
+
+// errShowInProgress is what Show returns for a View whose window another
+// Show is still creating, which may yet fail.
+var errShowInProgress = errors.New("tuohi: Show: the View's window is still being created by another Show")
 
 // showFirst performs the one-time creation of a View's window and registers
 // it with the App (see App.Show).
@@ -905,9 +924,13 @@ type View struct {
 	// see the note on the View type about window control.
 	State State
 
-	// mu guards w and app, which App.Show sets and Close clears while other
-	// goroutines call the View's methods.
+	// mu guards w, app and showing, which App.Show sets and Close clears
+	// while other goroutines call the View's methods.
 	mu sync.Mutex
+
+	// showing is true while App.Show creates the View's window, so a second
+	// Show of the same View in that time does not create another.
+	showing bool
 
 	// w is the live engine handle. App.Show stores it here (nil before the
 	// first show and after Close, so the View can be shown again); methods
