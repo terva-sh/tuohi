@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-01T17:55:29Z
-updated_at: 2026-10-01T18:27:12Z
+updated_at: 2026-10-01T18:32:14Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -90,3 +90,7 @@ Owner's decision, 2026-10-01: on Linux and the BSDs a first App.Show off the mai
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T18:27:12Z
 
 The Unix ErrNotMainThread rule landed in #73 and was reverted with it (GitHub run 36905378959 failed on Windows and on lint). The init lock from #74 stays on main, which keeps programs that follow the README safe. The ErrNotMainThread rule returns with the next attempt at TKT-01M3N0PTQ.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:32:14Z
+
+Review of #75 (high, accepted): the Unix main-thread guard does not depend on the hand-off that failed, so the revert keeps it, with errcheck fixed in threadid_freebsd.go. Supersedes the earlier note saying the rule left with #73.
