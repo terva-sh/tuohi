@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRZA18G11ZZ4QVY7RB31
 title: Release tuohi v0.1.0
 type: task
-status: draft
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -41,10 +41,17 @@ references:
   - ref: ticket:git-ticket-canvas/TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J
     path: null
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-6bca1629
+  branch: tickets/release-v0.1.0
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
+  commit: 5dd892bda1cee004a41fb4a016b7ec1d591575f6
+  session: null
+  claimed_at: 2026-10-01T19:24:17Z
+  expires_at: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-10-01T17:55:35Z
+updated_at: 2026-10-01T19:37:07Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -69,7 +76,7 @@ Tag and publish tuohi v0.1.0 as the first terva-sh release, so git-ticket-canvas
 
 ## Acceptance criteria
 
-- [ ] v0.1.0 is tagged on Forgejo and GitHub, and proxy.golang.org serves it
+- [x] v0.1.0 is tagged on Forgejo and GitHub, and proxy.golang.org serves it
 - [ ] git-ticket-canvas and terva are told the version exists, through their tickets
 
 ## Notes
@@ -81,3 +88,13 @@ The owner asked, 2026-09-28, for a pre-release so another agent can start integr
 **agent:claude-code/t3code-72958710** at 2026-09-30T02:18:43Z
 
 The owner asked, 2026-09-29, for the binaries on the GitHub pre-release v0.1.0-alpha.1 to be deleted, following the decision that releases publish notes only. They were the 19 tuohi-demo_<os>_<arch> builds of ./demo, attached by the release job before that decision. The release, its tag, and its notes stay. Forgejo carries no release for the tag, so nothing was deleted there. The tag's source is what integrators consume, through the module proxy.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T19:24:17Z
+
+Owner approved the tag notes on 2026-10-01. Tagging main 5dd892b, which GitHub run 36911226939 and Forgejo CI passed on every platform.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T19:37:07Z
+
+Released 2026-10-01. Annotated tag v0.1.0 on 5dd892b, pushed to Forgejo and then GitHub separately. GitHub tag run 36914054767 passed and published https://github.com/terva-sh/tuohi/releases/tag/v0.1.0 (not a pre-release). proxy.golang.org serves v0.1.0 at 5dd892b, and go get github.com/terva-sh/tuohi@v0.1.0 resolves from a clean module.
+
+Criterion 2, partly met. git-ticket-canvas: a note on TKT-01M3HHJQR9 (Open the loopback canvas in a native window) in git-ticket-canvas PR #58. That repository's rules leave the merge to the owner. terva: no ticket there mentions tuohi, so there was nothing to note. Filing one in terva is left to the owner, because terva's working tree has uncommitted ticket work of its own.

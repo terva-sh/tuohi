@@ -20,7 +20,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-01T17:29:45Z
-updated_at: 2026-10-01T18:58:22Z
+updated_at: 2026-10-01T19:24:17Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -96,3 +96,7 @@ The report has to be filed by someone with a bugs.webkit.org account. Component 
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T18:58:22Z
 
 in-progress to blocked: WebKit bug in webkit2gtk-4.1 2.54.0; waiting for a WebKit fix. The upstream report drafted in the notes needs a bugs.webkit.org account to file. CI holds the clipboard on GTK3 meanwhile (#74).
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T19:24:17Z
+
+Owner, 2026-10-01: pinned until after v0.1.0, including filing the upstream WebKit report.
