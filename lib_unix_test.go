@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/ebitengine/purego"
 	"os"
 	"os/exec"
 	"runtime"
@@ -15,6 +14,10 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/ebitengine/purego"
+
+	"github.com/terva-sh/tuohi/clipboard"
 )
 
 // The GTK backend runs on one OS thread, so the GUI scenarios run in TestMain
@@ -475,6 +478,13 @@ func realClick(v *View) bool {
 	d := xOpenDisplay(0)
 	if d == 0 {
 		return false
+	}
+	if !gtk4 {
+		// WebKitGTK 4.1 2.54.0 crashes when the page reads a clipboard
+		// nothing owns, as under xvfb (TKT-01M3W87PKSJTC1ZP2AGHWETXVN), so
+		// the GTK3 stack clicks with the clipboard held. GTK4 still reads
+		// an empty one.
+		_ = clipboard.Copy("tuohi-permissions")
 	}
 	var x, y int32 = 100, 100
 	_ = ui.call(v.w.Raise)
