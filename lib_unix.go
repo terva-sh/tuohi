@@ -1172,7 +1172,7 @@ func (w *webview) onWindowDestroy() {
 	dispatchMain(func() { w.stopRunLoop = true })
 	// The destroy signal is only connected for owned windows, so this is the
 	// single per-window close event the App scope counts (App.Wait).
-	appWindowClosed()
+	w.reportClosed()
 }
 
 func (w *webview) Run() {
@@ -1250,7 +1250,7 @@ func (w *webview) destroyOnUI() {
 		// disconnected above), so report the window close to the App scope
 		// here instead - App.Wait returns when the last window is gone.
 		if hadWindow {
-			appWindowClosed()
+			w.reportClosed()
 		}
 		done := false
 		dispatchMain(func() { done = true })

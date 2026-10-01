@@ -1176,7 +1176,7 @@ func postWakeEvent(app objc.ID) {
 func (w *webview) onWindowWillClose() {
 	if w.ownsWindow {
 		// Single per-window close event for the App scope (App.Wait).
-		appWindowClosed()
+		w.reportClosed()
 	}
 	w.widget = 0
 	w.webView = 0
@@ -1741,7 +1741,7 @@ func (w *webview) destroyOnUI() {
 				// only other caller, from running, so report the close to the
 				// App scope here: App.Wait returns when the last window is
 				// gone, as it does when the user closes it.
-				appWindowClosed()
+				w.reportClosed()
 			}
 			w.window = 0
 		}

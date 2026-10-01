@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/terva-sh/tuohi/dialog"
@@ -92,6 +93,11 @@ var _ engine = (*webview)(nil)
 // viewCore is the per-view state the shared code reads and writes. Each
 // platform's webview embeds it, so the fields are declared once.
 type viewCore struct {
+	// scope is the App scope that counted this view's window, which its
+	// close is reported to (see reportClosed). Nil for a window tuohi does
+	// not own, and once the close has been reported.
+	scope atomic.Pointer[appScope]
+
 	mu             sync.Mutex
 	bindings       map[string]binding
 	userScriptSrcs []string

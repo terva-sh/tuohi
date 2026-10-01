@@ -143,7 +143,13 @@ func menuCloseScenario() string {
 }
 
 func menuCloseOne(framed bool) string {
-	w := &View{Frame: framed, Width: 320, Height: 240}
+	loaded := make(chan struct{}, 1)
+	w := &View{Frame: framed, Width: 320, Height: 240, Bind: map[string]any{"loaded": func() {
+		select {
+		case loaded <- struct{}{}:
+		default:
+		}
+	}}}
 	if err := testApp().Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
@@ -152,13 +158,20 @@ func menuCloseOne(framed bool) string {
 	var state atomic.Value // string
 	time.AfterFunc(15*time.Second, func() { hung.Store(true); w.Close() })
 	go func() {
-		loopUp := make(chan struct{})
-		ui.run(func() { close(loopUp) })
-		<-loopUp
+		// Press only once the page is up and the window is key: GitHub run
+		// 36827912989 pressed before either, and ⌘W closed whatever window
+		// was key instead.
+		select {
+		case <-loaded:
+		case <-time.After(10 * time.Second):
+			state.Store("[page never loaded]")
+			return
+		}
 		w.Focus(true)
 		state.Store(pressKey(native(w).window, "w", keyW, nsEventModifierFlagCommand))
 	}()
-	native(w).loadHTML(`<!DOCTYPE html><html><body>close me</body></html>`)
+	native(w).loadHTML(`<!DOCTYPE html><html><body>close me
+<script>window.addEventListener('load', function(){ window.loaded(); });</script></body></html>`)
 	w.w.Run()
 	if hung.Load() {
 		s, _ := state.Load().(string)
@@ -260,6 +273,16 @@ func menuEditScenario(noMenu bool) string {
 		press("a", keyA, 0)
 		press("x", keyX, 0)
 		steps = append(steps, "cut="+value()+"/"+pasteboardWait(text))
+		// Give the cut's undo registration, which arrives from the web
+		// process, time to land, and record whether the window can undo.
+		time.Sleep(time.Second)
+		var canUndo bool
+		performOnMain(func() {
+			if um := nw.window.Send(sel("undoManager")); um != 0 {
+				canUndo = objc.Send[bool](um, sel("canUndo"))
+			}
+		})
+		states = append(states, fmt.Sprintf("canUndo=%v", canUndo))
 		press("z", keyZ, 0)
 		steps = append(steps, "undo="+value())
 		press("Z", keyZ, nsEventModifierFlagShift)

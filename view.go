@@ -705,9 +705,10 @@ func (a *App) showFirst(view *View) error {
 	}
 	if view.window == nil {
 		// Owned windows are counted so Wait can return when the last one
-		// closes (when App.Exit is set). The engines call appWindowClosed
-		// when an owned window is destroyed.
+		// closes (when App.Exit is set). The engines call reportClosed when
+		// an owned window is destroyed, which reports it to this scope.
 		atomic.AddInt32(&s.windows, 1)
+		w.core().scope.Store(s)
 	}
 	// Wire the Ready callback into the engine: it fires exactly once, on
 	// the UI thread, when the first page load after Show finishes (see the

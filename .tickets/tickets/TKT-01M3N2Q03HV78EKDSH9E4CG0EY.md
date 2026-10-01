@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T06:45:44Z
+updated_at: 2026-10-01T07:06:52Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -64,7 +64,7 @@ WKWebView normally receives ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in text fields throu
 ## Acceptance criteria
 
 - [ ] ⌘W closes the focused window and ⌘Q quits, on framed and frameless windows
-- [ ] Whether copy and paste work in a page's text fields without a menu is checked and recorded
+- [x] Whether copy and paste work in a page's text fields without a menu is checked and recorded
 - [ ] Cut, copy, paste, select all, undo and redo work in a page's text fields
 - [ ] Whether a consumer can replace or extend the menu is decided and recorded
 
@@ -106,3 +106,7 @@ The run also failed on Windows, from TKT-01M3V1Z4 (App.Wait sometimes misses a C
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T06:45:44Z
 
 Follow-up to GitHub run 36825339187. The structure test now ignores items AppKit adds to Edit. The key tests hand each key to [[NSApp mainMenu] performKeyEquivalent:], which tests the menu's own routing without depending on how the runner delivers synthesized events. pressKey reports whether the menu handled the key and whether the window was key, main, and the app active, and the failure messages include that. Close and Minimize fall back to the main window when no window is key. The pasteboard is polled for up to 2 s after copy and cut. The no-menu record still goes through [NSApp sendEvent:], because with no menu that is the only path.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T07:06:52Z
+
+GitHub run 36827912989: copy, paste and select-all/cut now pass through the menu. With no main menu, ⌘C is not handled (handled=false) and nothing is copied, which answers criterion 2: pages had no copy before the menu. ⌘W reached tuohiClose: (handled=true), but the test window was neither key nor main, because the scenario pressed before the page loaded. It now waits for the page and the Focus. Undo did not restore the cut text, though the menu handled ⌘Z. The scenario now waits 1 s after the cut and records the window's canUndo, to tell 'nothing registered' from 'undo did nothing'.
