@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:32Z
-updated_at: 2026-10-01T05:38:50Z
+updated_at: 2026-10-01T05:46:08Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -91,3 +91,7 @@ The owner decided, 2026-10-01, that this reproduced bug blocks the first release
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T05:38:50Z
 
 Fix and scenario on fix/darwin-close-wait. On Linux the scenario passes on both WebKitGTK stacks, where it already worked before the fix. macOS is only tested on GitHub after the merge, so the criteria stay unticked until that run passes.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:46:08Z
+
+Review 1655 on PR #60 (medium): the scenario could pass when Ready never fired. Fixed: a missing Ready is now its own failure.
