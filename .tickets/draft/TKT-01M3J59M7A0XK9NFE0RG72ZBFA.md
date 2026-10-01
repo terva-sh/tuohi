@@ -20,12 +20,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T19:25:58Z
-updated_at: 2026-09-29T22:33:53Z
+updated_at: 2026-10-01T19:24:17Z
 created_by:
   id: agent:claude-code/t3code-92c88910
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-72958710
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---
@@ -56,3 +56,7 @@ While that handler is installed, any nil dereference in Go code, whether tuohi's
 **agent:claude-code/t3code-72958710** at 2026-09-29T22:33:53Z
 
 Seen again on 2026-09-29 in a local just test-gui on webkitgtk-6.0: "fatal error: non-Go code set up signal handler without SA_ONSTACK flag" after signal 11. The branch was feat/clipboard-linux merged with main at e78e6b5. It crashed after the permissions scenario, before the late loopback and clipboard scenarios. An immediate rerun of the same stack passed, and webkit2gtk-4.1 passed in the same run. Still intermittent, and still only on GTK 4.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T19:24:17Z
+
+Owner, 2026-10-01: pinned until after v0.1.0; not a release blocker despite the v0.1.0 milestone.
