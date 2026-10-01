@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3HWWRZA18G11ZZ4QVY7RB31
 title: Release tuohi v0.1.0
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -41,17 +41,10 @@ references:
   - ref: ticket:git-ticket-canvas/TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J
     path: null
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: tickets/release-v0.1.0
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 5dd892bda1cee004a41fb4a016b7ec1d591575f6
-  session: null
-  claimed_at: 2026-10-01T19:24:17Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-10-01T19:37:07Z
+updated_at: 2026-10-01T20:36:21Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
@@ -77,7 +70,7 @@ Tag and publish tuohi v0.1.0 as the first terva-sh release, so git-ticket-canvas
 ## Acceptance criteria
 
 - [x] v0.1.0 is tagged on Forgejo and GitHub, and proxy.golang.org serves it
-- [ ] git-ticket-canvas and terva are told the version exists, through their tickets
+- [x] git-ticket-canvas and terva are told the version exists, through their tickets
 
 ## Notes
 
@@ -98,3 +91,11 @@ Owner approved the tag notes on 2026-10-01. Tagging main 5dd892b, which GitHub r
 Released 2026-10-01. Annotated tag v0.1.0 on 5dd892b, pushed to Forgejo and then GitHub separately. GitHub tag run 36914054767 passed and published https://github.com/terva-sh/tuohi/releases/tag/v0.1.0 (not a pre-release). proxy.golang.org serves v0.1.0 at 5dd892b, and go get github.com/terva-sh/tuohi@v0.1.0 resolves from a clean module.
 
 Criterion 2, partly met. git-ticket-canvas: a note on TKT-01M3HHJQR9 (Open the loopback canvas in a native window) in git-ticket-canvas PR #58. That repository's rules leave the merge to the owner. terva: no ticket there mentions tuohi, so there was nothing to note. Filing one in terva is left to the owner, because terva's working tree has uncommitted ticket work of its own.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T20:36:21Z
+
+terva notified, at the owner's request: draft TKT-01M3WJWJ1R (Open terva web in a native window with tuohi v0.1.0) filed in terva PR #1559, from a scratch clone, so the owner's terva working tree was not touched. git-ticket-canvas is notified in its PR #58. Both PRs wait for the owner's merge, as each repository's rules require.
+
+## Summary
+
+tuohi v0.1.0 is tagged on 5dd892b on Forgejo and GitHub, published as a GitHub release, and served by proxy.golang.org. Consumers were told through tickets: git-ticket-canvas TKT-01M3HHJQR9 (PR #58) and a new terva draft TKT-01M3WJWJ1R (PR #1559). Pinned for after the release: TKT-01M3W87P (WebKitGTK 4.1 2.54 empty-clipboard crash, including the upstream report) and TKT-01M3J59M7 (SA_ONSTACK SIGSEGV handler under GTK4).
