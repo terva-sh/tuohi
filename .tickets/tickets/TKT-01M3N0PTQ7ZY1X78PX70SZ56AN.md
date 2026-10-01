@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T17:08:07Z
+updated_at: 2026-10-01T18:11:54Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -112,3 +112,7 @@ Diagnostics added: the scenario prints each Show's error text when either fails,
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T17:08:07Z
 
 Owner's decision, 2026-10-01: merge #73 once Forgejo is green and accept that main may be red for one GitHub run. If macOS or Windows fails, revert at once and fix forward. Pushing the PR branch to the GitHub mirror was offered and declined.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:11:54Z
+
+Merged main (#74: WebKitGTK 2.54 main-thread lock and GTK3 clipboard hold) into #73. Forgejo's GUI failures on 9b74353 and a50e610 were those two Debian 13 regressions, not this change. They also showed that a first Show off the main thread aborts with 2.54, so by the owner's decision #73 now makes Unix refuse it with ErrNotMainThread (see TKT-01M3W9PT). The full Forgejo GUI job passes twice in CI's image.

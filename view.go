@@ -586,12 +586,14 @@ type serveFunc func(*request) *response
 // handle to the shown window.
 //
 // Show is safe to call from any goroutine. The window is always created on
-// the UI thread: the main thread on macOS, and on Linux and Windows the
-// thread of the goroutine whose Show first created a window, which Show pins
-// to it. A call from any other goroutine hands the whole creation to the UI
-// thread and waits for it, so the View is live when Show returns. That needs
-// a loop running there (App.Wait, or on macOS one another owner runs); with
-// none, Show returns an error and creates nothing. Revealing a View that is
+// the UI thread: the main thread on macOS, Linux and the BSDs, and on
+// Windows the thread of the goroutine whose Show first created a window,
+// which Show pins to it. On macOS, Linux and the BSDs the first window must
+// be created on the main thread, and a first Show elsewhere returns
+// ErrNotMainThread. A call from any other goroutine hands the whole creation
+// to the UI thread and waits for it, so the View is live when Show returns.
+// That needs a loop running there (App.Wait, or on macOS one another owner
+// runs); with none, Show returns an error and creates nothing. Revealing a View that is
 // already shown is queued and never waits.
 //
 // A Show of a View whose window is still being created by another Show
