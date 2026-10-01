@@ -2400,6 +2400,10 @@ type webview struct {
 	// lazily by the App.Wait loop.
 	uiThread uint32
 
+	// running is true while this view's Run pumps messages, the loop
+	// Terminate stops.
+	running atomic.Bool
+
 	// Per-engine Dispatch queue: closures posted via WM_APP, keyed by an
 	// integer id (no Go pointer crosses to C). Per-engine so Destroy can drop
 	// any pending closures instead of leaking them in a shared global map.
@@ -2769,6 +2773,8 @@ func (w *webview) runDispatch(lp uintptr) {
 func (w *webview) Run() {
 	ui.enterLoop()
 	defer ui.exitLoop()
+	w.running.Store(true)
+	defer w.running.Store(false)
 	var m msgStruct
 	for getMessageW(&m, 0, 0, 0) > 0 {
 		translateMessage(&m)
@@ -2780,7 +2786,18 @@ func (w *webview) Terminate() {
 	// PostQuitMessage posts WM_QUIT to the CALLING thread's queue. Bindings run
 	// on goroutines (off the UI thread), so route it to the UI thread via the
 	// dispatch queue.
-	w.Dispatch(func() { postQuitMessage(0) })
+	//
+	// Only this view's Run is stopped. Under App.Wait no Run is running, and
+	// View.Close, which calls Terminate, must not post a quit: Wait ends on
+	// the one its own exit posts, and a second one stays pending until the
+	// next message pump takes it. That pump can be the next window's
+	// creation, which then fails with "environment/controller creation
+	// failed" (GitHub run 36829402711).
+	w.Dispatch(func() {
+		if w.running.Load() {
+			postQuitMessage(0)
+		}
+	})
 }
 func (w *webview) Dispatch(f func()) {
 	if w.window == 0 {

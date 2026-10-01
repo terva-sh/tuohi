@@ -167,8 +167,14 @@ func menuCloseOne(framed bool) string {
 			state.Store("[page never loaded]")
 			return
 		}
-		w.Focus(true)
-		state.Store(pressKey(native(w).window, "w", keyW, nsEventModifierFlagCommand))
+		// Make it key directly: GitHub run 36829402711 found it neither key
+		// nor main after Focus, with another window key in its place.
+		win := native(w).window
+		performOnMain(func() {
+			class("NSApplication").Send(sel("sharedApplication")).Send(sel("activateIgnoringOtherApps:"), true)
+			win.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+		})
+		state.Store(pressKey(win, "w", keyW, nsEventModifierFlagCommand))
 	}()
 	native(w).loadHTML(`<!DOCTYPE html><html><body>close me
 <script>window.addEventListener('load', function(){ window.loaded(); });</script></body></html>`)
@@ -251,6 +257,18 @@ func menuEditScenario(noMenu bool) string {
 				return "?"
 			}
 		}
+		// valueWait reads the field until it is want, for up to two
+		// seconds: undo and redo reach the page asynchronously.
+		valueWait := func(want string) string {
+			v := ""
+			for i := 0; i < 10; i++ {
+				if v = value(); v == want {
+					break
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+			return v
+		}
 		var states []string
 		press := func(chars string, code uint16, mods uint) {
 			states = append(states, chars+pressKey(nw.window, chars, code, nsEventModifierFlagCommand|mods))
@@ -284,9 +302,9 @@ func menuEditScenario(noMenu bool) string {
 		})
 		states = append(states, fmt.Sprintf("canUndo=%v", canUndo))
 		press("z", keyZ, 0)
-		steps = append(steps, "undo="+value())
+		steps = append(steps, "undo="+valueWait(text))
 		press("Z", keyZ, nsEventModifierFlagShift)
-		steps = append(steps, "redo="+value())
+		steps = append(steps, "redo="+valueWait(""))
 		result <- strings.Join(steps, " ")
 	}()
 
