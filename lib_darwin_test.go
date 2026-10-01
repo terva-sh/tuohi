@@ -79,6 +79,11 @@ func TestMain(m *testing.M) {
 		resClipboard.Store(clipboardScenario())
 		resCloseFromGo.Store(closeFromGoScenario())
 		logWindows("closeFromGoScenario")
+		resMenuKeys.Store(menuKeysScenario())
+		resMenuClose.Store(menuCloseScenario())
+		resMenuNoMenu.Store(menuEditScenario(true))
+		resMenuEdit.Store(menuEditScenario(false))
+		logWindows("menu scenarios")
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
 	}
