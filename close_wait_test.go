@@ -1,6 +1,7 @@
 package tuohi
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,14 +29,14 @@ func closeFromGoScenario() string {
 	if err := app.Show(w); err != nil {
 		return "view error: " + err.Error()
 	}
-	var noReady, closed atomic.Bool
+	scope := scopePtr.Load()
+	var noReady atomic.Bool
 	go func() {
 		select {
 		case <-ready:
 		case <-time.After(15 * time.Second):
 			noReady.Store(true)
 		}
-		closed.Store(true)
 		w.Close()
 	}()
 	var hung atomic.Bool
@@ -44,14 +45,18 @@ func closeFromGoScenario() string {
 		app.Quit()
 	})
 	err := app.Wait()
+	// The App scope counts a window as closed only when the engine reports
+	// its close, so Wait returning with the count at zero means the close
+	// reached it, rather than Wait returning for some other reason.
+	open := atomic.LoadInt32(&scope.windows)
 	watchdog.Stop()
 	switch {
 	case noReady.Load():
 		return "the page never loaded, so the close was not tested after Ready"
-	case !closed.Load():
-		return "Wait returned before View.Close was called"
 	case hung.Load():
 		return "Wait did not return after View.Close from a goroutine"
+	case open != 0:
+		return fmt.Sprintf("Wait returned with %d window(s) still counted open", open)
 	case err != nil:
 		return "wait error: " + err.Error()
 	}
