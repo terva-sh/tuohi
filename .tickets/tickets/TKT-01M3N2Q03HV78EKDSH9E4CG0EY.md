@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T07:42:23Z
+updated_at: 2026-10-01T08:02:48Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -114,3 +114,7 @@ GitHub run 36827912989: copy, paste and select-all/cut now pass through the menu
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T07:42:23Z
 
 GitHub run 36831446783 (after #67): Windows is green. On macOS, ⌘W still closed nothing, with the test window neither key nor main after the press, even though the scenario activated the app and sent makeKeyAndOrderFront: in its own main-thread turn. Activation likely returns key status to the window that was key before (one left from an earlier scenario) between that turn and the press. pressKey can now make the window key in the same turn as the key, and reports keyBefore. Undo: the menu handled ⌘Z with canUndo=true, but after 2 s of polling the field was still empty, and the log has no AppKit message. The scenario now records canUndo and canRedo after ⌘Z, to tell 'the undo manager never ran' from 'it ran and the page did not change'.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T08:02:48Z
+
+GitHub run 36833406011 (main 3bfdca1): ⌘W was handled with the window key (keyBefore=true handled=true), but menuCloseOne waited for Run to return, and on macOS Run returns only when the process-wide window count reaches zero; earlier scenarios leave windows counted. The scenario now waits on the view's own closed channel (closed by windowWillClose). Undo ran (canRedo=true afterwards) but the field was empty either way, likely because paste and cut fell in one undo group between synthesized presses. Undo and redo now act on the paste alone, before the cut. Branch fix/menu-tests-4.
