@@ -77,6 +77,8 @@ func TestMain(m *testing.M) {
 		resBareAppURL.Store(bareAppURLScenario())
 		resBadMessages.Store(badMessagesScenario())
 		resClipboard.Store(clipboardScenario())
+		resCloseFromGo.Store(closeFromGoScenario())
+		logWindows("closeFromGoScenario")
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())
 	}

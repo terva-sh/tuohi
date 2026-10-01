@@ -1733,6 +1733,11 @@ func (w *webview) destroyOnUI() {
 				w.window.Send(sel("setDelegate:"), objc.ID(0))
 				w.window.Send(sel("close"))
 				w.onWindowDestroyed(true)
+				// Clearing the delegate above keeps onWindowWillClose, the
+				// only other caller, from running, so report the close to the
+				// App scope here: App.Wait returns when the last window is
+				// gone, as it does when the user closes it.
+				appWindowClosed()
 			}
 			w.window = 0
 		}

@@ -129,6 +129,7 @@ func TestMain(m *testing.M) {
 		resLoopbackLate.Store(loopbackLateScenario())
 		resBareAppURL.Store(bareAppURLScenario())
 		resClipboard.Store(clipboardScenario())
+		resCloseFromGo.Store(closeFromGoScenario())
 	}
 	os.Exit(m.Run())
 }
