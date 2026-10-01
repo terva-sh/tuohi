@@ -54,6 +54,12 @@ func pressKey(win objc.ID, chars string, code uint16, mods uint, makeKey ...bool
 				// In the same main-thread turn as the key, so nothing between
 				// them can give key status back to another window: GitHub run
 				// 36831446783 lost it between two separate turns.
+				// Activate only an inactive app: every run so far reported it
+				// active, and activating an active one can hand key status
+				// back to the window that had it.
+				if !objc.Send[bool](app, sel("isActive")) {
+					app.Send(sel("activateIgnoringOtherApps:"), true)
+				}
 				win.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
 				before = fmt.Sprintf("keyBefore=%v ", app.Send(sel("keyWindow")) == win)
 			}
