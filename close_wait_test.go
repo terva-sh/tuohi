@@ -40,7 +40,11 @@ func closeFromGoScenario() string {
 		w.Close()
 	}()
 	var hung atomic.Bool
+	var atHang atomic.Value // string
 	watchdog := time.AfterFunc(30*time.Second, func() {
+		// What the scope saw, before Quit changes it: whether the close was
+		// counted, and whether an exit was already requested.
+		atHang.Store(fmt.Sprintf(" (windows=%d exit=%d)", atomic.LoadInt32(&scope.windows), atomic.LoadInt32(&scope.exitFlag)))
 		hung.Store(true)
 		app.Quit()
 	})
@@ -54,7 +58,8 @@ func closeFromGoScenario() string {
 	case noReady.Load():
 		return "the page never loaded, so the close was not tested after Ready"
 	case hung.Load():
-		return "Wait did not return after View.Close from a goroutine"
+		s, _ := atHang.Load().(string)
+		return "Wait did not return after View.Close from a goroutine" + s
 	case open != 0:
 		return fmt.Sprintf("Wait returned with %d window(s) still counted open", open)
 	case err != nil:

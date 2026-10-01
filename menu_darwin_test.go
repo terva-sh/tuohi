@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,19 +35,37 @@ const (
 	keyW = 13
 )
 
-// pressKey sends a key-down event for chars with the given modifiers to win
-// through NSApp, on the main thread.
-func pressKey(win objc.ID, chars string, code uint16, mods uint) {
+// pressKey hands a key-down event for chars with the given modifiers to the
+// main menu's performKeyEquivalent:, on the main thread, which is where
+// AppKit routes a key equivalent before any window sees it. Going to the menu
+// directly tests its routing without depending on how the runner delivers
+// synthesized events: GitHub run 36825339187 sent them through [NSApp
+// sendEvent:] and none reached the menu. With no main menu the event goes to
+// NSApp, which is the path a page gets without one. It returns the state that
+// explains a key that did nothing: whether the menu handled it, and which
+// windows were key and main.
+func pressKey(win objc.ID, chars string, code uint16, mods uint) string {
+	var state string
 	performOnMain(func() {
 		autorelease(func() {
+			app := class("NSApplication").Send(sel("sharedApplication"))
 			ev := class("NSEvent").Send(
 				sel("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
 				uint(nsEventTypeKeyDown), cgPoint{0, 0}, mods, float64(0),
 				objc.Send[int](win, sel("windowNumber")), objc.ID(0),
 				nsstr(chars), nsstr(chars), false, code)
-			class("NSApplication").Send(sel("sharedApplication")).Send(sel("sendEvent:"), ev)
+			handled := "none"
+			if menu := app.Send(sel("mainMenu")); menu != 0 {
+				handled = fmt.Sprint(objc.Send[bool](menu, sel("performKeyEquivalent:"), ev))
+			} else {
+				app.Send(sel("sendEvent:"), ev)
+			}
+			state = fmt.Sprintf("[handled=%s key=%v main=%v active=%v]", handled,
+				app.Send(sel("keyWindow")) == win, app.Send(sel("mainWindow")) == win,
+				objc.Send[bool](app, sel("isActive")))
 		})
 	})
+	return state
 }
 
 // menuKeysScenario lists the main menu's key equivalents as "key=action",
@@ -72,7 +91,13 @@ func menuKeysScenario() string {
 				if objc.Send[uint](item, sel("keyEquivalentModifierMask"))&nsEventModifierFlagOption != 0 {
 					key = "opt-" + key
 				}
-				out = append(out, key+"="+selName(objc.Send[objc.SEL](item, sel("action"))))
+				name := selName(objc.Send[objc.SEL](item, sel("action")))
+				if name == "?" {
+					// AppKit adds its own items to a menu titled Edit, such
+					// as Start Dictation and Emoji & Symbols.
+					continue
+				}
+				out = append(out, key+"="+name)
 			}
 		}
 	})
@@ -125,18 +150,20 @@ func menuCloseOne(framed bool) string {
 	}
 	defer w.Close()
 	var hung atomic.Bool
+	var state atomic.Value // string
 	time.AfterFunc(15*time.Second, func() { hung.Store(true); w.Close() })
 	go func() {
 		loopUp := make(chan struct{})
 		ui.run(func() { close(loopUp) })
 		<-loopUp
 		w.Focus(true)
-		pressKey(native(w).window, "w", keyW, nsEventModifierFlagCommand)
+		state.Store(pressKey(native(w).window, "w", keyW, nsEventModifierFlagCommand))
 	}()
 	native(w).loadHTML(`<!DOCTYPE html><html><body>close me</body></html>`)
 	w.w.Run()
 	if hung.Load() {
-		return "not closed"
+		s, _ := state.Load().(string)
+		return "not closed " + s
 	}
 	return "closed"
 }
@@ -212,14 +239,16 @@ func menuEditScenario(noMenu bool) string {
 				return "?"
 			}
 		}
+		var states []string
 		press := func(chars string, code uint16, mods uint) {
-			pressKey(nw.window, chars, code, nsEventModifierFlagCommand|mods)
+			states = append(states, chars+pressKey(nw.window, chars, code, nsEventModifierFlagCommand|mods))
 			time.Sleep(300 * time.Millisecond) // the web process acts on it
 		}
+		defer func() { menuEditStates.Store(noMenu, strings.Join(states, " ")) }()
 		w.Eval(`var f = document.getElementById('f'); f.focus(); f.select();`)
 		time.Sleep(200 * time.Millisecond)
 		press("c", keyC, 0)
-		steps := []string{"copy=" + pasteboardText()}
+		steps := []string{"copy=" + pasteboardWait()}
 		if noMenu {
 			result <- strings.Join(steps, " ")
 			return
@@ -231,7 +260,7 @@ func menuEditScenario(noMenu bool) string {
 		performOnMain(func() { generalPasteboard().Send(sel("clearContents")) })
 		press("a", keyA, 0)
 		press("x", keyX, 0)
-		steps = append(steps, "cut="+value()+"/"+pasteboardText())
+		steps = append(steps, "cut="+value()+"/"+pasteboardWait())
 		press("z", keyZ, 0)
 		steps = append(steps, "undo="+value())
 		press("Z", keyZ, nsEventModifierFlagShift)
@@ -256,6 +285,22 @@ func generalPasteboard() objc.ID {
 	return class("NSPasteboard").Send(sel("generalPasteboard"))
 }
 
+// menuEditStates keeps, per noMenu, the state pressKey reported for each key
+// of menuEditScenario, for the failure message.
+var menuEditStates sync.Map
+
+// pasteboardWait reads the pasteboard's text, waiting up to two seconds for
+// it to have some: the web process answers copy: and cut: asynchronously.
+func pasteboardWait() string {
+	for i := 0; i < 20; i++ {
+		if s := pasteboardText(); s != "" {
+			return s
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return ""
+}
+
 // pasteboardText reads the general pasteboard's text, "" when it has none.
 func pasteboardText() string {
 	var s string
@@ -274,7 +319,8 @@ func TestMenuEditKeys(t *testing.T) {
 	requireGUI(t, got)
 	want := "copy=tuohi-menu-text paste=tuohi-menu-text cut=/tuohi-menu-text undo=tuohi-menu-text redo="
 	if got != want {
-		t.Fatalf("Edit keys:\n got %s\nwant %s", got, want)
+		states, _ := menuEditStates.Load(false)
+		t.Fatalf("Edit keys:\n got %s\nwant %s\nkeys %v", got, want, states)
 	}
 }
 
@@ -284,5 +330,6 @@ func TestMenuEditKeys(t *testing.T) {
 func TestCopyWithoutMainMenu(t *testing.T) {
 	got, _ := resMenuNoMenu.Load().(string)
 	requireGUI(t, got)
-	t.Logf("⌘C with no main menu: %s (copied when it names the field's text)", got)
+	states, _ := menuEditStates.Load(true)
+	t.Logf("⌘C with no main menu: %s (copied when it names the field's text); keys %v", got, states)
 }

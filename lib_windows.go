@@ -2636,6 +2636,7 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		if w.ownsWindow {
 			atomic.AddInt32(&windowCount, -1)
 			// Single per-window close event for the App scope (App.Wait).
+			dbg("destroy: owned window %d closed, reporting to the App scope", w.id)
 			appWindowClosed()
 		}
 		w.window = 0
@@ -3036,16 +3037,18 @@ func startOnUI(f func()) error {
 }
 
 func appUIWait() {
-	uiThreadID()
+	dbg("wait: pumping on thread %d (UI thread %d)", getCurrentThreadID(), uiThreadID())
 	var m msgStruct
 	for getMessageW(&m, 0, 0, 0) > 0 {
 		translateMessage(&m)
 		dispatchMessageW(&m)
 	}
+	dbg("wait: WM_QUIT received")
 }
 
 // appUIWake posts WM_QUIT to the UI thread so a blocked appUIWait returns;
 // App.Wait then sees the exit flag and stops.
 func appUIWake() {
+	dbg("wake: posting WM_QUIT to thread %d from thread %d", uiThreadID(), getCurrentThreadID())
 	postThreadMessageW(uiThreadID(), wmQuit, 0, 0)
 }
