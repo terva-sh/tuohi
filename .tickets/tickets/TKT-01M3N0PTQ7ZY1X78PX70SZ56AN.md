@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N0PTQ7ZY1X78PX70SZ56AN
 title: Let App.Show create a window from any goroutine
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -13,7 +13,7 @@ labels:
   - area/engine-darwin
   - area/engine-windows
 assignees: []
-milestone: null
+milestone: v0.1.0
 parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
 dependencies: []
@@ -23,12 +23,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-09-28T22:16:17Z
+updated_at: 2026-10-01T05:14:22Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-72958710
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---
@@ -63,3 +63,15 @@ The inventory for TKT-01M3J1H8CPMZX9EJX8R2CQRA6P (Make every View method safe to
 **agent:claude-code/t3code-72958710** at 2026-09-28T22:16:17Z
 
 From review of PR #24: two concurrent first App.Show calls on the same View both see it unshown (View.live() is nil until setup finishes) and both create a window. Settle this together with Show from a goroutine.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:14:21Z
+
+### Decision: hand the creation to the UI thread and wait
+
+The owner decided, 2026-10-01. `App.Show` off the UI thread runs the whole creation (`newView`, `installEvents`, `BindBatch`, the first `Navigate`) on the UI thread through the dispatcher and waits for it. This keeps the rule that every exported method is safe from any goroutine. The first `Show`, before any loop runs, stays on its caller, which becomes the UI thread.
+
+The same change guards against two concurrent first `Show` calls on one View creating two windows (the PR #24 review note).
+
+Returning an error lost because it breaks the any-goroutine rule and moves the marshalling onto every consumer.
+
+It blocks v0.1.0.

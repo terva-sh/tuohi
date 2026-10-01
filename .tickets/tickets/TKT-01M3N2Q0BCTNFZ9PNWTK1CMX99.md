@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N2Q0BCTNFZ9PNWTK1CMX99
 title: Let a consumer's test see links handed to the system browser
 type: task
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -24,12 +24,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-09-28T22:38:34Z
+updated_at: 2026-10-01T05:14:22Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
 updated_by:
-  id: agent:claude-code/fe5548cb
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---
@@ -56,3 +56,15 @@ tuohi's own tests have a hook for this: the unexported `openExternal` variable (
 
 - [ ] A consumer's test can record every URL a view hands outside, without a real browser opening, on all three engines
 - [ ] The hook's shape and when it may be set are documented
+
+## Notes
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:14:21Z
+
+### Decision: an App field that covers App.Open too
+
+The owner decided, 2026-10-01. Add an `App` field, for example `OpenExternal func(url string) error`. When set, it replaces the system call for every URL handed outside: refused navigations and `App.Open` alike, on all three engines. It is scoped to one App, so it needs no rule about when it may be replaced, unlike the unexported package variable `openExternal`.
+
+The alternatives lost for these reasons. A navigations-only field leaves `App.Open` untestable for the same reason. An exported package variable is global and has to be set before any view exists.
+
+It does not block v0.1.0.
