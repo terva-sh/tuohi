@@ -231,6 +231,18 @@ var (
 
 // --- one-time init ---------------------------------------------------------
 
+// init keeps the main goroutine on the process's main thread. WebKitGTK 2.54
+// aborts the process when it is first used on any other thread
+// (WTF::initializeMainThread), and Go may move an unlocked goroutine between
+// threads, so a program that calls App.Show from main, as the README says,
+// could otherwise create its first window elsewhere. Package initialization
+// runs on the main goroutine, on the main thread, and the lock holds until
+// the process exits (TKT-01M3W9PT4ZEDH0SVD645JW23AA). The darwin engine does the same for
+// AppKit.
+func init() {
+	runtime.LockOSThread()
+}
+
 var (
 	initOnce     sync.Once
 	initErr      error

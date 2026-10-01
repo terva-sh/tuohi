@@ -35,6 +35,7 @@ dependencies:
   - TKT-01M3N0PTQ7ZY1X78PX70SZ56AN
   - TKT-01M3NSA8HE52CHVQZ2A6T8H5NS
   - TKT-01M3TZ0AWR4PHN56MT2H9Z39RE
+  - TKT-01M3W9PT4ZEDH0SVD645JW23AA
 blocks_on: none
 references:
   - ref: ticket:git-ticket-canvas/TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J
@@ -43,7 +44,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-10-01T17:41:13Z
+updated_at: 2026-10-01T17:55:35Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
