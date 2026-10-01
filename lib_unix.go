@@ -1201,9 +1201,6 @@ func onUIThread() bool {
 	return t == 0 || gThreadSelf() == t
 }
 
-// uiThreadPinned reports whether the first newView has pinned the UI thread.
-func uiThreadPinned() bool { return uiThread.Load() != 0 }
-
 // Destroy tears the window and web view down. GTK is not thread-safe, so when
 // Destroy runs on another goroutine (View.Close is documented safe from any
 // goroutine, and bindings run on their own goroutines) the GTK part is
