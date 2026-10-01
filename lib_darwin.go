@@ -845,7 +845,21 @@ var (
 	// tuohi window must not stop a loop we do not own, and Terminate must
 	// not stop it either.
 	tuohiRunsLoop atomic.Bool
+
+	// loopGen counts the times tuohi entered [NSApp run]. Terminate stops
+	// only the loop that was running when it was called: its stop: runs
+	// later, from the main queue, and a stop: that outlives its loop would
+	// end the next one as soon as it starts.
+	loopGen atomic.Uint64
 )
+
+// runNSApp drives [NSApp run] as tuohi's own loop until something stops it.
+func runNSApp(app objc.ID) {
+	loopGen.Add(1)
+	tuohiRunsLoop.Store(true)
+	app.Send(sel("run"))
+	tuohiRunsLoop.Store(false)
+}
 
 func claimFirstInstance() bool {
 	firstMu.Lock()
@@ -1229,11 +1243,15 @@ func (w *webview) Run() {
 		<-w.closed
 		return
 	}
+	select {
+	case <-w.closed:
+		// Terminate came first, before any loop of this Run's existed to stop.
+		return
+	default:
+	}
 	ui.enterLoop()
 	defer ui.exitLoop()
-	tuohiRunsLoop.Store(true)
-	w.app.Send(sel("run"))
-	tuohiRunsLoop.Store(false)
+	runNSApp(w.app)
 }
 
 // pumpUntilClosed services the event queue on the UI thread until this window
@@ -1278,7 +1296,18 @@ func (w *webview) Terminate() {
 		w.closeOnce.Do(func() { close(w.closed) })
 		return
 	}
-	dispatchMain(w.stopRunLoop)
+	// Two stops can be queued for one loop: closing the last window stops
+	// it (onWindowDestroyed), and so does the View.Close that follows. The
+	// second ran in the next Run and ended it at once, so a stop is dropped
+	// once the loop it was meant for has ended (GitHub runs 36839261792 and
+	// 36839839080). A Run that has not started yet sees the closed channel.
+	w.closeOnce.Do(func() { close(w.closed) })
+	gen := loopGen.Load()
+	dispatchMain(func() {
+		if tuohiRunsLoop.Load() && loopGen.Load() == gen {
+			w.stopRunLoop()
+		}
+	})
 }
 
 func (w *webview) Dispatch(f func()) { dispatchMain(f) }
@@ -1988,9 +2017,7 @@ func platformBackend() string { return "WKWebView" }
 func appUIWait() {
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	if app.Send(sel("isRunning")) == 0 {
-		tuohiRunsLoop.Store(true)
-		app.Send(sel("run"))
-		tuohiRunsLoop.Store(false)
+		runNSApp(app)
 		return
 	}
 	for !appExitRequested() {
