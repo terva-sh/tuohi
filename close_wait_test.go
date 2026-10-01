@@ -28,10 +28,12 @@ func closeFromGoScenario() string {
 	if err := app.Show(w); err != nil {
 		return "view error: " + err.Error()
 	}
+	var noReady atomic.Bool
 	go func() {
 		select {
 		case <-ready:
 		case <-time.After(15 * time.Second):
+			noReady.Store(true)
 		}
 		w.Close()
 	}()
@@ -43,6 +45,8 @@ func closeFromGoScenario() string {
 	err := app.Wait()
 	watchdog.Stop()
 	switch {
+	case noReady.Load():
+		return "the page never loaded, so the close was not tested after Ready"
 	case hung.Load():
 		return "Wait did not return after View.Close from a goroutine"
 	case err != nil:
