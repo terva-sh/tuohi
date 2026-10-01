@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T16:29:46Z
+updated_at: 2026-10-01T17:08:07Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -108,3 +108,7 @@ The revert of #61 also reverted this ticket's plan and notes, so this note resto
 #61's code restored unchanged on top of main. Both #61 failures match bugs fixed since. Windows: both concurrent Shows failed after embed reached ready=true. A WM_QUIT left pending by an earlier View.Close's Terminate (fixed in #67) ends the nested GetMessageW pumps in installEvents, applyBinds and rebuildScripts, which would fail creation exactly there. The closeFromGo hang that followed was the close counted against the wrong scope (fixed in #66). macOS: the next scenario's Run returned before its goroutine reported, which is the queued stop: ending the next loop (fixed in #72).
 
 Diagnostics added: the scenario prints each Show's error text when either fails, waits up to 20 s for its report after Run instead of reading without blocking, and macOS logs the window count before and after it. Linux passes on both WebKitGTK stacks (just test-gui). #63's guard is kept: #61's show() already rechecks view.w and view.showing under view.mu, so the duplicate check #63 added in Show is dropped.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T17:08:07Z
+
+Owner's decision, 2026-10-01: merge #73 once Forgejo is green and accept that main may be red for one GitHub run. If macOS or Windows fails, revert at once and fix forward. Pushing the PR branch to the GitHub mirror was offered and declined.
