@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T18:27:12Z
+updated_at: 2026-10-01T18:50:37Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -127,3 +127,9 @@ GitHub run 36905378959 on main 9d94ff1:
 - macOS passed.
 
 Reverted by the owner's standing decision (revert at once if red, fix forward). The revert also takes out TKT-01M3W9PT's Unix ErrNotMainThread rule, which rode on #73. #74's init lock stays on main.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:50:37Z
+
+### Third attempt (fix/show-any-goroutine-3b)
+
+Cause of the Windows failure in run 36905378959, from the code: the scenario took a queued ui.run as the sign that the first view's loop was up. On Windows, loadHTML calls Navigate, which calls rebuildScripts when the page's trusted origin changes, and that pumps GetMessageW before Run calls enterLoop. So the queued function ran there, the Shows called ui.call while no loop was counted, and ui.call correctly refused. The library behaved as designed. The scenario now retries ui.call(func(){}) until it succeeds, which happens only while a counted loop runs. The hand-off is restored unchanged from #73 on top of #75, which kept the Unix guard. Linux passes on both stacks. Windows and macOS run on GitHub after merge, by the owner's standing decision.
