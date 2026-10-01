@@ -201,10 +201,12 @@ func menuCloseOne(framed bool) string {
 	nw.loadHTML(`<!DOCTYPE html><html><body>close me
 <script>window.addEventListener('load', function(){ window.loaded(); });</script></body></html>`)
 	w.w.Run()
+	// Closing the last counted window ends Run on its own, possibly before
+	// the goroutine has seen the close, so wait for its report.
 	select {
 	case r := <-result:
 		return r
-	default:
+	case <-time.After(10 * time.Second):
 		return "no report"
 	}
 }
