@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3TZ0AWR4PHN56MT2H9Z39RE
 title: Serve app:// from the requesting view on WebKitGTK, not the first one
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/t3code-6bca1629
-  branch: fix/bare-app-url
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
-  commit: 725e88bdef2395dd8e22a47315ad550e84c8e215
-  session: null
-  claimed_at: 2026-10-01T05:29:25Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-01T05:29:12Z
-updated_at: 2026-10-01T05:32:11Z
+updated_at: 2026-10-01T05:57:25Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -67,3 +60,7 @@ Register the scheme once per web context, with one callback for the process. The
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T05:29:25Z
 
 Promoted and claimed by the agent running the owner's autonomous v0.1.0 burndown (2026-10-01). The TKT-01M3R23M GUI scenario cannot pass natively without this fix, so both land in one PR. It is linked as a release dependency because it leaves consumers on Linux with a blank window after reopening. The owner can unlink it.
+
+## Summary
+
+Landed in PR #58 (merge 6c337b1). WebKitGTK registers the app scheme once per web context with one callback. The callback answers from the serve of the view that made the request, found through webkit_uri_scheme_request_get_web_view, and finishes with an error when that view is gone. bareAppURLScenario's native view runs after other App.FS views have closed, and passes on both stacks. The 'Cannot register URI scheme app more than once' warning is gone from the GUI runs.
