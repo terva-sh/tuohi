@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-29T05:13:34Z
-updated_at: 2026-10-01T05:14:34Z
+updated_at: 2026-10-01T05:23:40Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -35,17 +35,17 @@ extensions: {}
 
 ### What
 
-Decide whether the `APPKIT_DEBUG=1` environment variable may turn a view's dev tools on in a release build.
+Make the `TUOHI_DEBUG=1` environment variable turn a view's dev tools on only when the program opts in. The variable was called `APPKIT_DEBUG` until TKT-01M3HWWRWX (Finish renaming appkit to tuohi).
 
 ### Current behaviour
 
-`App.Debug` ORs in `APPKIT_DEBUG=1` (`app.go`), and `View.Debug` ORs in `App.Debug`. So whoever launches the program can open the web inspector on its pages, and nothing the program sets can prevent it.
+`App.Debug` ORs in `TUOHI_DEBUG=1` (`envDebug` in `app.go`), and `View.Debug` ORs in `App.Debug`. So whoever launches the program can open the web inspector on its pages, even in a release build, and nothing the program sets can prevent it.
 
 ### Direction
 
-The architecture review leaned no. `View.Debug` is the application's decision, and an environment variable belongs to whoever launched the program. Options:
+Decided 2026-10-01; see the note. The architecture review leaned against the launcher's override. `View.Debug` is the application's decision, and an environment variable belongs to whoever launched the program. The options were:
 - drop the variable;
-- honour it only when the program opts in, for example through an `App` field;
+- honour it only when the program opts in, through an `App` field (chosen);
 - keep it and document it.
 
 Split out of TKT-01M3HWWRTVWVYSEDPRKSDPE783 (Deny media and clipboard permissions unless the app allows them), whose acceptance criteria do not cover it.

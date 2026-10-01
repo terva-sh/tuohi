@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-30T02:25:43Z
-updated_at: 2026-10-01T05:14:22Z
+updated_at: 2026-10-01T05:23:40Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -52,7 +52,8 @@ Either way a GUI scenario should navigate to a bare `app://` on every engine and
 
 ## Acceptance criteria
 
-- [ ] A view navigated to app:// either reaches its bindings or is refused with a documented error, on every engine
+- [ ] A view navigated to a bare app://, natively and under App.HTTP, loads the App.FS root with its bindings on every engine
+- [ ] A query or fragment on a bare app:// URL is kept, so app://#route reaches app://app/#route
 
 ## Notes
 
