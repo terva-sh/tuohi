@@ -91,13 +91,12 @@ func menuKeysScenario() string {
 				if objc.Send[uint](item, sel("keyEquivalentModifierMask"))&nsEventModifierFlagOption != 0 {
 					key = "opt-" + key
 				}
-				name := selName(objc.Send[objc.SEL](item, sel("action")))
-				if name == "?" {
+				if objc.Send[int](item, sel("tag")) != menuItemTag {
 					// AppKit adds its own items to a menu titled Edit, such
 					// as Start Dictation and Emoji & Symbols.
 					continue
 				}
-				out = append(out, key+"="+name)
+				out = append(out, key+"="+selName(objc.Send[objc.SEL](item, sel("action"))))
 			}
 		}
 	})
