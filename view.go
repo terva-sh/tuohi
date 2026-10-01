@@ -585,15 +585,21 @@ type serveFunc func(*request) *response
 // once, exactly at the first Show; keep the *View afterwards - it is the
 // handle to the shown window.
 //
-// The first successful call pins the calling goroutine to its OS thread; keep
-// all direct UI calls on that goroutine and re-enter through Window(func)
-// from background goroutines. Exception: when the application run loop is
-// already running (started by a tray loop or another owner), Show may be
-// called from any goroutine - creation and the UI-touching methods marshal
-// themselves to the main thread.
+// Show is safe to call from any goroutine. The window is always created on
+// the UI thread: the main thread on macOS, Linux and the BSDs, and on
+// Windows the thread of the goroutine whose Show first created a window,
+// which Show pins to it. On macOS, Linux and the BSDs the first window must
+// be created on the main thread, and a first Show elsewhere returns
+// ErrNotMainThread. A call from any other goroutine hands the whole creation
+// to the UI thread and waits for it, so the View is live when Show returns.
+// That needs a loop running there (App.Wait, or on macOS one another owner
+// runs); with none, Show returns an error and creates nothing. Revealing a View that is
+// already shown is queued and never waits.
 //
-// A Show of a View whose window another Show is still creating returns an
-// error rather than creating a second window.
+// A Show of a View whose window is still being created by another Show
+// cannot wait for it. That happens when the creation runs a loop that runs
+// the second Show (WebView2 does while it installs scripts). It returns an
+// error saying so, and the first Show finishes the window.
 //
 // Every binding is applied while the window is created, deterministically:
 // the app-wide App.Bind entries first, then the view's own View.Bind entries,
@@ -609,34 +615,77 @@ func (a *App) Show(view *View) error {
 		return errors.New("tuohi: Show requires a non-nil View")
 	}
 	if w := view.live(); w != nil {
-		// Already shown: reveal the live window (un-minimize, show, focus).
-		view.onUIWith(w, func(w engine) {
-			w.Unminimize()
-			w.Show()
-			w.Raise()
-			w.Focus()
-		})
+		view.reveal(w)
 		return nil
 	}
+	// Before anything is created, so that a refused call does no platform
+	// initialization on the wrong thread.
+	if err := uiThreadErr(); err != nil {
+		return err
+	}
+	// The pin is read before the thread: an unpinned thread counts as the UI
+	// thread, so a Show that saw itself on it before another Show pinned a
+	// thread would go on to create its window on the wrong one.
+	if !uiThreadPinned() {
+		// No UI thread yet: this Show may become it. Two first Shows at once
+		// would each count as the UI thread and create a window on their own
+		// thread, so they take turns, and the one that waited checks again.
+		firstShowMu.Lock()
+		if !uiThreadPinned() {
+			defer firstShowMu.Unlock()
+			return a.show(view)
+		}
+		firstShowMu.Unlock()
+	}
+	if ui.onUI() {
+		return a.show(view)
+	}
+	// Creating a window, binding it and loading its page all touch the
+	// engine, which only the UI thread may do, so the whole Show runs there.
+	var err error
+	if cerr := ui.call(func() { err = a.show(view) }); cerr != nil {
+		return fmt.Errorf("tuohi: Show off the UI thread: %w", cerr)
+	}
+	return err
+}
+
+// firstShowMu orders Shows made before the UI thread is pinned (see Show).
+var firstShowMu sync.Mutex
+
+// errShowInProgress is what Show returns for a View whose window another
+// Show is still creating (see Show).
+var errShowInProgress = errors.New("tuohi: Show: the View's window is still being created by another Show")
+
+// reveal brings a shown View's window back: un-minimized, shown and focused.
+// Off the UI thread it is queued, and Show does not wait for it.
+func (v *View) reveal(w engine) {
+	v.onUIWith(w, func(w engine) {
+		w.Unminimize()
+		w.Show()
+		w.Raise()
+		w.Focus()
+	})
+}
+
+// show is App.Show on the UI thread.
+func (a *App) show(view *View) error {
 	view.mu.Lock()
+	w, creating := view.w, view.showing
+	if w == nil && !creating {
+		view.showing = true
+	}
+	view.mu.Unlock()
 	switch {
-	case view.w != nil:
-		// Another Show finished creating it since the check above.
-		w := view.w
-		view.mu.Unlock()
-		view.onUIWith(w, func(w engine) {
-			w.Unminimize()
-			w.Show()
-			w.Raise()
-			w.Focus()
-		})
+	case w != nil:
+		view.reveal(w)
 		return nil
-	case view.showing:
-		view.mu.Unlock()
+	case creating:
+		// Another Show is creating this View's window on this thread, and
+		// its creation ran the loop that ran this call: WebView2 pumps
+		// messages while it installs scripts. Waiting would deadlock, and
+		// that Show may still fail, so say so rather than report success.
 		return errShowInProgress
 	}
-	view.showing = true
-	view.mu.Unlock()
 	defer func() {
 		view.mu.Lock()
 		view.showing = false
@@ -645,18 +694,9 @@ func (a *App) Show(view *View) error {
 	return a.showFirst(view)
 }
 
-// errShowInProgress is what Show returns for a View whose window another
-// Show is still creating, which may yet fail.
-var errShowInProgress = errors.New("tuohi: Show: the View's window is still being created by another Show")
-
 // showFirst performs the one-time creation of a View's window and registers
 // it with the App (see App.Show).
 func (a *App) showFirst(view *View) error {
-	// Before the scope opens, so that a refused call does no platform
-	// initialization on the wrong thread.
-	if err := uiThreadErr(); err != nil {
-		return err
-	}
 	s, err := a.begin()
 	if err != nil {
 		return err

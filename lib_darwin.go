@@ -740,6 +740,9 @@ func onUIThread() bool {
 	return onMainThread()
 }
 
+// uiThreadPinned is always true: the UI thread is the main thread.
+func uiThreadPinned() bool { return true }
+
 // uiThreadErr reports ErrNotMainThread when the caller is off the main thread
 // and no run loop is running there to hand UI work to. App.Show and App.Wait
 // check it before the app scope opens, so it must not touch AppKit, which
