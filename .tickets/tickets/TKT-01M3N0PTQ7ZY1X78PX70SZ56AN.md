@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T18:11:54Z
+updated_at: 2026-10-01T18:27:12Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -116,3 +116,14 @@ Owner's decision, 2026-10-01: merge #73 once Forgejo is green and accept that ma
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T18:11:54Z
 
 Merged main (#74: WebKitGTK 2.54 main-thread lock and GTK3 clipboard hold) into #73. Forgejo's GUI failures on 9b74353 and a50e610 were those two Debian 13 regressions, not this change. They also showed that a first Show off the main thread aborts with 2.54, so by the owner's decision #73 now makes Unix refuse it with ErrNotMainThread (see TKT-01M3W9PT). The full Forgejo GUI job passes twice in CI's image.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:27:12Z
+
+### #73 failed on GitHub, reverted
+
+GitHub run 36905378959 on main 9d94ff1:
+- Windows TestShowFromGoroutine: both Shows from goroutines returned 'tuohi: Show off the UI thread: tuohi: the UI loop is not running', while the first view's Run was pumping (the scenario's queued ui.run had already run on it). So on Windows, ui.call does not count a View's Run as the UI loop, or no longer does once that queued function ran. That is the next thing to read in uithread.go and lib_windows.go Run.
+- Lint: errcheck on threadid_freebsd.go's RawSyscall.
+- macOS passed.
+
+Reverted by the owner's standing decision (revert at once if red, fix forward). The revert also takes out TKT-01M3W9PT's Unix ErrNotMainThread rule, which rode on #73. #74's init lock stays on main.

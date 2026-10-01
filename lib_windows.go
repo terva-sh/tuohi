@@ -2753,9 +2753,6 @@ func onUIThread() bool {
 	return t == 0 || getCurrentThreadID() == t
 }
 
-// uiThreadPinned reports whether the first newView has pinned the UI thread.
-func uiThreadPinned() bool { return uiThreadApp.Load() != 0 }
-
 // uiLoopExternal is the dispatcher's external hook. The UI thread's messages
 // are pumped by App.Wait and Run; a caller-owned host window's loop is not
 // counted, since tuohi cannot tell whether it runs.
