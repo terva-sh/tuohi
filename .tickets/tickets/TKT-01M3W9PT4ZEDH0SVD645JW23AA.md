@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-01T17:55:29Z
-updated_at: 2026-10-01T17:58:48Z
+updated_at: 2026-10-01T18:11:54Z
 created_by:
   id: agent:claude-code/t3code-6bca1629
   name: ""
@@ -82,3 +82,7 @@ Picked up under the owner's request to finish v0.1.0 ('Let's tackle what is left
 **agent:claude-code/t3code-6bca1629** at 2026-10-01T17:58:47Z
 
 Verified in CI's image with WebKitGTK 2.54.0 on both stacks: examples/loopback passed 10/10 on webkitgtk-6.0 and 10/10 on webkit2gtk-4.1 (2/4 aborted before), and the Forgejo GUI job's full script passed on both stacks, with the root package and examples.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T18:11:54Z
+
+Owner's decision, 2026-10-01: on Linux and the BSDs a first App.Show off the main thread returns ErrNotMainThread, as on macOS, instead of pinning that thread. It lands with TKT-01M3N0PTQ on #73, whose hand-off then always targets the main thread. osThreadID (gettid, thr_self, _lwp_self) is recorded for the main thread in init. Unix uiThreadErr refuses when nothing is pinned and the caller is elsewhere. ErrNotMainThread's text and docs no longer say macOS only. TestFirstShowOffMainThread covers it headless. The full Forgejo GUI job passed twice in CI's image on the #73 branch.
