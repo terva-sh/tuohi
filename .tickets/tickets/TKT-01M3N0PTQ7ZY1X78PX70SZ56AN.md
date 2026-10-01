@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N0PTQ7ZY1X78PX70SZ56AN
 title: Let App.Show create a window from any goroutine
 type: bug
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -20,10 +20,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-6bca1629
+  branch: fix/show-any-goroutine-2
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
+  commit: 0480469db98d834d43b466350173e88e45c62995
+  session: null
+  claimed_at: 2026-10-01T16:29:46Z
+  expires_at: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T06:17:55Z
+updated_at: 2026-10-01T16:29:46Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -93,3 +100,11 @@ The revert of #61 also reverted this ticket's plan and notes, so this note resto
 **Revert (PR #63, merge 2e2a7c3).** It reverted the hand-off and the scenario, and kept the per-View `showing` guard, which now also re-checks for a live window under v.mu (reviews 1668 and 1669). The pre-pin race between first Shows of different Views is open again: serializing them without the hand-off would still create the second window on the wrong thread.
 
 **Next.** The scenario must report each Show's error text, and log the window count before and after. The Windows failure is in showFirst after embed: installEvents, applyBinds and rebuildScripts pump GetMessageW, nested inside the WM_APP dispatch that runs the ui.call. Only GitHub's runners can run Windows and macOS, and only after a merge. So the next attempt either lands as a diagnostic on main, accepting a red run, or needs a way to run GitHub CI on a branch. That is the owner's choice: docs/pr-reviews.md keeps PR branches off the mirror.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T16:29:46Z
+
+### Second attempt (branch fix/show-any-goroutine-2)
+
+#61's code restored unchanged on top of main. Both #61 failures match bugs fixed since. Windows: both concurrent Shows failed after embed reached ready=true. A WM_QUIT left pending by an earlier View.Close's Terminate (fixed in #67) ends the nested GetMessageW pumps in installEvents, applyBinds and rebuildScripts, which would fail creation exactly there. The closeFromGo hang that followed was the close counted against the wrong scope (fixed in #66). macOS: the next scenario's Run returned before its goroutine reported, which is the queued stop: ending the next loop (fixed in #72).
+
+Diagnostics added: the scenario prints each Show's error text when either fails, waits up to 20 s for its report after Run instead of reading without blocking, and macOS logs the window count before and after it. Linux passes on both WebKitGTK stacks (just test-gui). #63's guard is kept: #61's show() already rechecks view.w and view.showing under view.mu, so the duplicate check #63 added in Show is dropped.
