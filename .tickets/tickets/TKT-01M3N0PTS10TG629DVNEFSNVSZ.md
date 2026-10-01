@@ -3,14 +3,14 @@ schema: 4
 id: TKT-01M3N0PTS10TG629DVNEFSNVSZ
 title: Check that a Close from Go reaches App.Wait on macOS
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
 labels:
   - area/engine-darwin
 assignees: []
-milestone: null
+milestone: v0.1.0
 parent: TKT-01M3HWWRQGGD6BBZ02GFXQEG4D
 origin: null
 dependencies: []
@@ -20,12 +20,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:03:32Z
-updated_at: 2026-09-29T21:06:01Z
+updated_at: 2026-10-01T05:14:22Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
 updated_by:
-  id: agent:claude-code/fe5548cb
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---
@@ -70,3 +70,9 @@ Closing the window with its close button does end `Wait`. That path goes through
 ### How the consumer works around it
 
 git-ticket-canvas's macOS GUI scenarios close with `App.Quit` instead of `View.Close` (cmd/git-ticket-canvas-desktop/window_gui_darwin_test.go). Its Linux scenarios keep `View.Close`, which works there.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:14:21Z
+
+### Decision: it blocks v0.1.0
+
+The owner decided, 2026-10-01, that this reproduced bug blocks the first release. A `View.Close` from Go that never ends `App.Wait{Exit: true}` on macOS is a hang that git-ticket-canvas already works around. The cause in the note above (`destroyOnUI` clears the delegate before `close`, so `appWindowClosed` never runs) is the place to start.

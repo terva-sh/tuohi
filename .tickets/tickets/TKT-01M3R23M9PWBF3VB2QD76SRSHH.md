@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3R23M9PWBF3VB2QD76SRSHH
 title: A bare app:// URL loads its page without the bridge
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -21,12 +21,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-30T02:25:43Z
-updated_at: 2026-09-30T02:25:43Z
+updated_at: 2026-10-01T05:14:22Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-72958710
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---
@@ -53,3 +53,15 @@ Either way a GUI scenario should navigate to a bare `app://` on every engine and
 ## Acceptance criteria
 
 - [ ] A view navigated to app:// either reaches its bindings or is refused with a documented error, on every engine
+
+## Notes
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:14:21Z
+
+### Decision: normalize, and it blocks v0.1.0
+
+The owner decided, 2026-10-01: normalize a hostless `app://` to `app://app/` where `resolveURL` handles the uniform origin, so the page is trusted as what it loads. A fragment or query on the bare form carries over, so `app://#selftest` becomes `app://app/#selftest`.
+
+Refusing it with an error lost because the form already loads a page today and the showcase used it, so consumers may use it too. Refusing would turn a silent failure into a breaking one. A GUI scenario navigates to a bare `app://` on every engine and checks the bridge.
+
+The ticket is linked as a dependency of TKT-01M3HWWRZ (Release tuohi v0.1.0).

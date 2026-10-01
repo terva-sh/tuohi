@@ -29,6 +29,11 @@ dependencies:
   - TKT-01M3J59M5V12QW1WRBEJPJ5H38
   - TKT-01M3J1H8CPMZX9EJX8R2CQRA6P
   - TKT-01M3J59M1H9PZ04J2C9JJZ7V13
+  - TKT-01M3R23M9PWBF3VB2QD76SRSHH
+  - TKT-01M3N2Q03HV78EKDSH9E4CG0EY
+  - TKT-01M3N0PTS10TG629DVNEFSNVSZ
+  - TKT-01M3N0PTQ7ZY1X78PX70SZ56AN
+  - TKT-01M3NSA8HE52CHVQZ2A6T8H5NS
 blocks_on: none
 references:
   - ref: ticket:git-ticket-canvas/TKT-01M3HHJQR9Q3ZSSCJ8HG17EM8J
@@ -37,12 +42,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-27T16:59:09Z
-updated_at: 2026-09-30T02:18:43Z
+updated_at: 2026-10-01T05:14:22Z
 created_by:
   id: agent:claude-code/d3685535
   name: Claude Code local agent
 updated_by:
-  id: agent:claude-code/t3code-72958710
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---

@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N2Q03HV78EKDSH9E4CG0EY
 title: Give macOS apps a default main menu
 type: bug
-status: draft
+status: ready
 status_reason: null
 priority: normal
 due_on: null
@@ -11,7 +11,7 @@ labels:
   - area/engine-darwin
   - area/api
 assignees: []
-milestone: null
+milestone: v0.1.0
 parent: TKT-01M3MV9EBAGG435E6V7JFQHYA2
 origin: null
 dependencies: []
@@ -23,12 +23,12 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-09-28T22:38:34Z
+updated_at: 2026-10-01T05:14:22Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
 updated_by:
-  id: agent:claude-code/fe5548cb
+  id: agent:claude-code/t3code-6bca1629
   name: ""
 extensions: {}
 ---
@@ -60,3 +60,13 @@ WKWebView normally receives ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in text fields throu
 - [ ] Whether copy and paste work in a page's text fields without a menu is checked and recorded
 - [ ] Cut, copy, paste, select all, undo and redo work in a page's text fields
 - [ ] Whether a consumer can replace or extend the menu is decided and recorded
+
+## Notes
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T05:14:21Z
+
+### Decision: a fixed default menu, and it blocks v0.1.0
+
+The owner decided, 2026-10-01. Ship the default the ticket describes: an application menu (About, Hide ⌘H, Hide Others, Quit ⌘Q), an Edit menu (Undo, Redo, Cut, Copy, Paste, Select All, sent to the first responder), and a Window menu (Minimize ⌘M, Close ⌘W). A consumer can neither replace nor extend it in this version. A menu API waits until a consumer asks for one, which keeps the public API small for the first tag. Both alternatives lost on that point: an opt-out field, and an API to extend the menu across every engine.
+
+⌘Q goes through `App.Quit`. ⌘W must close frameless windows too.
