@@ -585,12 +585,15 @@ type serveFunc func(*request) *response
 // once, exactly at the first Show; keep the *View afterwards - it is the
 // handle to the shown window.
 //
-// The first successful call pins the calling goroutine to its OS thread; keep
-// all direct UI calls on that goroutine and re-enter through Window(func)
-// from background goroutines. Exception: when the application run loop is
-// already running (started by a tray loop or another owner), Show may be
-// called from any goroutine - creation and the UI-touching methods marshal
-// themselves to the main thread.
+// Show is safe to call from any goroutine. The window is always created on
+// the UI thread: the main thread on macOS, and on Linux and Windows the
+// thread of the goroutine whose Show first created a window, which Show pins
+// to it. A call from any other goroutine hands the whole creation to the UI
+// thread and waits for it, so the View is live when Show returns. That needs
+// a loop running there (App.Wait, or on macOS one another owner runs); with
+// none, Show returns an error and creates nothing. A Show of a View whose
+// window another Show is still creating returns nil at once, and the window
+// appears when that Show finishes.
 //
 // Every binding is applied while the window is created, deterministically:
 // the app-wide App.Bind entries first, then the view's own View.Bind entries,
@@ -605,27 +608,68 @@ func (a *App) Show(view *View) error {
 	if view == nil {
 		return errors.New("tuohi: Show requires a non-nil View")
 	}
+	// Before anything is created, so that a refused call does no platform
+	// initialization on the wrong thread.
+	if err := uiThreadErr(); err != nil {
+		return err
+	}
 	if w := view.live(); w != nil {
-		// Already shown: reveal the live window (un-minimize, show, focus).
-		view.onUIWith(w, func(w engine) {
-			w.Unminimize()
-			w.Show()
-			w.Raise()
-			w.Focus()
-		})
+		view.reveal(w)
 		return nil
 	}
+	if ui.onUI() {
+		return a.show(view)
+	}
+	// Creating a window, binding it and loading its page all touch the
+	// engine, which only the UI thread may do, so the whole Show runs there.
+	var err error
+	if cerr := ui.call(func() { err = a.show(view) }); cerr != nil {
+		return fmt.Errorf("tuohi: Show off the UI thread: %w", cerr)
+	}
+	return err
+}
+
+// reveal brings a shown View's window back: un-minimized, shown and focused.
+// Off the UI thread it is queued, and Show does not wait for it.
+func (v *View) reveal(w engine) {
+	v.onUIWith(w, func(w engine) {
+		w.Unminimize()
+		w.Show()
+		w.Raise()
+		w.Focus()
+	})
+}
+
+// show is App.Show on the UI thread.
+func (a *App) show(view *View) error {
+	view.mu.Lock()
+	w, creating := view.w, view.showing
+	if w == nil && !creating {
+		view.showing = true
+	}
+	view.mu.Unlock()
+	switch {
+	case w != nil:
+		view.reveal(w)
+		return nil
+	case creating:
+		// Another Show is creating this View's window: on this thread, when
+		// creating it ran the loop that ran this call (WebView2 pumps
+		// messages while it installs scripts), or before the UI thread was
+		// pinned, on another. That Show finishes the window.
+		return nil
+	}
+	defer func() {
+		view.mu.Lock()
+		view.showing = false
+		view.mu.Unlock()
+	}()
 	return a.showFirst(view)
 }
 
 // showFirst performs the one-time creation of a View's window and registers
 // it with the App (see App.Show).
 func (a *App) showFirst(view *View) error {
-	// Before the scope opens, so that a refused call does no platform
-	// initialization on the wrong thread.
-	if err := uiThreadErr(); err != nil {
-		return err
-	}
 	s, err := a.begin()
 	if err != nil {
 		return err
@@ -905,9 +949,13 @@ type View struct {
 	// see the note on the View type about window control.
 	State State
 
-	// mu guards w and app, which App.Show sets and Close clears while other
-	// goroutines call the View's methods.
+	// mu guards w, app and showing, which App.Show sets and Close clears
+	// while other goroutines call the View's methods.
 	mu sync.Mutex
+
+	// showing is true while App.Show creates the View's window, so a second
+	// Show of the same View in that time does not create another.
+	showing bool
 
 	// w is the live engine handle. App.Show stores it here (nil before the
 	// first show and after Close, so the View can be shown again); methods
