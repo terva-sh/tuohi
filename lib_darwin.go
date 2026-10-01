@@ -1604,6 +1604,7 @@ func (w *webview) Navigate(url string) {
 	if url == "" {
 		url = "about:blank"
 	}
+	url = normalizeAppURL(url)
 	// The uniform content origin is "app://" (see App.FS). While this window
 	// is served over its loopback server (darwin app content always
 	// is - WKWebView cannot make a custom scheme a secure context), an app://

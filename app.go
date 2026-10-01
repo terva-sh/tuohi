@@ -246,7 +246,9 @@ type App struct {
 	//	w.Navigate("app://app/index.html")
 	//
 	// - and tuohi serves the file at that path in the filesystem on every
-	// platform. The serving is scheme-first on Windows and Linux: WebView2's
+	// platform. A URL with no host, such as a bare "app://" or
+	// "app://#route", is read as the root of the "app" host,
+	// "app://app/#route", so the page keeps its bridge. The serving is scheme-first on Windows and Linux: WebView2's
 	// https vhost for the custom "app" scheme (whose responses carry the
 	// isolation headers), the registered custom scheme on Linux (WebKitGTK
 	// cannot attach the headers to scheme responses, so a scheme-served Linux

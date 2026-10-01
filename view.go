@@ -1007,7 +1007,8 @@ func notShown() error {
 
 // Navigate loads the given URL in the view. The URL may be an "app://" URL
 // served by App.FS, an https:// URL, a properly encoded data URI, or any
-// other URL the platform engine accepts. Examples:
+// other URL the platform engine accepts. An "app://" URL with no host loads
+// from the "app" host: "app://#route" is "app://app/#route". Examples:
 //
 //	v.Navigate("https://github.com/terva-sh/tuohi")
 //	v.Navigate("app://app/index.html")

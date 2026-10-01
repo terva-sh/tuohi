@@ -462,9 +462,8 @@ func main() {
 	// The first page: index.html under the uniform "app://" origin (with
 	// #selftest appended when the automated suite runs). It is the
 	// declarative View.URL, navigated by App.Show once the window is up. The
-	// URL names the "app" host, as the App.FS documentation does: the bridge
-	// reaches only the origin the view was navigated to, and a bare "app://"
-	// has no host to be one.
+	// URL names the "app" host, as the App.FS documentation does; a bare
+	// "app://" would be read as the same root.
 	page := "app://app/index.html"
 	if d.self.active {
 		page += "#selftest"
