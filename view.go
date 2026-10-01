@@ -619,7 +619,19 @@ func (a *App) Show(view *View) error {
 		return nil
 	}
 	view.mu.Lock()
-	if view.w == nil && view.showing {
+	switch {
+	case view.w != nil:
+		// Another Show finished creating it since the check above.
+		w := view.w
+		view.mu.Unlock()
+		view.onUIWith(w, func(w engine) {
+			w.Unminimize()
+			w.Show()
+			w.Raise()
+			w.Focus()
+		})
+		return nil
+	case view.showing:
 		view.mu.Unlock()
 		return errShowInProgress
 	}
