@@ -23,7 +23,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-09-28T22:03:31Z
-updated_at: 2026-10-01T05:14:22Z
+updated_at: 2026-10-01T06:17:55Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -75,3 +75,21 @@ The same change guards against two concurrent first `Show` calls on one View cre
 Returning an error lost because it breaks the any-goroutine rule and moves the marshalling onto every consumer.
 
 It blocks v0.1.0.
+
+**agent:claude-code/t3code-6bca1629** at 2026-10-01T06:17:55Z
+
+### Landed in PR #61, failed on GitHub, reverted in PR #63
+
+The revert of #61 also reverted this ticket's plan and notes, so this note restores them.
+
+**Approach (#61, merge 4895e32).** App.Show off the UI thread ran the whole creation (newView, installEvents, applyBinds, first Navigate) on the UI thread through `ui.call` and waited for it. With no loop running, it returned "tuohi: Show off the UI thread: ...". Shows made before the UI thread is pinned took turns on `firstShowMu`, with a per-engine `uiThreadPinned()`. A per-View `showing` flag made a second Show of a View still being created return `errShowInProgress`. A reveal of a live View stayed queued. The scenario, showGoroutineScenario, has two goroutines Show one View while a first view's loop runs, then a Show with no loop running.
+
+**Linux:** passed on both WebKitGTK stacks. With the hand-off disabled the suite aborts with SIGABRT, so the scenario catches the bug there.
+
+**GitHub run 36822614924 on main, after the merge:**
+- Windows: both concurrent Shows returned an error (`show=neither Show returned nil live=false hit=none ready=0`). The WEBVIEW2_DEBUG trace shows the second view's embed reaching `ready=true`, so creation got past WebView2's controller and failed later in showFirst. The scenario did not print the errors. closeFromGoScenario, which passed in run 36822261007, then hung ("Wait did not return after View.Close from a goroutine"), so the failed creation left the UI thread or the window count in a bad state.
+- macOS: showGoroutineScenario passed, but the scenario after it, TestOutsideLinksNotRequested, got "no report": its Run returned before its goroutine reported. The macOS window count was already 2 after closeFromGoScenario in #60's passing run, so that leak predates #61.
+
+**Revert (PR #63, merge 2e2a7c3).** It reverted the hand-off and the scenario, and kept the per-View `showing` guard, which now also re-checks for a live window under v.mu (reviews 1668 and 1669). The pre-pin race between first Shows of different Views is open again: serializing them without the hand-off would still create the second window on the wrong thread.
+
+**Next.** The scenario must report each Show's error text, and log the window count before and after. The Windows failure is in showFirst after embed: installEvents, applyBinds and rebuildScripts pump GetMessageW, nested inside the WM_APP dispatch that runs the ui.call. Only GitHub's runners can run Windows and macOS, and only after a merge. So the next attempt either lands as a diagnostic on main, accepting a red run, or needs a way to run GitHub CI on a branch. That is the owner's choice: docs/pr-reviews.md keeps PR branches off the mirror.
