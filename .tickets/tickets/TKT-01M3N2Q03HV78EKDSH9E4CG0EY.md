@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N2Q03HV78EKDSH9E4CG0EY
 title: Give macOS apps a default main menu
 type: bug
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -20,10 +20,17 @@ references:
   - ref: ticket:git-ticket-canvas/TKT-01M3N0ZZFZKWNRCWQQ3GY2AYJT
     path: null
 moved_to: null
-claim: null
+claim:
+  actor: agent:claude-code/t3code-6bca1629
+  branch: feat/darwin-main-menu
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3code-6bca1629
+  commit: 973d852d9b108c01cf9d99eda9b348cc03f33a42
+  session: null
+  claimed_at: 2026-10-01T05:56:31Z
+  expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T05:14:22Z
+updated_at: 2026-10-01T05:56:32Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -60,6 +67,18 @@ WKWebView normally receives ⌘C, ⌘V, ⌘X, ⌘A and ⌘Z in text fields throu
 - [ ] Whether copy and paste work in a page's text fields without a menu is checked and recorded
 - [ ] Cut, copy, paste, select all, undo and redo work in a page's text fields
 - [ ] Whether a consumer can replace or extend the menu is decided and recorded
+
+## Implementation plan
+
+menu_darwin.go installs a fixed main menu from windowInitProceed, on the main thread, when NSApp has none. A menu that an embedding host installed first is left alone.
+
+- Application menu: About (orderFrontStandardAboutPanel:), Hide ⌘H, Hide Others ⌥⌘H, Show All, and Quit ⌘Q. Quit goes to TuohiMenuTarget's tuohiQuit:, which calls the scope's requestExit, the same path as App.Quit. With no scope it calls NSApp terminate:.
+- Edit: undo:, redo: (⇧⌘Z), cut:, copy:, paste: and selectAll:, sent to the first responder, which is WKWebView.
+- Window: Minimize ⌘M and Close ⌘W go to the target. A window with a close button gets performClose:. A frameless window, which has no close button, gets close, which its delegate reports the same way. Minimize uses the engine's own Minimize for frameless windows and performMiniaturize: otherwise. NSApp's windowsMenu is set to this menu.
+
+The title is App.Name, or the process name. Per the owner's 2026-10-01 decision there is no consumer hook to replace or extend the menu.
+
+Tests (menu_darwin_test.go): the menu's key equivalents; ⌘W through [NSApp sendEvent:] on a framed and on a frameless key window; the Edit keys in a page's text field (copy, paste, select all and cut, undo, redo), checked against the field's value and the pasteboard; and one ⌘C with the main menu removed, logged rather than asserted, to record what pages got before. Only GitHub's macOS runner can run any of this, after the merge.
 
 ## Notes
 
