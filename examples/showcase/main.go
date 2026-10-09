@@ -138,6 +138,7 @@ func main() {
 		selftest = flag.Bool("selftest", false, "windowed showcase that runs the UI self test and exits 0/1")
 		httpFn   = flag.Bool("http", false, "serve the window's app:// content over a temporary loopback HTTP server (App.HTTP); Linux/Windows opt in, macOS always does")
 		trayFn   = flag.Bool("tray", false, "add a tray menu (Show/Hide/Quit) to the windowed showcase")
+		dockFn   = flag.Bool("dock", false, "with -tray, keep the macOS Dock icon (tray.Config.Dock)")
 	)
 	flag.Parse()
 
@@ -151,7 +152,8 @@ func main() {
 	// macOS, GTK window icon on Linux) is tuohi's embedded default mark. The
 	// tray shows trayIcon, the same mark downscaled to 32 pixels. The Dock
 	// icon stays by default; it disappears only when -tray is requested (the
-	// tray package runs the app under the menu-bar "accessory" policy).
+	// tray package runs the app under the menu-bar "accessory" policy), and
+	// -dock keeps it then too.
 	app := &tuohi.App{Name: "tuohi showcase", Exit: true}
 
 	// The tray menu captures w; it is assigned before App.Show.
@@ -166,6 +168,7 @@ func main() {
 		cfg := tray.Config{
 			Icon:    trayIcon,
 			Tooltip: "tuohi showcase",
+			Dock:    *dockFn,
 			Items: []tray.Item{
 				{Label: "Show", OnClick: func() {
 					// Bringing the window back from the tray also un-minimizes

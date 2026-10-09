@@ -37,7 +37,7 @@ err := tray.Run(tray.Config{
 
 The `Config` is **fully declarative and read once**: PNG `Icon` (plus
 `DarkModeIcon` for Windows theme switching and `TemplateIcon`, the monochrome
-image macOS recolors for the menu bar), `AppName`, `Title`, `Tooltip`,
+image macOS recolors for the menu bar), `AppName`, `Title`, `Tooltip`, `Dock`,
 tray-level `OnClick`/`OnDoubleClick`/`OnRightClick`, and `Items []Item`. An
 `Item` is `Label`, `Icon`, `Checkbox` (toggles its mark on click, keeping the
 runtime state), `Checked` (initial/static mark), `Disabled`, `Separator`,
@@ -79,7 +79,9 @@ Check the unsupported case with `errors.Is(err, tray.ErrUnsupported)`.
   fires only when no menu (`Items`) is attached; there is no separate right
   click or double click. `Icon` renders scaled to fit, `Title` appears next
   to it (or alone), and `TemplateIcon` wins over `Icon`. Item icons and
-  checkbox marks render natively.
+  checkbox marks render natively. The tray makes the application a menu-bar
+  app, with no Dock icon and no place in the application switcher, unless
+  `Dock` is set.
 - **Windows** - left click runs `OnClick`, a double click runs
   `OnDoubleClick`, and a right click runs `OnRightClick` and opens the menu.
   `DarkModeIcon` is picked from the system theme at `Set` time and switches

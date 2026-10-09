@@ -97,6 +97,12 @@ type Config struct {
 	// Tooltip is shown on hover.
 	Tooltip string
 
+	// Dock keeps the application's Dock icon, and its place in the
+	// application switcher, while the tray is up. macOS only: without it the
+	// tray makes the application a menu-bar app, which has neither. Windows
+	// and Linux ignore it, since a tray there leaves the taskbar alone.
+	Dock bool
+
 	// OnClick runs when the user activates the tray icon with its primary
 	// action: a left click on Windows, an SNI Activate on Linux. On macOS
 	// the status item opens its menu on click instead, so OnClick only fires

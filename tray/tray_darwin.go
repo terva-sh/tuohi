@@ -29,6 +29,7 @@ import (
 const (
 	targetClassName = "NativeTrayTarget"
 
+	nsApplicationActivationPolicyRegular   = 0    // Dock icon and app switcher (Config.Dock)
 	nsApplicationActivationPolicyAccessory = 1    // menu-bar app, no Dock icon
 	nsEventTypeApplicationDefined          = 15   // for the run-loop wake event
 	nsVariableStatusItemLength             = -1.0 // NSVariableStatusItemLength
@@ -182,7 +183,11 @@ func set(cfg Config) error {
 	mu.Unlock()
 
 	app := class("NSApplication").Send(sel("sharedApplication"))
-	app.Send(sel("setActivationPolicy:"), nsApplicationActivationPolicyAccessory)
+	policy := nsApplicationActivationPolicyAccessory
+	if cfg.Dock {
+		policy = nsApplicationActivationPolicyRegular
+	}
+	app.Send(sel("setActivationPolicy:"), policy)
 	// Creating a status item before the app finishes launching crashes with a
 	// CGSConnectionByID assertion when the process has no window-server
 	// connection yet; finishLaunching is idempotent, so repeating it is safe.
