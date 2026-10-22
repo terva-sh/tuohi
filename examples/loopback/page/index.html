@@ -28,6 +28,13 @@
 
       const hostname = await window.loopback.hostname();
       document.getElementById('hostname').textContent = hostname;
+      if (location.hash === '#check') {
+        const link = document.createElement('a');
+        link.href = 'https://tuohi-example.invalid/outside';
+        document.body.append(link);
+        link.click();
+        await window.loopback.checkOpen();
+      }
       return `greeting=${JSON.stringify(greeting)} hostname=${JSON.stringify(hostname)}`;
     }
 

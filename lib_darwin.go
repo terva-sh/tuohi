@@ -595,7 +595,7 @@ func decidePolicyForNavigationAction(self objc.ID, _cmd objc.SEL, _webView, acti
 		default:
 			if a := w.navigationPolicy(uri); a != navProceed {
 				invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyCancel)
-				refuseNavigation(uri, a)
+				w.refuseNavigation(uri, a)
 				return
 			}
 			invokeDecisionHandler(decisionHandler, wkNavigationActionPolicyAllow)
@@ -631,7 +631,7 @@ func decidePolicyForNavigationResponse(self objc.ID, _cmd objc.SEL, _webView, re
 		}
 		if a := w.navigationPolicy(uri); a != navProceed {
 			invokeDecisionHandler(decisionHandler, wkNavigationResponsePolicyCancel)
-			refuseNavigation(uri, a)
+			w.refuseNavigation(uri, a)
 			return
 		}
 		invokeDecisionHandler(decisionHandler, wkNavigationResponsePolicyAllow)

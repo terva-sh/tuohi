@@ -322,6 +322,19 @@ type App struct {
 	// edits have no effect).
 	Start func() error
 
+	// OpenExternal replaces the system browser/mail opener for App.Open and
+	// URLs a view hands outside after applying its navigation policy. Nil
+	// uses the platform opener. Set it before the first App method, like
+	// other app settings; later assignments do not affect the scope.
+	//
+	// App.Open calls it synchronously and returns its error. Navigation
+	// handoffs call it on a goroutine and log failures; calls may overlap,
+	// so the function must be safe for concurrent use. It may call View
+	// methods. Disallowed URL schemes never reach it, and a configured hook
+	// completely replaces the system call, including when it returns an
+	// error. Consumer tests can record handoffs without starting a browser.
+	OpenExternal func(url string) error
+
 	// --- internal scope state; see the App doc ---
 	scopeOnce sync.Once
 	scope     *appScope
@@ -341,6 +354,7 @@ type appConfig struct {
 	Debug        bool
 	Events       string
 	Bind         map[string]any
+	OpenExternal func(string) error
 }
 
 // snapshotConfig copies an App's exported settings into a plain appConfig.
@@ -358,6 +372,7 @@ func snapshotConfig(a *App) appConfig {
 		Debug:        a.Debug || (a.AllowEnvDebug && envDebug()),
 		Events:       a.Events,
 		Bind:         a.Bind,
+		OpenExternal: a.OpenExternal,
 	}
 }
 
@@ -855,8 +870,19 @@ func (a *App) Open(rawurl string) error {
 	if err := validateScheme(rawurl); err != nil {
 		return err
 	}
-	if _, err := a.begin(); err != nil {
+	s, err := a.begin()
+	if err != nil {
 		return err
+	}
+	return s.cfg.openExternal(rawurl)
+}
+
+// openExternal is shared by explicit opens and navigation handoffs, after
+// their respective URL policy checks. A failing hook never falls back to
+// the real opener.
+func (cfg appConfig) openExternal(rawurl string) error {
+	if cfg.OpenExternal != nil {
+		return cfg.OpenExternal(rawurl)
 	}
 	return openURL(rawurl)
 }

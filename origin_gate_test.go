@@ -23,9 +23,8 @@ var resOriginGate atomic.Value // string
 // arrive, although Go names the origin in a spelling WebKit canonicalizes.
 func originGateScenario() string {
 	refused := make(chan string, 4)
-	prevOpen := openExternal
-	openExternal = func(rawurl string) { refused <- rawurl }
-	defer func() { openExternal = prevOpen }()
+	app := testApp()
+	app.OpenExternal = func(rawurl string) error { refused <- rawurl; return nil }
 
 	done := make(chan string, 4)
 	serve := func(r *request) *response {
@@ -48,7 +47,7 @@ window.addEventListener('load', function(){
 	defer func() { _ = srv.Close() }()
 
 	w := &View{}
-	if err := testApp().Show(w); err != nil {
+	if err := app.Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
 	defer w.Close()

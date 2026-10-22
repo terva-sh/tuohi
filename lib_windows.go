@@ -996,7 +996,7 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 			dbg("navigation starting: id=%d ok=%v %q", id, ok, dbgURL(uri))
 			if action := w.navigationPolicy(uri); action != navProceed {
 				args.Cancel()
-				refuseNavigation(uri, action)
+				w.refuseNavigation(uri, action)
 				// A redirect the policy refuses ends a navigation recorded
 				// when it started, and no document of its commits.
 				if ok {

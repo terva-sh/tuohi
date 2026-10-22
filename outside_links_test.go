@@ -51,12 +51,11 @@ func outsideLinksScenario() string {
 	defer closeTrusted()
 
 	external := make(chan string, 8)
-	prevOpen := openExternal
-	openExternal = func(rawurl string) { external <- rawurl }
-	defer func() { openExternal = prevOpen }()
+	app := testApp()
+	app.OpenExternal = func(rawurl string) error { external <- rawurl; return nil }
 
 	w := &View{}
-	if err := testApp().Show(w); err != nil {
+	if err := app.Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
 	defer w.Close()

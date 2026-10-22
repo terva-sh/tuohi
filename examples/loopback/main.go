@@ -51,6 +51,14 @@ func main() {
 	}()
 
 	app := &tuohi.App{Name: "tuohi loopback", Exit: true}
+	// Consumer tests intercept both App.Open and native outside navigation
+	// through the public API. A normal run keeps the default system opener.
+	const outsideURL = "https://tuohi-example.invalid/outside"
+	const mailURL = "mailto:tuohi-example@example.invalid"
+	external := make(chan string, 4)
+	if *check {
+		app.OpenExternal = func(url string) error { external <- url; return nil }
+	}
 
 	// The page reports what it found through a binding, which only -check
 	// waits for.
@@ -68,7 +76,30 @@ func main() {
 		Bind: map[string]any{
 			// A binding runs on a goroutine of its own, never the UI thread.
 			"loopback.hostname": func() (string, error) { return os.Hostname() },
+			"loopback.checkOpen": func() error {
+				if !*check {
+					return nil
+				}
+				return app.Open(mailURL)
+			},
 			"loopback.report": func(r report) {
+				if *check && r.OK {
+					seen := make(map[string]bool)
+					deadline := time.NewTimer(10 * time.Second)
+					defer deadline.Stop()
+					for len(seen) < 2 && r.OK {
+						select {
+						case url := <-external:
+							if url != outsideURL && url != mailURL {
+								r.OK, r.Detail = false, "unexpected external URL"
+							} else {
+								seen[url] = true
+							}
+						case <-deadline.C:
+							r.OK, r.Detail = false, "external handoff did not reach App.OpenExternal"
+						}
+					}
+				}
 				select {
 				case reports <- r:
 				default:

@@ -992,6 +992,14 @@ its `net/http` server on 127.0.0.1, points the window at it, and binds what
 the page needs from Go. `go run ./loopback -check` loads the page, checks that
 it reached both the server and Go, and exits 0 or 1.
 
+For consumer tests, set `App.OpenExternal func(url string) error` before the
+first App method. It replaces the OS opener for `App.Open` and outside links
+after the existing URL policy checks. `App.Open` returns the hook's error;
+navigation handoffs run it on a goroutine and log failures. Calls may overlap.
+The loopback example's `-check` mode records both handoff paths through this
+hook, so its native GUI test opens no browser. Leaving it nil keeps the
+default system browser/mail behavior.
+
 [`showcase`](examples/showcase/) is a single borderless, cross-platform window:
 custom chrome whose maximize button toggles into a restore button, its UI
 served through the one app-scoped `App.FS`, the JS bridge, events, clipboard,
