@@ -12,6 +12,48 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// TestPipeServerReadsClosedClient forces the startup race without scheduler
+// timing: Send writes and closes its handle before run calls ConnectNamedPipe.
+// A successful buffered write must survive that client's early close.
+func TestPipeServerReadsClosedClient(t *testing.T) {
+	id := uniqueID("closed-before-serve")
+	got := make(chan Message, 4)
+	s, err := newPipeServer(id, func(m Message) { got <- m })
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	started := false
+	t.Cleanup(func() {
+		if err := windows.SetEvent(s.stop); err != nil {
+			t.Error(err)
+		}
+		if started {
+			<-done
+		}
+		if err := s.close(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	want := []string{"buffered", "café ✓"}
+	if err := Send(id, want); err != nil {
+		t.Fatalf("Send before serving: %v", err)
+	}
+	started = true
+	go func() {
+		defer close(done)
+		s.run()
+	}()
+	expectOnly(t, got, want)
+
+	want = []string{"next-client"}
+	if err := Send(id, want); err != nil {
+		t.Fatalf("Send after closed client: %v", err)
+	}
+	expectOnly(t, got, want)
+}
+
 // rawConnect connects to id's pipe directly, as a sender Send does not model.
 func rawConnect(t *testing.T, id string) *os.File {
 	t.Helper()
