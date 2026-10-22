@@ -38,10 +38,49 @@ func checkBundleStage(target, stage string) error {
 	if err != nil {
 		return err
 	}
-	if inside(a, b) || inside(b, a) {
+	// EvalSymlinks does not canonicalize case (or Unicode spelling) on
+	// case-insensitive volumes. Compare filesystem identities along both
+	// ancestor chains instead of inferring containment from path strings.
+	aInfo, err := os.Stat(a)
+	if err != nil {
+		return err
+	}
+	bInfo, err := os.Stat(b)
+	if err != nil {
+		return err
+	}
+	if !aInfo.IsDir() || !bInfo.IsDir() {
+		return fmt.Errorf("%w: bundle and stage must be directories", ErrInvalid)
+	}
+	ab, err := directoryHasAncestor(a, bInfo)
+	if err != nil {
+		return err
+	}
+	ba, err := directoryHasAncestor(b, aInfo)
+	if err != nil {
+		return err
+	}
+	if ab || ba {
 		return fmt.Errorf("%w: bundle and staging directory overlap", ErrInvalid)
 	}
 	return nil
+}
+
+func directoryHasAncestor(dir string, ancestor os.FileInfo) (bool, error) {
+	for {
+		info, err := os.Stat(dir)
+		if err != nil {
+			return false, err
+		}
+		if os.SameFile(info, ancestor) {
+			return true, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false, nil
+		}
+		dir = parent
+	}
 }
 
 // extractBundle creates one app root at dst. Symlinks are created only after
