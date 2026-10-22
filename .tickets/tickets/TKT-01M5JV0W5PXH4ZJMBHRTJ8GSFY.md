@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T22:17:04Z
-updated_at: 2026-10-22T22:20:17Z
+updated_at: 2026-10-22T22:23:03Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -58,3 +58,11 @@ Inspect native logs and browser operations; add progress/error reporting, align 
 CI #611 at 643ba16 failed only the clipboard-granted permission run on WebKitGTK 6.0 with no report; no updater failure, process panic or native crash appears in the log. The native log does not establish which browser promise stalled. Confirmed a separate harness defect: its page wait (40 seconds) and click wait (10 seconds) could outlive its 45-second close watchdog. Changed the observation phases to share one 40-second deadline, stopped the watchdog on return, and added browser stage reports (video/audio/read/notify/frame/click) used in timeout errors. Strict expected permission and gesture results remain unchanged. This improves diagnosis and lifetime correctness; it does not yet establish the original stall's root cause.
 
 Full CGO_ENABLED=0 just ci and all eight targets pass. Reproducing with the workflow's documented Go 1.27 Debian trixie image under rootless podman, two CPUs, WebKitGTK 2.54.0-1~deb13u3, a private bus/Xvfb, and required GUI checks; image/tool caches and builds are confined to task scratch/default container storage. Four fresh process runs are planned, followed by both local native stacks. Fresh reviews are required after publishing this source change.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:23:03Z
+
+CI #611 disposition: the failure was TestPermissions, clipboard-granted run, on WebKitGTK 6.0; all updater tests and the newly synchronized binding/clipboard scenarios passed. No crash or exact stalled browser operation was identified by the old no-report message. Four fresh process executions in the actual CI base image, limited to two CPUs with WebKitGTK 2.54.0-1~deb13u3, passed TestPermissions. The original stall is unconfirmed and is not claimed fixed.
+
+Addressed an independently confirmed harness timing error: page setup and click now share one 40-second observation deadline, rather than allowing a 40+10 second observation to race the 45-second watchdog. Watchdogs are stopped after each scenario. Progress bindings record the last awaited browser operation in timeout/early-loop-exit failures. All expected permission, cross-origin, gesture and pointer-lock verdicts remain strict; no production permission behavior or GTK3 known-issue workaround changed.
+
+Validation: full CGO_ENABLED=0 just ci and all eight cross targets pass. Full just test-gui passes both available native Linux WebKitGTK stacks and examples. Native macOS/Windows/BSD execution remains unavailable. Full fresh exact-head/base reviews and hosted CI will be requested after publishing this test-only source improvement; the diagnostic ticket remains open pending its disposition. The ephemeral reproduction container was removed and the task-pulled base image cleaned up; logs/builds stay in task scratch.
