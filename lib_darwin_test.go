@@ -81,6 +81,7 @@ func TestMain(m *testing.M) {
 		resBadMessages.Store(badMessagesScenario())
 		resClipboard.Store(clipboardScenario())
 		resCloseFromGo.Store(closeFromGoScenario())
+		resLifecycle.Store(lifecycleScenario())
 		logWindows("closeFromGoScenario")
 		resMenuKeys.Store(menuKeysScenario())
 		resMenuClose.Store(menuCloseScenario())
@@ -92,6 +93,10 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+
+func nativeRequestClose(w *webview) { w.window.Send(sel("performClose:"), objc.ID(0)) }
+
+func nativeActivateForTest(w *webview) { w.Raise() }
 
 // requireGUI skips a GUI assertion when its scenario did not run (e.g.
 // -short), or fails it when TUOHI_REQUIRE_GUI=1, which GitHub CI sets.

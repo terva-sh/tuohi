@@ -287,6 +287,24 @@ func registerClasses() error {
 		"TuohiWindowDelegate", objc.GetClass("NSObject"),
 		[]*objc.Protocol{objc.GetProtocol("NSWindowDelegate")}, nil,
 		[]objc.MethodDef{{
+			Cmd: sel("windowShouldClose:"),
+			Fn: func(self objc.ID, _cmd objc.SEL, window objc.ID) bool {
+				if w := lookupEngine(self); w != nil {
+					return w.lifecycle.request()
+				}
+				return true
+			},
+		}, {
+			Cmd: sel("windowDidBecomeKey:"), Fn: windowStateChanged,
+		}, {
+			Cmd: sel("windowDidResignKey:"), Fn: windowStateChanged,
+		}, {
+			Cmd: sel("windowDidMiniaturize:"), Fn: windowStateChanged,
+		}, {
+			Cmd: sel("windowDidDeminiaturize:"), Fn: windowStateChanged,
+		}, {
+			Cmd: sel("windowDidChangeOcclusionState:"), Fn: windowStateChanged,
+		}, {
 			Cmd: sel("windowWillClose:"),
 			Fn: func(self objc.ID, _cmd objc.SEL, notification objc.ID) {
 				w := lookupEngine(self)
@@ -1202,15 +1220,29 @@ func postWakeEvent(app objc.ID) {
 }
 
 func (w *webview) onWindowWillClose() {
+	w.widget = 0
+	w.webView = 0
+	w.window = 0
 	if w.ownsWindow {
 		// Single per-window close event for the App scope (App.Wait).
 		w.reportClosed()
 	}
-	w.widget = 0
-	w.webView = 0
-	w.window = 0
 	w.closeOnce.Do(func() { close(w.closed) })
 	dispatchMain(func() { w.onWindowDestroyed(false) })
+}
+
+func windowStateChanged(self objc.ID, _cmd objc.SEL, notification objc.ID) {
+	if w := lookupEngine(self); w != nil {
+		w.lifecycle.update(w.windowState())
+	}
+}
+
+func (w *webview) windowState() WindowState {
+	if w.window == 0 {
+		return WindowState{Closed: true}
+	}
+	visible := w.window.Send(sel("isVisible")) != 0 && w.window.Send(sel("isMiniaturized")) == 0 && w.app.Send(sel("isHidden")) == 0
+	return WindowState{Visible: visible, Active: visible && w.app.Send(sel("isActive")) != 0 && w.window.Send(sel("isKeyWindow")) != 0}
 }
 
 func (w *webview) onWindowDestroyed(skipTermination bool) {
@@ -1350,6 +1382,7 @@ func (w *webview) Raise() {
 			// makeKeyAndOrderFront brings THIS window forward within the app.
 			w.app.Send(sel("activateIgnoringOtherApps:"), true)
 			w.window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+			w.lifecycle.update(w.windowState())
 		})
 	})
 }
@@ -1372,6 +1405,7 @@ func (w *webview) Show() {
 			}
 			w.app.Send(sel("activateIgnoringOtherApps:"), true)
 			w.window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
+			w.lifecycle.update(w.windowState())
 		})
 	})
 }
@@ -1383,7 +1417,10 @@ func (w *webview) Hide() {
 		return
 	}
 	performOnMain(func() {
-		autorelease(func() { w.window.Send(sel("orderOut:"), objc.ID(0)) })
+		autorelease(func() {
+			w.window.Send(sel("orderOut:"), objc.ID(0))
+			w.lifecycle.update(w.windowState())
+		})
 	})
 }
 
@@ -1520,6 +1557,7 @@ func (w *webview) Minimize() {
 				}
 				w.window.Send(sel("orderOut:"), objc.ID(0))
 				w.minimized = true
+				w.lifecycle.update(w.windowState())
 				return
 			}
 			w.window.Send(sel("performMiniaturize:"), objc.ID(0))
@@ -1572,6 +1610,7 @@ func (w *webview) doUnminimizeFrameless() {
 	}
 	w.window.Send(sel("makeKeyAndOrderFront:"), objc.ID(0))
 	w.minimized = false
+	w.lifecycle.update(w.windowState())
 }
 
 // applyGeometry applies the creation-time geometry from the View to an owned
@@ -1775,6 +1814,7 @@ func (w *webview) destroyOnUI() {
 				w.window.Send(sel("setDelegate:"), objc.ID(0))
 				w.window.Send(sel("close"))
 				w.onWindowDestroyed(true)
+				w.window = 0
 				// Clearing the delegate above keeps onWindowWillClose, the
 				// only other caller, from running, so report the close to the
 				// App scope here: App.Wait returns when the last window is

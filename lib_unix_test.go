@@ -134,8 +134,49 @@ func TestMain(m *testing.M) {
 		resBareAppURL.Store(bareAppURLScenario())
 		resClipboard.Store(clipboardScenario())
 		resCloseFromGo.Store(closeFromGoScenario())
+		resLifecycle.Store(lifecycleScenario())
 	}
 	os.Exit(m.Run())
+}
+
+func nativeRequestClose(w *webview) { gtkWindowClose(w.window) }
+
+// Xvfb has no window manager to grant focus requests, so give native X focus
+// directly. GTK still receives the real FocusIn/FocusOut events and publishes
+// is-active through the normal signal path.
+func nativeActivateForTest(w *webview) {
+	if waylandDisplay() {
+		w.Raise()
+		return
+	}
+	x11, err := openFirst("libX11.so.6")
+	if err != nil {
+		panic(err)
+	}
+	var open func(uintptr) uintptr
+	var focus func(uintptr, uintptr, int32, uintptr) int32
+	var flush func(uintptr) int32
+	var closeDisplay func(uintptr) int32
+	purego.RegisterLibFunc(&open, x11, "XOpenDisplay")
+	purego.RegisterLibFunc(&focus, x11, "XSetInputFocus")
+	purego.RegisterLibFunc(&flush, x11, "XFlush")
+	purego.RegisterLibFunc(&closeDisplay, x11, "XCloseDisplay")
+	var xid func(uintptr) uintptr
+	native := uintptr(0)
+	if gtk4 {
+		purego.RegisterLibFunc(&xid, gtkLib, "gdk_x11_surface_get_xid")
+		native = gtkNativeGetSurface(w.window)
+	} else {
+		purego.RegisterLibFunc(&xid, gtkLib, "gdk_x11_window_get_xid")
+		native = gtkWidgetGetWindow(w.window)
+	}
+	d := open(0)
+	if d == 0 {
+		panic("no X display")
+	}
+	focus(d, xid(native), 2, 0)
+	flush(d)
+	closeDisplay(d)
 }
 
 // embedScenario embeds a web view into a caller-provided GtkWindow and verifies

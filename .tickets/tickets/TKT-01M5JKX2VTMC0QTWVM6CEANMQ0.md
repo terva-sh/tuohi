@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T20:58:38Z
+updated_at: 2026-10-22T21:04:35Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -80,3 +80,7 @@ Final validation: CGO_ENABLED=0 just ci passed in the library and examples with 
 **agent:codex/t3-b903096c** at 2026-10-22T20:58:38Z
 
 PR #83 review 2727 / Actions #566, exact head b6bfd13c2c8ba2354bbb9d273ef5f29774594a21 against base 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc, identified a high-severity macOS worker autorelease pool thread-affinity defect. Accepted: pin the goroutine before creating the pool and keep it pinned through drain, then unlock before waiting for the queued result. The actual enqueue path now uses withTrayAutoreleasePool. A Darwin-native regression yields between NSNumber allocations and checks pthread_self throughout that scope. Native Darwin execution is unavailable here; this test is compiled only, and Linux/shared tests cannot establish AppKit runtime behavior.
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:04:35Z
+
+PR #83 is clean after the autorelease-pool fix at abc50ac336d37fa3e0aeb3751a529e0fe6a2f48e against base 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc. Full Terva review Actions #569 / run d8d3e9ad-7211-459b-b730-f1d09426a4a7 resolves the original finding and reports no additional concrete defects. Forgejo CI #567 passed check and both Linux GUI stacks. Local cgo-free just ci/all cross builds passed; Darwin regression compiled explicitly with go test -c but was not executed. Disposition comment 33597. PR awaits owner merge; no merge/release authorization was inferred.

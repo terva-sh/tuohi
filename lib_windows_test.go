@@ -74,6 +74,7 @@ func TestMain(m *testing.M) {
 		resBareAppURL.Store(bareAppURLScenario())
 		resClipboard.Store(clipboardScenario())
 		resCloseFromGo.Store(closeFromGoScenario())
+		resLifecycle.Store(lifecycleScenario())
 		if n, _ := strconv.Atoi(os.Getenv("TUOHI_REPEAT_DATAURL")); n > 0 {
 			repeatStatus = repeatDataURL(n)
 		}
@@ -85,6 +86,10 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(code)
 }
+
+func nativeRequestClose(w *webview) { sendMessageW(w.window, wmClose, 0, 0) }
+
+func nativeActivateForTest(w *webview) { w.Raise() }
 
 // winCloseViaUIScenario simulates the user closing the window (WM_CLOSE, as the
 // X button / Alt+F4 send) and asserts that Run() returns. Without the WM_CLOSE
