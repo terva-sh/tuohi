@@ -236,13 +236,23 @@ func extractBundle(ctx context.Context, archive, dst string) (err error) {
 			return err
 		}
 	}
+	// A parent may be an alias (notably /var -> /private/var on macOS).
+	// Compare resolved destinations against a resolved, absolute root too.
+	resolvedRoot, err := filepath.EvalSymlinks(dst)
+	if err != nil {
+		return err
+	}
+	resolvedRoot, err = filepath.Abs(resolvedRoot)
+	if err != nil {
+		return err
+	}
 	for _, f := range links {
-		target := filepath.Join(dst, filepath.FromSlash(strings.TrimPrefix(f.Name, root+"/")))
+		target := filepath.Join(resolvedRoot, filepath.FromSlash(strings.TrimPrefix(f.Name, root+"/")))
 		resolved, e := filepath.EvalSymlinks(target)
 		if e != nil {
 			return fmt.Errorf("%w: unresolved symlink", ErrInvalid)
 		}
-		if !inside(dst, resolved) {
+		if !inside(resolvedRoot, resolved) {
 			return fmt.Errorf("%w: escaping symlink chain", ErrInvalid)
 		}
 	}
@@ -268,6 +278,16 @@ func treeDigest(ctx context.Context, root string) (string, error) {
 	}
 	if !info.IsDir() {
 		return "", ErrInvalid
+	}
+	// Keep the endpoint directory check above: an alias in a parent is valid,
+	// but a symlink replacing the bundle root itself is not a bundle tree.
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return "", err
 	}
 	h := sha256.New()
 	err = filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
