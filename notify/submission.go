@@ -13,8 +13,9 @@ func (s *notificationSubmissions) run(ctx context.Context, id string, start func
 	result := make(chan error, 1)
 	start(func(err error) {
 		defer n.release()
-		if ctx.Err() != nil {
+		if cancelled := ctx.Err(); cancelled != nil {
 			n.cleanup(remove)
+			err = cancelled
 		}
 		result <- err
 	})
@@ -23,6 +24,10 @@ func (s *notificationSubmissions) run(ctx context.Context, id string, start func
 		n.cleanup(remove)
 		return ctx.Err()
 	case err := <-result:
+		if cancelled := ctx.Err(); cancelled != nil {
+			n.cleanup(remove)
+			return cancelled
+		}
 		return err
 	}
 }

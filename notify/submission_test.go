@@ -103,3 +103,31 @@ func TestLatestCancelledSubmissionStillCleansUpAfterWaiterReturns(t *testing.T) 
 		t.Fatal("completed cancelled submission leaked")
 	}
 }
+
+func TestCancelledCompletionCannotReportSuccess(t *testing.T) {
+	for _, cancelFirst := range []bool{true, false} {
+		// start runs before the waiter can select. Both channels are ready
+		// afterwards, so either select branch must report cancellation.
+		for i := 0; i < 100; i++ {
+			var submissions notificationSubmissions
+			ctx, cancel := context.WithCancel(context.Background())
+			delivered := true
+			err := submissions.run(ctx, "native-id", func(complete func(error)) {
+				if cancelFirst {
+					cancel()
+				}
+				complete(nil)
+				cancel()
+			}, func() { delivered = false })
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancelFirst=%v: removed notification reported %v", cancelFirst, err)
+			}
+			if delivered {
+				t.Fatalf("cancelFirst=%v: cancelled notification escaped cleanup", cancelFirst)
+			}
+			if len(submissions.byID) != 0 {
+				t.Fatal("cancelled completion leaked native identity")
+			}
+		}
+	}
+}
