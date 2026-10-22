@@ -83,7 +83,8 @@ they may wait, so call them off the UI thread. Activation callbacks run
 serially on a worker and may call tuohi View methods or `Client.Close`.
 Cancellation/Close drops queued callbacks; an already admitted callback may
 finish afterwards. Dismiss also suppresses queued activation for that handle.
-An operation context stops waiting but cannot undo a request the OS already
+An operation context bounds both waiting for another native operation and the
+native request itself, but cannot undo a request the OS already
 accepted or close an already visible permission dialog. Cancelling the client
 context initiates the same cleanup as Close. A crash cannot perform cleanup;
 correlation and activation are limited to this client's running process and
@@ -96,7 +97,8 @@ are not a persistent activation protocol across application restarts.
 | Windows | `NewClient` returns `ErrUnsupported`: a shared balloon has no reliable independent notification identity or managed activation/dismissal lifetime. Existing read-only helpers continue to work. |
 | Other platforms | `ErrUnsupported`. |
 
-Linux signals and operations bind to the notification daemon's unique owner.
+Linux starts an installed on-demand notification service when it has no owner,
+then binds signals and operations to that daemon's unique owner.
 If it disappears or restarts, outstanding handles end with `ErrUnavailable`;
 create a new client. Old daemon IDs are never reused against the new daemon.
 Only that daemon's default-action signals for tracked IDs can activate them.

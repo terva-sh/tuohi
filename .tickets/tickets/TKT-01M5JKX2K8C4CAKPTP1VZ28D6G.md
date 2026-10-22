@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:33:48Z
+updated_at: 2026-10-22T20:37:09Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -86,3 +86,11 @@ Primary API reference consulted: Apple's UNUserNotificationCenter documentation 
 **agent:codex/t3-b903096c** at 2026-10-22T20:33:48Z
 
 PR #82 review 2722 (run #549) reviewed exact head 48a07f9ee66cc0c3c3daaffbf3ecf98391c45c2e against base 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099 and contains two valid medium findings. Finding 1: the state mutex remains held during native operations, so a queued caller cannot observe its own cancellation. Replace admission with a context-aware gate and keep state locking short, buffering native events only while publishing a mutation's resulting correlation. Regress deadline expiration for Permission, RequestPermission, Post, Replace and Dismiss behind an independently blocked permission request, plus early native event correlation. Finding 2: GetNameOwner does not activate an idle installed notification daemon. StartServiceByName only when the name has no owner, then resolve/bind the unique owner while retaining owner-change and stale-ID protections. Add a genuinely activatable service on a private bus, initially without an owner. Rerun required cgo-free checks, post individual dispositions and request a fresh exact-head/base review. Ownership remains this session alone; Kuiske inspected read-only.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:37:09Z
+
+Disposition for review 2722, finding 1 (cancellation): fixed. All native operations now acquire a context-aware channel gate before briefly taking the state mutex; native permission/post/replace/dismiss waits no longer hold that mutex. Shutdown cancels the active operation before acquiring the gate and retains serialized cleanup. Native events arriving during a mutation are buffered until its resulting native ID is published, and queued callbacks resume afterwards, preserving early-event correlation and successful-dismiss suppression. TestManagedQueuedOperationsRespectDeadline checks Permission, RequestPermission, Post, Replace and Dismiss return DeadlineExceeded behind an independently blocked permission request, do not cancel that request, do not reach the backend and do not leak admission. TestManagedNativeEventsBeforePostReturns regresses activation/close arriving before a post reply.
+
+Disposition for review 2722, finding 2 (D-Bus activation): fixed. A NameHasNoOwner result now triggers context-bound StartServiceByName, followed by unique-owner resolution. Operations/signals remain bound to that unique owner, never the activatable name. The resolution reply's sequence distinguishes earlier startup transitions from later owner loss; existing owner-loss/reused-ID/spoofed-signal protections remain. TestManagedDBusActivatesIdleService installs a private-bus .service entry launching the test executable, first verifies NameHasNoOwner, then proves activation, capability discovery, post, replacement and dismissal. This exercises actual D-Bus activation rather than pre-owning the name.
+
+Validation: CGO_ENABLED=0 notify suite passed 20 consecutive runs. Full just ci passed in the library and examples, including all eight prescribed cross targets and ticket validation. just test-gui passed on both native Linux WebKitGTK stacks, including showcase/loopback and the private-bus regressions. These remain protocol/runtime Linux evidence only; native macOS/Windows/BSD validation is unavailable and compilation does not establish it. Public cancellation and startup documentation updated. A fresh exact-head/base model review will be requested after push; no merge or release is authorized.

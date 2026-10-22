@@ -74,6 +74,9 @@ type Notification struct {
 // Show/ShowOpts do not participate in this client's lifetime.
 type Client struct {
 	mu          sync.Mutex
+	ops         chan struct{} // context-aware admission; mu never spans a native wait
+	mutating    bool
+	events      []managedEvent // events received before a native mutation publishes its ID
 	ctx         context.Context
 	cancel      context.CancelFunc
 	cfg         Config
@@ -133,7 +136,7 @@ func newClient(ctx context.Context, cfg Config, open func(context.Context, Confi
 	}
 	lifetime, cancel := context.WithCancel(ctx)
 	c := &Client{ctx: lifetime, cancel: cancel, cfg: cfg, byID: make(map[string]*Handle), byNative: make(map[string]*Handle),
-		wake: make(chan struct{}, 1), done: make(chan struct{}), cleanupDone: make(chan struct{})}
+		ops: make(chan struct{}, 1), wake: make(chan struct{}, 1), done: make(chan struct{}), cleanupDone: make(chan struct{})}
 	b, err := open(lifetime, cfg, c.event)
 	if err != nil {
 		cancel()
@@ -183,12 +186,14 @@ func (c *Client) RequestPermission(ctx context.Context) (PermissionStatus, error
 func (c *Client) permission(ctx context.Context, request bool) (PermissionStatus, error) {
 	ctx, cancel := c.operation(ctx)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
+	if err := c.acquire(ctx); err != nil {
 		return PermissionUnknown, err
 	}
+	defer c.release()
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.closed || c.ctx.Err() != nil {
+	closed := c.closed || c.ctx.Err() != nil
+	c.mu.Unlock()
+	if closed {
 		return PermissionUnknown, ErrClosed
 	}
 	return c.backend.permission(ctx, request)
@@ -212,22 +217,29 @@ func (c *Client) Post(ctx context.Context, n Notification) (*Handle, error) {
 	if err := n.validate(); err != nil {
 		return nil, err
 	}
-	if err := ctx.Err(); err != nil {
+	if err := c.acquire(ctx); err != nil {
 		return nil, err
 	}
+	defer c.release()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed || c.ctx.Err() != nil {
+		c.mu.Unlock()
 		return nil, ErrClosed
 	}
 	if c.byID[n.ID] != nil {
+		c.mu.Unlock()
 		return nil, ErrDuplicateID
 	}
 	var key [16]byte
 	if _, err := rand.Read(key[:]); err != nil {
+		c.mu.Unlock()
 		return nil, errors.New("notify: cannot generate native identifier")
 	}
+	c.mutating = true
+	c.mu.Unlock()
 	native, err := c.backend.post(ctx, hex.EncodeToString(key[:]), "", n)
+	c.mu.Lock()
+	defer c.endMutation()
 	if err != nil {
 		return nil, err
 	}
@@ -268,19 +280,26 @@ func (h *Handle) Replace(ctx context.Context, n Notification) error {
 	if err := n.validate(); err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
+	c := h.client
+	if err := c.acquire(ctx); err != nil {
 		return err
 	}
-	c := h.client
+	defer c.release()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed || c.ctx.Err() != nil || h.closed {
+		c.mu.Unlock()
 		return ErrClosed
 	}
 	if !c.caps.Replacement {
+		c.mu.Unlock()
 		return ErrUnsupported
 	}
-	native, err := c.backend.post(ctx, h.native, h.native, n)
+	previous := h.native
+	c.mutating = true
+	c.mu.Unlock()
+	native, err := c.backend.post(ctx, previous, previous, n)
+	c.mu.Lock()
+	defer c.endMutation()
 	if err != nil {
 		return err
 	}
@@ -296,23 +315,32 @@ func (h *Handle) Replace(ctx context.Context, n Notification) error {
 func (h *Handle) Dismiss(ctx context.Context) error {
 	ctx, cancel := h.client.operation(ctx)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
+	c := h.client
+	if err := c.acquire(ctx); err != nil {
 		return err
 	}
-	c := h.client
+	defer c.release()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed || c.ctx.Err() != nil {
+		c.mu.Unlock()
 		return ErrClosed
 	}
 	if h.closed {
 		h.suppress = true
+		c.mu.Unlock()
 		return nil
 	}
 	if !c.caps.Dismissal {
+		c.mu.Unlock()
 		return ErrUnsupported
 	}
-	if err := c.backend.dismiss(ctx, h.native); err != nil {
+	native := h.native
+	c.mutating = true
+	c.mu.Unlock()
+	err := c.backend.dismiss(ctx, native)
+	c.mu.Lock()
+	defer c.endMutation()
+	if err != nil {
 		return err
 	}
 	h.suppress = true
@@ -326,6 +354,8 @@ func (h *Handle) Dismiss(ctx context.Context) error {
 // already admitted may finish after Close; queued callbacks are discarded.
 func (c *Client) Close() error {
 	c.cancel() // interrupt native waits before acquiring their serialization lock
+	c.ops <- struct{}{}
+	defer c.release()
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -382,9 +412,51 @@ func (c *Client) operation(ctx context.Context) (context.Context, context.Cancel
 	return op, func() { stop(); cancel() }
 }
 
+func (c *Client) acquire(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.ops <- struct{}{}:
+		// Cancellation and admission may become ready together.
+		if err := ctx.Err(); err != nil {
+			c.release()
+			return err
+		}
+		return nil
+	}
+}
+
+func (c *Client) release() { <-c.ops }
+
+// endMutation runs with mu held after a backend call. Publish correlation
+// before replaying events: a daemon may activate/close before Post returns.
+func (c *Client) endMutation() {
+	c.mutating = false
+	events := c.events
+	c.events = nil
+	for _, e := range events {
+		c.eventLocked(e)
+	}
+	if len(c.queue) != 0 {
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+	}
+	c.mu.Unlock()
+}
+
 func (c *Client) event(e managedEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.mutating {
+		c.events = append(c.events, e)
+		return
+	}
+	c.eventLocked(e)
+}
+
+func (c *Client) eventLocked(e managedEvent) {
 	if c.closed || c.ctx.Err() != nil {
 		return
 	}
@@ -421,7 +493,7 @@ func (c *Client) callbacks() {
 		}
 		for {
 			c.mu.Lock()
-			if c.closed || c.ctx.Err() != nil || len(c.queue) == 0 {
+			if c.closed || c.ctx.Err() != nil || c.mutating || len(c.queue) == 0 {
 				c.mu.Unlock()
 				break
 			}

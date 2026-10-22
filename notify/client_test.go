@@ -9,22 +9,24 @@ import (
 )
 
 type managedFake struct {
-	mu             sync.Mutex
-	caps           Capabilities
-	event          func(managedEvent)
-	posts          []Notification
-	replacements   []string
-	dismissed      []string
-	closed         int
-	postErr        error
-	dismissErr     error
-	permissionWait chan struct{}
+	mu                sync.Mutex
+	caps              Capabilities
+	event             func(managedEvent)
+	posts             []Notification
+	replacements      []string
+	dismissed         []string
+	closed            int
+	postErr           error
+	dismissErr        error
+	permissionWait    chan struct{}
+	permissionStarted sync.Once
+	postEvent         func(string)
 }
 
 func (f *managedFake) capabilities() Capabilities { return f.caps }
 func (f *managedFake) permission(ctx context.Context, _ bool) (PermissionStatus, error) {
 	if f.permissionWait != nil {
-		close(f.permissionWait)
+		f.permissionStarted.Do(func() { close(f.permissionWait) })
 		<-ctx.Done()
 		return PermissionUnknown, ctx.Err()
 	}
@@ -38,6 +40,9 @@ func (f *managedFake) post(_ context.Context, id, replace string, n Notification
 	}
 	f.posts = append(f.posts, n)
 	f.replacements = append(f.replacements, replace)
+	if f.postEvent != nil {
+		f.postEvent(id)
+	}
 	return id, nil
 }
 func (f *managedFake) dismiss(_ context.Context, id string) error {
@@ -213,6 +218,95 @@ func TestManagedCloseInterruptsPermissionWait(t *testing.T) {
 	go func() { _ = c.Close(); close(closed) }()
 	awaitNotification(t, returned)
 	awaitNotification(t, closed)
+}
+
+func TestManagedQueuedOperationsRespectDeadline(t *testing.T) {
+	f := fullManagedFake()
+	c := fakeClient(t, context.Background(), Config{}, f)
+	h, err := c.Post(context.Background(), Notification{ID: "existing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.permissionWait = make(chan struct{})
+	permissionCtx, cancelPermission := context.WithCancel(context.Background())
+	defer cancelPermission()
+	permissionDone := make(chan struct{})
+	go func() { _, _ = c.RequestPermission(permissionCtx); close(permissionDone) }()
+	awaitNotification(t, f.permissionWait)
+	for _, tc := range []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"Permission", func(ctx context.Context) error { _, err := c.Permission(ctx); return err }},
+		{"RequestPermission", func(ctx context.Context) error { _, err := c.RequestPermission(ctx); return err }},
+		{"Post", func(ctx context.Context) error { _, err := c.Post(ctx, Notification{ID: "queued"}); return err }},
+		{"Replace", func(ctx context.Context) error { return h.Replace(ctx, Notification{Title: "queued"}) }},
+		{"Dismiss", h.Dismiss},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			result := make(chan error, 1)
+			go func() { result <- tc.call(ctx) }()
+			select {
+			case err := <-result:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("queued call = %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("queued caller did not return while the permission request remained blocked")
+			}
+			select {
+			case <-permissionDone:
+				t.Fatal("queued caller cancelled the independent permission request")
+			default:
+			}
+		})
+	}
+	cancelPermission()
+	awaitNotification(t, permissionDone)
+	f.mu.Lock()
+	if len(f.posts) != 1 || len(f.dismissed) != 0 {
+		t.Error("cancelled queued calls reached the native backend")
+	}
+	f.mu.Unlock()
+	if _, err := c.Post(context.Background(), Notification{ID: "after-cancellation"}); err != nil {
+		t.Fatalf("cancelled queued callers leaked operation admission: %v", err)
+	}
+}
+
+func TestManagedNativeEventsBeforePostReturns(t *testing.T) {
+	f := fullManagedFake()
+	activated := make(chan string, 1)
+	c := fakeClient(t, context.Background(), Config{OnActivate: func(id string) { activated <- id }}, f)
+	f.postEvent = func(native string) {
+		// A native backend may report an event before its post reply. State
+		// locking must not deadlock it or lose correlation with the new ID.
+		f.event(managedEvent{native: native, activated: true})
+		f.event(managedEvent{native: native, closed: true})
+	}
+	posted := make(chan *Handle, 1)
+	go func() { h, _ := c.Post(context.Background(), Notification{ID: "early"}); posted <- h }()
+	select {
+	case h := <-posted:
+		if h == nil {
+			t.Fatal("post failed")
+		}
+		awaitNotification(t, h.Done())
+		if h.Err() != nil {
+			t.Fatal(h.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("native event deadlocked Post")
+	}
+	select {
+	case id := <-activated:
+		if id != "early" {
+			t.Fatal("early activation lost application correlation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("early activation was lost")
+	}
 }
 
 func TestManagedCancellationAndServiceLoss(t *testing.T) {
