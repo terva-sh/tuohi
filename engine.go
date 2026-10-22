@@ -49,6 +49,7 @@ type engine interface {
 	Raise()
 	Show()
 	Hide()
+	windowState() WindowState
 	Maximize()
 	Minimize()
 	Unminimize()
@@ -93,6 +94,7 @@ var _ engine = (*webview)(nil)
 // viewCore is the per-view state the shared code reads and writes. Each
 // platform's webview embeds it, so the fields are declared once.
 type viewCore struct {
+	lifecycle windowLifecycle
 	// scope is the App scope that counted this view's window, which its
 	// close is reported to (see reportClosed). Nil for a window tuohi does
 	// not own, and once the close has been reported.

@@ -21,6 +21,8 @@ references:
     path: null
   - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
     path: null
+  - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/82
+    path: null
 moved_to: null
 claim:
   actor: agent:codex/t3-b903096c
@@ -32,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:50:28Z
+updated_at: 2026-10-22T20:54:16Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -122,3 +124,7 @@ Follow-up audit while implementing tray availability found the same D-Bus discon
 **agent:codex/t3-b903096c** at 2026-10-22T20:50:28Z
 
 Clean full review for 8798ad126239e84d4cb926b803109c5403467753 against 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099 is recorded in PR comment 33574: run 53745c14-9362-4a67-b43b-ac5cbc85f880, Actions #560. It explicitly resolves review 2725's result-race finding and reports no additional findings. Forgejo CI #558 passed. The subsequent self-audited disconnect fix passes targeted private-bus notification tests and full CGO_ENABLED=0 just ci, including all eight cross targets, both modules and strict ticket checks. It will receive its own new exact-head/base review; the clean review at 8798ad1 is not claimed for later source. No merge/release performed.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:54:16Z
+
+PR #82 is ready for owner review/merge at exact source head 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc against base 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099. Clean full review Actions #564 (27048), run 1d45de26-f37a-47fb-8622-5dcbddc4308a, reports no additional findings and confirms prior resolutions; PR clean-status comment 33574 records the named revision. Forgejo CI #562 passed its check and both Linux GUI stacks. Current head has all original review 2722 fixes, follow-up 2724/2725 fixes, individual dispositions, and the audited bus-disconnect fix. Kuiske received tested source and exact check/review evidence. Native bundled macOS delivery/permission/delegate validation remains unavailable; cross builds and control-path regressions are not that evidence. This note is recorded on the subsequent tray work branch to preserve the clean reviewed notification head. No merge or release is authorized/performed.

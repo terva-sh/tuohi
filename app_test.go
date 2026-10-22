@@ -374,6 +374,8 @@ func (s *bindMethodsWebViewStub) Show() {}
 
 func (s *bindMethodsWebViewStub) Hide() {}
 
+func (s *bindMethodsWebViewStub) windowState() WindowState { return WindowState{} }
+
 func (s *bindMethodsWebViewStub) Maximize() {}
 
 func (s *bindMethodsWebViewStub) Minimize() {}

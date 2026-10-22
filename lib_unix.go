@@ -104,11 +104,13 @@ var (
 	gtkWindowUnmaximize       func(window uintptr)               // GTK3 + GTK4
 	gtkWindowSetTitle         func(window uintptr, title string) // GTK3 + GTK4
 	gtkWindowGetTitle         func(window uintptr) uintptr       // GTK3 + GTK4
-	gtkWindowIconify          func(window uintptr)               // GTK3 only (Minimize)
-	gtkWindowDeiconify        func(window uintptr)               // GTK3 only (Unminimize)
-	gtkWindowMinimize         func(window uintptr)               // GTK4 only (Minimize)
-	gtkWindowUnminimize       func(window uintptr)               // GTK4 only (Unminimize)
-	gtkWindowMove             func(window uintptr, x, y int)     // GTK3/X11 only (see applyGeometry)
+	gtkWindowIsActive         func(window uintptr) bool
+	gtkWidgetGetMapped        func(widget uintptr) bool
+	gtkWindowIconify          func(window uintptr)           // GTK3 only (Minimize)
+	gtkWindowDeiconify        func(window uintptr)           // GTK3 only (Unminimize)
+	gtkWindowMinimize         func(window uintptr)           // GTK4 only (Minimize)
+	gtkWindowUnminimize       func(window uintptr)           // GTK4 only (Unminimize)
+	gtkWindowMove             func(window uintptr, x, y int) // GTK3/X11 only (see applyGeometry)
 
 	// gdk device helpers for gdk_toplevel_begin_move/resize on GTK4 (the GTK3
 	// gtk_window_begin_move/resize_drag entry points take no device).
@@ -259,6 +261,10 @@ var (
 	dispatchSourceFn uintptr
 	messageHandlerFn uintptr
 	windowDestroyFn  uintptr
+	windowCloseFn    uintptr
+	windowDeleteFn   uintptr
+	windowStateFn    uintptr
+	windowNotifyFn   uintptr
 	loadChangedFn    uintptr
 	loadFailedFn     uintptr
 	decidePolicyFn   uintptr
@@ -601,6 +607,8 @@ func initEngine() (err error) {
 	syms.need(&gtkWidgetSetSizeRequest, gtk, "gtk_widget_set_size_request")
 	syms.need(&gtkWidgetGrabFocus, gtk, "gtk_widget_grab_focus")
 	syms.need(&gtkWidgetGetDisplay, gtk, "gtk_widget_get_display")
+	syms.need(&gtkWindowIsActive, gtk, "gtk_window_is_active")
+	syms.need(&gtkWidgetGetMapped, gtk, "gtk_widget_get_mapped")
 	syms.need(&gdkDisplayGetDefaultSeat, gtk, "gdk_display_get_default_seat")
 	syms.need(&gdkSeatGetPointer, gtk, "gdk_seat_get_pointer")
 	syms.need(&gdkDisplayGetDefault, gtk, "gdk_display_get_default")
@@ -717,6 +725,40 @@ func initEngine() (err error) {
 		w := lookupEngine(userData)
 		if w != nil {
 			w.onWindowDestroy()
+		}
+		return 0
+	})
+	windowCloseFn = purego.NewCallback(func(_, userData uintptr) uintptr {
+		if w := lookupEngine(userData); w != nil && !w.lifecycle.request() {
+			return 1 // stop the default close handler
+		}
+		return 0
+	})
+	windowDeleteFn = purego.NewCallback(func(_, event, userData uintptr) uintptr {
+		if w := lookupEngine(userData); w != nil && !w.lifecycle.request() {
+			return 1
+		}
+		return 0
+	})
+	windowStateFn = purego.NewCallback(func(_, userData uintptr) uintptr {
+		if w := lookupEngine(userData); w != nil {
+			if gtk4 && w.window != 0 {
+				// Surface state covers minimization even when an already
+				// inactive window has no new is-active notification. A remap
+				// can realize a new surface; replace our own handler on the
+				// current surface to avoid duplicate connections.
+				if surface := gtkNativeGetSurface(w.window); surface != 0 {
+					gSignalHandlersDisconnectMatched(surface, gSignalMatchData, 0, 0, 0, 0, w.id)
+					gSignalConnectData(surface, "notify::state", windowNotifyFn, w.id, 0, 0)
+				}
+			}
+			w.lifecycle.update(w.windowState())
+		}
+		return 0
+	})
+	windowNotifyFn = purego.NewCallback(func(_, pspec, userData uintptr) uintptr {
+		if w := lookupEngine(userData); w != nil {
+			w.lifecycle.update(w.windowState())
 		}
 		return 0
 	})
@@ -1087,6 +1129,15 @@ func (w *webview) windowInit(window uintptr) error {
 			gtkWindowSetDecorated(w.window, false)
 		}
 		gSignalConnectData(w.window, "destroy", windowDestroyFn, w.id, 0, 0)
+		if gtk4 {
+			gSignalConnectData(w.window, "close-request", windowCloseFn, w.id, 0, 0)
+		} else {
+			gSignalConnectData(w.window, "delete-event", windowDeleteFn, w.id, 0, 0)
+			gSignalConnectData(w.window, "window-state-event", windowNotifyFn, w.id, 0, 0)
+		}
+		gSignalConnectData(w.window, "map", windowStateFn, w.id, 0, 0)
+		gSignalConnectData(w.window, "unmap", windowStateFn, w.id, 0, 0)
+		gSignalConnectData(w.window, "notify::is-active", windowNotifyFn, w.id, 0, 0)
 	}
 
 	w.webview = webkitWebViewNew()
@@ -1190,6 +1241,21 @@ func (w *webview) onWindowDestroy() {
 	// The destroy signal is only connected for owned windows, so this is the
 	// single per-window close event the App scope counts (App.Wait).
 	w.reportClosed()
+}
+
+func (w *webview) windowState() WindowState {
+	if w.window == 0 {
+		return WindowState{Closed: true}
+	}
+	visible := gtkWidgetGetMapped(w.window)
+	if gtk4 {
+		if surface := gtkNativeGetSurface(w.window); surface != 0 {
+			visible = visible && gdkToplevelGetState(surface)&1 == 0 // GDK_TOPLEVEL_STATE_MINIMIZED
+		}
+	} else if native := gtkWidgetGetWindow(w.window); native != 0 {
+		visible = visible && gdkWindowGetState(native)&(1<<1) == 0 // GDK_WINDOW_STATE_ICONIFIED
+	}
+	return WindowState{Visible: visible, Active: visible && gtkWindowIsActive(w.window)}
 }
 
 func (w *webview) Run() {

@@ -20,6 +20,7 @@
 package tray
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -43,8 +44,10 @@ const (
 	wmRButtonUp     = 0x0205
 	wmSettingChange = 0x001A
 	wmContextMenu   = 0x007B
+	wmTimer         = 0x0113
 
 	trayCallbackMsg = wmApp + 1
+	trayUpdateMsg   = wmApp + 2
 
 	nimAdd        = 0x00000000
 	nimModify     = 0x00000001
@@ -178,13 +181,23 @@ var (
 	initOnce sync.Once
 	initErr  error
 
-	mu       sync.Mutex
-	running  bool
-	ownsLoop bool // run() owns the GetMessage loop; only it may post WM_QUIT
-	trayHwnd uintptr
-	hMenu    uintptr
-	nid      notifyIconData
-	hicon    uintptr
+	mu              sync.Mutex
+	running         bool
+	ownsLoop        bool // run() owns the GetMessage loop; only it may post WM_QUIT
+	trayHwnd        uintptr
+	hMenu           uintptr
+	nid             notifyIconData
+	hicon           uintptr
+	hiconOwned      bool
+	winConfig       Config
+	winAvailability *availabilitySource
+	winProbeActive  bool
+	winUpdates      updateQueue
+	ownerThread     uint32
+	menuOpen        bool
+	closeAfterMenu  bool
+	deferredUpdates []uintptr
+	taskbarCreated  uint32
 
 	trayClickFn      func()
 	trayDblClickFn   func()
@@ -195,7 +208,6 @@ var (
 	iconDark         []byte // Config.DarkModeIcon
 	tip              string
 
-	cbMu  sync.Mutex
 	cmdMu sync.Mutex
 
 	trayWndProcCB uintptr
@@ -212,6 +224,9 @@ var (
 	loadIconW                func(instance, name uintptr) uintptr
 	loadCursorW              func(instance, name uintptr) uintptr
 	getCursorPos             func(*point) int32
+	endMenu                  func() int32
+	registerWindowMessageW   func(*uint16) uint32
+	setTimer                 func(hwnd, id uintptr, interval uint32, callback uintptr) uintptr
 	setForegroundWindow      func(hwnd uintptr) int32
 	trackPopupMenu           func(menu uintptr, flags uint32, x, y, reserved int32, hwnd, rect uintptr) int32
 	createPopupMenu          func() uintptr
@@ -267,6 +282,9 @@ func ensureInit() error {
 		reg(&loadIconW, user32, "LoadIconW")
 		reg(&loadCursorW, user32, "LoadCursorW")
 		reg(&getCursorPos, user32, "GetCursorPos")
+		reg(&endMenu, user32, "EndMenu")
+		reg(&registerWindowMessageW, user32, "RegisterWindowMessageW")
+		reg(&setTimer, user32, "SetTimer")
 		reg(&setForegroundWindow, user32, "SetForegroundWindow")
 		reg(&trackPopupMenu, user32, "TrackPopupMenu")
 		reg(&createPopupMenu, user32, "CreatePopupMenu")
@@ -284,6 +302,7 @@ func ensureInit() error {
 			return
 		}
 
+		taskbarCreated = registerWindowMessageW(utf16Ptr("TaskbarCreated"))
 		trayWndProcCB = purego.NewCallback(trayWndProc)
 		classNamePtr = utf16Ptr("NativeTrayWindow")
 		hInst := getModuleHandleW(nil)
@@ -308,14 +327,26 @@ func ensureInit() error {
 // payload can be read with a vet-clean pointer conversion (uintptr would trip
 // unsafeptr).
 func trayWndProc(hwnd uintptr, msg uint32, wParam, lParam unsafe.Pointer) uintptr {
+	if taskbarCreated != 0 && msg == taskbarCreated {
+		restoreTrayRegistration()
+		return 0
+	}
 	switch msg {
+	case wmTimer:
+		if uintptr(wParam) == 1 {
+			probeTrayRegistration()
+			return 0
+		}
+	case trayUpdateMsg:
+		applyQueuedWindowsUpdate(uintptr(wParam))
+		return 0
 	case trayCallbackMsg:
 		ev := uintptr(lParam) & 0xFFFF // #nosec G103 -- event id in LOWORD
-		cbMu.Lock()
+		mu.Lock()
 		left := trayClickFn
 		dbl := trayDblClickFn
 		right := trayRightClickFn
-		cbMu.Unlock()
+		mu.Unlock()
 		switch ev {
 		case wmLButtonUp:
 			if left != nil {
@@ -341,6 +372,16 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam, lParam unsafe.Pointer) uintpt
 		}
 		return defWindowProcW(hwnd, uintptr(msg), uintptr(wParam), uintptr(lParam))
 	case wmClose:
+		mu.Lock()
+		tracking := menuOpen
+		if tracking {
+			closeAfterMenu = true
+		}
+		mu.Unlock()
+		if tracking {
+			endMenu()
+			return 0
+		}
 		destroyWindow(hwnd)
 		return 0
 	case wmDestroy:
@@ -370,26 +411,185 @@ func isImmersiveColorSet(ptr unsafe.Pointer) bool {
 // updateIconForTheme re-applies the icon that matches the current system
 // theme.
 func updateIconForTheme() {
-	png := currentIconPNG()
-	if len(png) == 0 {
-		return
-	}
-	h, err := pngToHICON(png)
-	if err != nil {
-		return
-	}
 	mu.Lock()
+	a := winAvailability
+	mu.Unlock()
+	if a != nil {
+		_ = applyWindowsUpdate(a, Changes{})
+	}
+}
+
+func restoreTrayRegistration() {
+	mu.Lock()
+	a := winAvailability
 	n := nid
-	old := hicon
 	mu.Unlock()
-	n.hIcon = h
-	shellNotifyIconW(nimModify, &n)
+	if a == nil {
+		return
+	}
+	a.publish(Availability{Running: true, Err: ErrUnavailable})
+	ok := shellNotifyIconW(nimAdd, &n) != 0
+	if ok {
+		versionTrayIcon(n)
+	}
+	publishWindowsAvailability(a, ok)
+}
+
+// A no-op modification probes current shell registration. TaskbarCreated
+// announces a returning shell, but has no matching disappearance broadcast.
+func probeTrayRegistration() {
 	mu.Lock()
-	hicon = h
+	a, n := winAvailability, nid
 	mu.Unlock()
-	if old != 0 && old != h {
+	if a == nil {
+		return
+	}
+	n.uFlags = 0
+	if shellNotifyIconW(nimModify, &n) != 0 {
+		publishWindowsAvailability(a, true)
+		return
+	}
+	restoreTrayRegistration()
+}
+func publishWindowsAvailability(a *availabilitySource, ok bool) {
+	v := Availability{Running: true, Registered: ok, HostPresent: ok}
+	if !ok {
+		v.Err = ErrUnavailable
+	} else {
+		mu.Lock()
+		probing := winProbeActive
+		mu.Unlock()
+		if !probing {
+			v.Err = fmt.Errorf("%w: shell registration probing unavailable", ErrUnavailable)
+		}
+	}
+	a.publish(v)
+}
+func versionTrayIcon(n notifyIconData) {
+	n.uFlags = 0
+	n.uVersion = notifyIconVersion4
+	shellNotifyIconW(nimSetVersion, &n)
+}
+
+func update(ctx context.Context, c Changes) error {
+	mu.Lock()
+	a, h, thread := winAvailability, trayHwnd, ownerThread
+	tracking := menuOpen
+	mu.Unlock()
+	if a == nil || h == 0 {
+		return ErrNotRunning
+	}
+	if windows.GetCurrentThreadId() == thread {
+		if tracking && c.Items != nil {
+			return ErrMenuOpen
+		}
+		return applyWindowsUpdate(a, c)
+	}
+	token, r := winUpdates.add(ctx, c, a)
+	if postMessageW(h, trayUpdateMsg, token, 0) == 0 {
+		winUpdates.take(token)
+		return ErrUnavailable
+	}
+	return winUpdates.wait(token, r)
+}
+func applyQueuedWindowsUpdate(token uintptr) {
+	// TrackPopupMenu runs a nested loop. Do not destroy a menu it is using.
+	winUpdates.Lock()
+	r := winUpdates.pending[token]
+	winUpdates.Unlock()
+	if r == nil {
+		return
+	}
+	mu.Lock()
+	tracking := menuOpen
+	mu.Unlock()
+	if tracking && r.changes.Items != nil {
+		deferredUpdates = append(deferredUpdates, token)
+		return
+	}
+	r = winUpdates.take(token)
+	if r == nil {
+		return
+	}
+	if err := r.ctx.Err(); err != nil {
+		r.result <- err
+		return
+	}
+	r.result <- applyWindowsUpdate(r.source, r.changes)
+}
+func applyWindowsUpdate(a *availabilitySource, c Changes) error {
+	mu.Lock()
+	if !running || winAvailability != a {
+		mu.Unlock()
+		return ErrNotRunning
+	}
+	cfg := applyChanges(winConfig, c)
+	n, old, oldOwned := nid, hicon, hiconOwned
+	mu.Unlock()
+	data := cfg.Icon
+	if isSystemDarkMode() && len(cfg.DarkModeIcon) > 0 {
+		data = cfg.DarkModeIcon
+	}
+	icon := uintptr(0)
+	owned := false
+	if len(data) > 0 {
+		var err error
+		icon, err = pngToHICON(data)
+		if err != nil {
+			return err
+		}
+		owned = true
+	} else {
+		icon = loadIconW(0, idiApplication)
+	}
+	n.hIcon = icon
+	n.szTip = [128]uint16{}
+	text := cfg.Tooltip
+	setTip(&n, text)
+	operation := uint32(nimModify)
+	a.mu.Lock()
+	registered := a.state.Registered
+	a.mu.Unlock()
+	if !registered {
+		operation = nimAdd
+	}
+	ok := shellNotifyIconW(operation, &n) != 0
+	if ok && operation == nimAdd {
+		versionTrayIcon(n)
+	}
+	mu.Lock()
+	nid = n
+	hicon = icon
+	hiconOwned = owned
+	winConfig = cfg
+	iconPNG = cfg.Icon
+	iconDark = cfg.DarkModeIcon
+	tip = text
+	oldMenu := hMenu
+	mu.Unlock()
+	if c.Items != nil {
+		cmdMu.Lock()
+		cmdByID = make(map[uintptr]*cmdEntry)
+		cmdMu.Unlock()
+		menu := uintptr(0)
+		if len(cfg.Items) > 0 {
+			menu = buildMenu(cfg.Items)
+		}
+		mu.Lock()
+		hMenu = menu
+		mu.Unlock()
+		if oldMenu != 0 {
+			destroyMenu(oldMenu)
+		}
+	}
+	if oldOwned && old != 0 && old != icon {
 		destroyIcon(old)
 	}
+	publishWindowsAvailability(a, ok)
+	if !ok {
+		return ErrUnavailable
+	}
+	return nil
 }
 
 // currentIconPNG picks the icon PNG for the current system theme.
@@ -422,15 +622,20 @@ func isSystemDarkMode() bool {
 // toggling checkbox marks and then running the item's OnClick.
 func showMenu(hwnd uintptr) {
 	mu.Lock()
+	if hwnd != trayHwnd {
+		mu.Unlock()
+		return
+	}
 	menu := hMenu
-	cbMu.Lock()
+	if menu != 0 {
+		menuOpen = true
+	}
 	fns := map[uintptr]*cmdEntry{}
 	cmdMu.Lock()
 	for id, e := range cmdByID {
 		fns[id] = e
 	}
 	cmdMu.Unlock()
-	cbMu.Unlock()
 	mu.Unlock()
 	if menu == 0 {
 		return
@@ -441,6 +646,24 @@ func showMenu(hwnd uintptr) {
 	setForegroundWindow(hwnd)
 	cmd := trackPopupMenu(menu, tpmLeftAlign|tpmRightButton|tpmReturnCmd|tpmNoNotify, pt.X, pt.Y, 0, hwnd, 0)
 	postMessageW(hwnd, wmNull, 0, 0)
+	mu.Lock()
+	menuOpen = false
+	closing := closeAfterMenu
+	closeAfterMenu = false
+	mu.Unlock()
+	if closing {
+		destroyWindow(hwnd)
+		deferredUpdates = nil
+		return
+	}
+	// Dispatch the command from the snapshot before replacing its native menu.
+	defer func() {
+		queued := deferredUpdates
+		deferredUpdates = nil
+		for _, token := range queued {
+			applyQueuedWindowsUpdate(token)
+		}
+	}()
 	if cmd <= 0 {
 		return
 	}
@@ -529,6 +752,9 @@ func buildMenuItems(hmenu uintptr, items []Item, depth int) {
 // set creates the hidden helper window, the icon and the menu without owning
 // the message loop (Set). It must be called from the UI thread.
 func set(cfg Config) error {
+	if cfg.Tooltip == "" {
+		cfg.Tooltip = cfg.Title
+	}
 	mu.Lock()
 	if running {
 		mu.Unlock()
@@ -541,6 +767,7 @@ func set(cfg Config) error {
 	}
 	running = true
 	ownsLoop = false
+	ownerThread = windows.GetCurrentThreadId()
 	mu.Unlock()
 
 	hInst := getModuleHandleW(nil)
@@ -556,6 +783,7 @@ func set(cfg Config) error {
 	trayClickFn = cfg.OnClick
 	trayDblClickFn = cfg.OnDoubleClick
 	trayRightClickFn = cfg.OnRightClick
+	winConfig = cfg
 	iconPNG = cfg.Icon
 	iconDark = cfg.DarkModeIcon
 	tip = cfg.Tooltip
@@ -575,6 +803,7 @@ func set(cfg Config) error {
 			hic = 0
 		}
 	}
+	owned := hic != 0
 	if hic == 0 {
 		hic = loadIconW(0, idiApplication)
 	}
@@ -592,33 +821,39 @@ func set(cfg Config) error {
 	n.uCallbackMessage = trayCallbackMsg
 	n.hIcon = hic
 	setTip(&n, tip)
-	shellNotifyIconW(nimAdd, &n)
-
-	// Version 4 makes LOWORD(lParam) carry the mouse event in the callback.
-	nv := n
-	nv.uFlags = 0
-	nv.uVersion = notifyIconVersion4
-	shellNotifyIconW(nimSetVersion, &nv)
+	registered := shellNotifyIconW(nimAdd, &n) != 0
+	if registered {
+		versionTrayIcon(n)
+	}
 
 	mu.Lock()
 	trayHwnd = hwnd
 	hMenu = hmenu
 	hicon = hic
+	hiconOwned = owned
 	nid = n
+	winAvailability = newAvailability(cfg.OnAvailability)
+	source := winAvailability
 	mu.Unlock()
+	// Timers are destroyed with their hidden window and need a serviced loop.
+	probing := setTimer(hwnd, 1, 2000, 0) != 0
+	mu.Lock()
+	winProbeActive = probing
+	mu.Unlock()
+	publishWindowsAvailability(source, registered)
 	return nil
 }
 
 // run shows the tray and drives the thread's message loop until Stop is called.
 func run(cfg Config) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := set(cfg); err != nil {
 		return err
 	}
 	mu.Lock()
 	ownsLoop = true
 	mu.Unlock()
-
-	runtime.LockOSThread()
 
 	var msg msgStruct
 	for {
@@ -638,62 +873,54 @@ func run(cfg Config) error {
 // on the window's thread).
 func releaseTrayResources() {
 	mu.Lock()
-	if hicon != 0 {
-		destroyIcon(hicon)
-		hicon = 0
-	}
-	if hMenu != 0 {
-		destroyMenu(hMenu)
-		hMenu = 0
-	}
-	trayHwnd = 0
-	mu.Unlock()
-}
-
-// removeTray deletes the icon, the menu and the helper window, and clears the
-// tray state. Safe from any thread: destroying the window from another thread
-// is legal, and wmDestroy only posts WM_QUIT when run() owns the loop.
-func removeTray() {
-	mu.Lock()
-	h := trayHwnd
-	r := running
-	mu.Unlock()
-	if !r || h == 0 {
-		return
-	}
-	shellNotifyIconW(nimDelete, &nid)
-	destroyWindow(h)
-
-	mu.Lock()
+	a, n, icon, owned, menu := winAvailability, nid, hicon, hiconOwned, hMenu
 	running = false
 	ownsLoop = false
+	winAvailability = nil
+	winProbeActive = false
+	trayHwnd = 0
+	ownerThread = 0
+	hicon = 0
+	hiconOwned = false
+	hMenu = 0
+	winConfig = Config{}
 	trayClickFn = nil
 	trayDblClickFn = nil
 	trayRightClickFn = nil
+	mu.Unlock()
+	if a != nil {
+		a.close()
+		winUpdates.close(a)
+	}
+	shellNotifyIconW(nimDelete, &n)
+	if owned && icon != 0 {
+		destroyIcon(icon)
+	}
+	if menu != 0 {
+		destroyMenu(menu)
+	}
+	cmdMu.Lock()
 	cmdByID = nil
-	mu.Unlock()
+	cmdMu.Unlock()
 }
 
-func stop() {
+// DestroyWindow must run on the window's owning thread. Off-thread removal
+// is queued to its loop; the loop must still be running to complete teardown.
+func removeTray() {
 	mu.Lock()
-	h := trayHwnd
-	r := running
-	own := ownsLoop
+	h, thread := trayHwnd, ownerThread
+	tracking := menuOpen
 	mu.Unlock()
-	if !r || h == 0 {
+	if h == 0 {
 		return
 	}
-	if own {
-		// Run's loop ends via wmClose -> wmDestroy -> WM_QUIT; run() then
-		// cleans up. PostMessage is safe from any thread.
-		postMessageW(h, wmClose, 0, 0)
+	if windows.GetCurrentThreadId() == thread && !tracking {
+		destroyWindow(h)
 		return
 	}
-	// Attached mode (Set): hide the tray without touching the host's loop.
-	removeTray()
+	postMessageW(h, wmClose, 0, 0)
 }
-
-// remove hides a tray started by Set, leaving the host's run loop running.
+func stop()   { removeTray() }
 func remove() { removeTray() }
 
 // pngToHICON converts raw PNG bytes to an HICON (CreateIconFromResourceEx

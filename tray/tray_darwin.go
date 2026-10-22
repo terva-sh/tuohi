@@ -17,6 +17,7 @@
 package tray
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
@@ -48,13 +49,19 @@ type clickEntry struct {
 }
 
 var (
-	mu           sync.Mutex
-	running      bool
-	ownsLoop     bool // run() owns NSApplication's loop; only it may stop it
-	trayClickFn  func()
-	activeClicks []clickEntry
-	trayTarget   objc.ID
-	trayItem     objc.ID
+	mu              sync.Mutex
+	running         bool
+	ownsLoop        bool // run() owns NSApplication's loop; only it may stop it
+	trayClickFn     func()
+	activeClicks    []clickEntry
+	activeClickBase int
+	nextClickTag    int
+	macConfig       Config
+	macAvailability *availabilitySource
+	trayDispatcher  objc.ID
+	macUpdates      updateQueue
+	trayTarget      objc.ID
+	trayItem        objc.ID
 
 	initOnce sync.Once
 	initErr  error
@@ -107,6 +114,9 @@ func ensureInit() error {
 					Fn: func(_self objc.ID, _cmd objc.SEL, _sender objc.ID) {
 						mu.Lock()
 						fn := trayClickFn
+						if _self != trayTarget {
+							fn = nil
+						}
 						mu.Unlock()
 						if fn != nil {
 							fn()
@@ -118,7 +128,8 @@ func ensureInit() error {
 					Fn: func(_self objc.ID, _cmd objc.SEL, sender objc.ID) {
 						tag := int(sender.Send(sel("tag"))) // #nosec G115 -- tag is an index we set
 						mu.Lock()
-						if tag < 0 || tag >= len(activeClicks) {
+						tag -= activeClickBase
+						if _self != trayTarget || tag < 0 || tag >= len(activeClicks) {
 							mu.Unlock()
 							return
 						}
@@ -147,20 +158,37 @@ func ensureInit() error {
 				},
 				{
 					Cmd: sel("trayStop"),
-					Fn: func(_self objc.ID, _cmd objc.SEL) {
-						removeTray()
+					Fn: func(self objc.ID, _ objc.SEL) {
 						mu.Lock()
+						current := self == trayTarget
 						own := ownsLoop
 						mu.Unlock()
+						if !current {
+							return
+						}
+						removeTray()
 						if own {
 							stopRunLoop()
 						}
 					},
 				},
+				{Cmd: sel("applyTrayUpdate:"), Fn: func(_ objc.ID, _ objc.SEL, number objc.ID) {
+					token := objc.Send[uint64](number, sel("unsignedLongLongValue"))
+					if r := macUpdates.take(uintptr(token)); r != nil {
+						if err := r.ctx.Err(); err != nil {
+							r.result <- err
+							return
+						}
+						r.result <- applyMacUpdate(r.source, r.changes)
+					}
+				}},
 			})
 		if err != nil {
 			initErr = fmt.Errorf("tray: register target class: %w", err)
+			return
 		}
+		// A process-lifetime dispatcher is independent of status-item lifetimes.
+		trayDispatcher = class(targetClassName).Send(sel("alloc")).Send(sel("init"))
 	})
 	return initErr
 }
@@ -194,10 +222,16 @@ func set(cfg Config) error {
 	app.Send(sel("finishLaunching"))
 
 	target := class(targetClassName).Send(sel("alloc")).Send(sel("init"))
-	target.Send(sel("retain"))
 
 	bar := class("NSStatusBar").Send(sel("systemStatusBar"))
 	item := bar.Send(sel("statusItemWithLength:"), float64(nsVariableStatusItemLength))
+	if item == 0 {
+		target.Send(sel("release"))
+		mu.Lock()
+		running = false
+		mu.Unlock()
+		return ErrUnavailable
+	}
 	item.Send(sel("retain")) // the status bar does not keep it alive for us
 
 	btn := item.Send(sel("button"))
@@ -212,10 +246,12 @@ func set(cfg Config) error {
 	// Build the NSMenu hierarchy (if any), appending each clickable item to
 	// clicks. No menu means AppKit keeps delivering trayClicked: to OnClick.
 	var clicks []clickEntry
+	base := nextClickTag
 	if len(cfg.Items) > 0 {
 		nsMenu := buildMenu(cfg.Items, &clicks, target)
 		if nsMenu != 0 {
 			item.Send(sel("setMenu:"), nsMenu)
+			nsMenu.Send(sel("release"))
 		}
 	}
 
@@ -224,20 +260,25 @@ func set(cfg Config) error {
 	trayItem = item
 	trayClickFn = cfg.OnClick
 	activeClicks = clicks
+	activeClickBase = base
+	macConfig = cfg
+	macAvailability = newAvailability(cfg.OnAvailability)
+	source := macAvailability
 	mu.Unlock()
+	source.publish(Availability{Running: true, Registered: true, HostPresent: true})
 	return nil
 }
 
 // run shows the tray and drives NSApplication's loop until Stop is called.
 func run(cfg Config) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := set(cfg); err != nil {
 		return err
 	}
 	mu.Lock()
 	ownsLoop = true
 	mu.Unlock()
-
-	runtime.LockOSThread()
 
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	app.Send(sel("run")) // blocks until trayStop stops the loop
@@ -251,28 +292,88 @@ func run(cfg Config) error {
 // routes it there from any thread.
 func removeTray() {
 	mu.Lock()
-	t := trayTarget
-	it := trayItem
-	r := running
-	mu.Unlock()
+	t, it, r, source := trayTarget, trayItem, running, macAvailability
 	if !r || t == 0 {
+		mu.Unlock()
 		return
 	}
-	bar := class("NSStatusBar").Send(sel("systemStatusBar"))
-	if it != 0 {
-		bar.Send(sel("removeStatusItem:"), it)
-		it.Send(sel("release"))
-	}
-	t.Send(sel("release"))
-
-	mu.Lock()
 	running = false
 	ownsLoop = false
 	trayTarget = 0
 	trayItem = 0
 	trayClickFn = nil
 	activeClicks = nil
+	macAvailability = nil
+	macConfig = Config{}
 	mu.Unlock()
+	source.close()
+	macUpdates.close(source)
+	bar := class("NSStatusBar").Send(sel("systemStatusBar"))
+	if it != 0 {
+		bar.Send(sel("removeStatusItem:"), it)
+		it.Send(sel("release"))
+	}
+	t.Send(sel("release"))
+}
+
+func update(ctx context.Context, c Changes) error {
+	mu.Lock()
+	source := macAvailability
+	dispatcher := trayDispatcher
+	mu.Unlock()
+	if source == nil {
+		return ErrNotRunning
+	}
+	if objc.Send[bool](class("NSThread"), sel("isMainThread")) {
+		return applyMacUpdate(source, c)
+	}
+	token, r := macUpdates.add(ctx, c, source)
+	withTrayAutoreleasePool(func() {
+		number := class("NSNumber").Send(sel("numberWithUnsignedLongLong:"), uint64(token))
+		dispatcher.Send(sel("performSelectorOnMainThread:withObject:waitUntilDone:"), sel("applyTrayUpdate:"), number, false)
+	})
+	return macUpdates.wait(token, r)
+}
+
+// Autorelease pools belong to their creating thread. Release the pin before
+// waiting for the main-thread update, so a stalled UI never holds a worker OS
+// thread unnecessarily.
+func withTrayAutoreleasePool(fn func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := class("NSAutoreleasePool").Send(sel("alloc")).Send(sel("init"))
+	defer pool.Send(sel("drain"))
+	fn()
+}
+
+func applyMacUpdate(source *availabilitySource, c Changes) error {
+	mu.Lock()
+	if !running || macAvailability != source {
+		mu.Unlock()
+		return ErrNotRunning
+	}
+	cfg := applyChanges(macConfig, c)
+	macConfig = cfg
+	item, target := trayItem, trayTarget
+	mu.Unlock()
+	applyButton(item.Send(sel("button")), cfg)
+	if c.Items != nil {
+		var clicks []clickEntry
+		base := nextClickTag
+		menu := objc.ID(0)
+		if len(cfg.Items) > 0 {
+			menu = buildMenu(cfg.Items, &clicks, target)
+		}
+		item.Send(sel("setMenu:"), menu)
+		if menu != 0 {
+			menu.Send(sel("release"))
+		}
+		mu.Lock()
+		activeClicks = clicks
+		activeClickBase = base
+		mu.Unlock()
+	}
+	return nil
 }
 
 // applyButton sets the status item's icon, title, and tooltip, guaranteeing a
@@ -297,16 +398,18 @@ func applyButton(button objc.ID, cfg Config) {
 			button.Send(sel("setImage:"), img)
 			img.Send(sel("release")) // the button retains it
 		}
+	} else {
+		button.Send(sel("setImage:"), objc.ID(0))
 	}
 	switch {
 	case cfg.Title != "":
 		button.Send(sel("setTitle:"), nsstr(cfg.Title))
 	case len(cfg.Icon) == 0 && len(cfg.TemplateIcon) == 0:
-		button.Send(sel("setTitle:"), nsstr("●")) // bullet glyph: an icon-less tray stays clickable
+		button.Send(sel("setTitle:"), nsstr("●")) // an icon-less tray stays clickable
+	default:
+		button.Send(sel("setTitle:"), nsstr(""))
 	}
-	if cfg.Tooltip != "" {
-		button.Send(sel("setToolTip:"), nsstr(cfg.Tooltip))
-	}
+	button.Send(sel("setToolTip:"), nsstr(cfg.Tooltip))
 }
 
 // buildMenu builds an NSMenu whose clickable items target the shared target
@@ -327,6 +430,7 @@ func buildMenu(items []Item, clicks *[]clickEntry, target objc.ID) objc.ID {
 				sel("initWithTitle:action:keyEquivalent:"), nsstr(it.Label), objc.SEL(0), nsstr(""))
 			if sub := buildMenu(it.Submenu, clicks, target); sub != 0 {
 				mi.Send(sel("setSubmenu:"), sub)
+				sub.Send(sel("release"))
 			}
 			if it.Disabled {
 				mi.Send(sel("setEnabled:"), false)
@@ -336,7 +440,8 @@ func buildMenu(items []Item, clicks *[]clickEntry, target objc.ID) objc.ID {
 			continue
 		}
 		// Plain or checkbox item: its tag is the next flat index.
-		tag := len(*clicks)
+		tag := nextClickTag
+		nextClickTag++
 		*clicks = append(*clicks, clickEntry{item: it, onClick: it.OnClick})
 		mi := class("NSMenuItem").Send(sel("alloc")).Send(
 			sel("initWithTitle:action:keyEquivalent:"), nsstr(it.Label), sel("menuItemClicked:"), nsstr(""))
@@ -395,10 +500,14 @@ func stop() {
 	mu.Lock()
 	t := trayTarget
 	r := running
+	if r && t != 0 {
+		t.Send(sel("retain"))
+	}
 	mu.Unlock()
 	if !r || t == 0 {
 		return
 	}
+	defer t.Send(sel("release"))
 	// Route the AppKit teardown onto the main thread; Stop may be called from a
 	// menu callback (already main) or any other goroutine. Async: Run's loop
 	// wakes, runs the teardown, and returns.
@@ -412,10 +521,14 @@ func remove() {
 	mu.Lock()
 	t := trayTarget
 	r := running
+	if r && t != 0 {
+		t.Send(sel("retain"))
+	}
 	mu.Unlock()
 	if !r || t == 0 {
 		return
 	}
+	defer t.Send(sel("release"))
 	t.Send(sel("performSelectorOnMainThread:withObject:waitUntilDone:"), sel("trayStop"), objc.ID(0), true)
 }
 
