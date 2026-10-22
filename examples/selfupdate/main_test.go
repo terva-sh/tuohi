@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,5 +59,45 @@ func TestHTTPSFetchHonorsCancelledContext(t *testing.T) {
 	cancel()
 	if _, err := httpsFetch()(ctx, "https://updates.invalid/feed"); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+func TestTransportRejectsBadStatusAndDowngradeRedirects(t *testing.T) {
+	var insecureRequests atomic.Int32
+	insecure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { insecureRequests.Add(1) }))
+	defer insecure.Close()
+	secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bad":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case "/downgrade":
+			http.Redirect(w, r, insecure.URL, http.StatusFound)
+		case "/loop":
+			http.Redirect(w, r, "/loop", http.StatusFound)
+		default:
+			_, _ = io.WriteString(w, "artifact")
+		}
+	}))
+	defer secure.Close()
+	client := updateHTTPClient()
+	client.Transport = secure.Client().Transport
+	fetch := fetchWithClient(client)
+	for _, path := range []string{"/bad", "/downgrade", "/loop"} {
+		if r, err := fetch(context.Background(), secure.URL+path); err == nil {
+			_ = r.Close()
+			t.Fatalf("accepted %s", path)
+		}
+	}
+	if insecureRequests.Load() != 0 {
+		t.Fatal("followed HTTPS downgrade")
+	}
+	r, err := fetch(context.Background(), secure.URL+"/ok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	b, err := io.ReadAll(r)
+	if err != nil || string(b) != "artifact" {
+		t.Fatal(string(b), err)
 	}
 }

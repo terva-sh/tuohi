@@ -219,15 +219,22 @@ func runProgram() error {
 }
 
 func httpsFetch() updater.Fetch {
-	client := &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return fetchWithClient(updateHTTPClient())
+}
+
+func updateHTTPClient() *http.Client {
+	return &http.Client{Timeout: 2 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || req.URL.Scheme != "https" || req.URL.User != nil {
 			return errors.New("update redirect refused")
 		}
 		return nil
 	}}
+}
+
+func fetchWithClient(client *http.Client) updater.Fetch {
 	return func(ctx context.Context, url string) (io.ReadCloser, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
+		if err != nil || req.URL.Scheme != "https" || req.URL.User != nil {
 			return nil, errors.New("invalid update request")
 		}
 		response, err := client.Do(req)
