@@ -245,6 +245,31 @@ func TestManagedDBusOwnerLossDoesNotAliasIDs(t *testing.T) {
 	}
 }
 
+func TestManagedDBusConnectionLossEndsHandles(t *testing.T) {
+	address := notificationTestBus(t)
+	serveNotifications(t, notificationTestConn(t, address), true)
+	for i := 0; i < 30; i++ {
+		c := dbusTestClient(t, address, Config{})
+		h, err := c.Post(context.Background(), Notification{ID: "connection-loss"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// An actual dedicated-connection shutdown makes both the signal channel
+		// and connection context ready. Either listener branch must end handles.
+		if err := c.backend.(*dbusBackend).conn.Close(); err != nil {
+			t.Fatal(err)
+		}
+		awaitNotification(t, h.Done())
+		if !errors.Is(h.Err(), ErrUnavailable) {
+			t.Fatalf("connection loss: %v", h.Err())
+		}
+		if _, err := c.Post(context.Background(), Notification{ID: "after-loss"}); !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("post after connection loss: %v", err)
+		}
+		_ = c.Close()
+	}
+}
+
 func TestManagedDBusCapabilitiesAndPrivateErrors(t *testing.T) {
 	address := notificationTestBus(t)
 	serviceConn := notificationTestConn(t, address)

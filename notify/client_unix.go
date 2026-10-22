@@ -194,6 +194,9 @@ func (b *dbusBackend) listen() {
 			return
 		case signal, ok := <-b.signals:
 			if !ok {
+				if b.alive.Swap(false) {
+					b.event(managedEvent{err: ErrUnavailable})
+				}
 				return
 			}
 			if signal.Name == "org.freedesktop.DBus.NameOwnerChanged" && signal.Sender == "org.freedesktop.DBus" && len(signal.Body) == 3 {
