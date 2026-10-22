@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JR0E89AAJXVDF2GNK33MTQ
 title: Verify signed update metadata and stage bounded artifacts
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/self-update
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: dc693b2b1c26a19c6dd467df35d938759635c76b
-  session: null
-  claimed_at: 2026-10-22T21:24:25Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T21:24:25Z
+updated_at: 2026-10-22T21:28:57Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -44,10 +37,20 @@ Implement the optional updater public API and versioned Ed25519 signed release m
 
 ## Acceptance criteria
 
-- [ ] Tampered, expired, wrong-app/channel/platform, rollback, malformed and oversized metadata/artifacts fail closed.
-- [ ] Cancellation, corrupt/truncated/oversized download and cleanup regressions pass without network dependencies.
-- [ ] Public API docs and external-consumer examples describe signing, trust and transport boundaries.
+- [x] Tampered, expired, wrong-app/channel/platform, rollback, malformed and oversized metadata/artifacts fail closed.
+- [x] Cancellation, corrupt/truncated/oversized download and cleanup regressions pass without network dependencies.
+- [x] Public API docs and external-consumer examples describe signing, trust and transport boundaries.
 
 ## Implementation plan
 
 Read architecture/import restrictions; implement signed manifest parsing and immutable client/release/stage with transport injection. Add adversarial metadata and streamed artifact tests, then run cgo-free focused tests and document the API.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:28:56Z
+
+Implemented the optional updater package with copied pinned Ed25519 keys, domain-separated signatures, strict/duplicate-safe bounded JSON, app/channel/platform/sequence/expiry checks, HTTPS URL validation, streamed bounded SHA-256 staging, progress and cancellation cleanup. Transport stays consumer-injected so the root/module HTTP/TLS import boundary is unchanged. Public package docs and an external-package API example are included. Focused CGO_ENABLED=0 tests passed, including tampering/rollback/wrong identity, oversized metadata/downloads, partial/corrupt content, cancellation and cleanup. All eight prescribed target cross builds passed. Version remains display-only; compiled sequence plus consumer durable highest-installed floor governs rollback. Expiry is rechecked before staging and will be rechecked by installation. Full native GUI and final review occur in integration.
+
+## Summary
+
+Implemented optional signed metadata verification and bounded streaming staging with public docs/examples and adversarial tests; cgo-free focused tests and all prescribed cross builds pass.

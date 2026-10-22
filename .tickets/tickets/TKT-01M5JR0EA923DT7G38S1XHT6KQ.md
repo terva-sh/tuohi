@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JR0EA923DT7G38S1XHT6KQ
 title: Install portable updates and restart after graceful shutdown
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -20,10 +20,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/self-update
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: 3f9fb9f102ae97c8af50849eba4e182f3205ae2d
+  session: null
+  claimed_at: 2026-10-22T21:28:57Z
+  expires_at: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T21:24:25Z
+updated_at: 2026-10-22T21:28:57Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
