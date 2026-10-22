@@ -19,6 +19,31 @@ import (
 const bundleExpandedLimit = 1 << 30
 const bundleEntryLimit = 20000
 
+// Resolve aliases before testing overlap: a clone destination inside its source
+// can recursively copy itself and mutate the installed bundle before shutdown.
+func checkBundleStage(target, stage string) error {
+	a, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return err
+	}
+	b, err := filepath.EvalSymlinks(stage)
+	if err != nil {
+		return err
+	}
+	a, err = filepath.Abs(a)
+	if err != nil {
+		return err
+	}
+	b, err = filepath.Abs(b)
+	if err != nil {
+		return err
+	}
+	if inside(a, b) || inside(b, a) {
+		return fmt.Errorf("%w: bundle and staging directory overlap", ErrInvalid)
+	}
+	return nil
+}
+
 // extractBundle creates one app root at dst. Symlinks are created only after
 // regular files, and no archive member may be nested below a symlink. Framework
 // links may point through other links only when their final target stays inside

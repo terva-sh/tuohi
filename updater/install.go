@@ -167,6 +167,11 @@ func (s *Staged) Schedule(ctx context.Context, opts RestartOptions) (_ *Pending,
 		return nil, fmt.Errorf("%w: absolute target required", ErrInvalid)
 	}
 	opts.Target = filepath.Clean(opts.Target)
+	if opts.Mode == BundleInstall {
+		if err = checkBundleStage(opts.Target, s.dir); err != nil {
+			return nil, err
+		}
+	}
 	if opts.Mode == PortableInstall && runtime.GOOS == "darwin" && strings.Contains(opts.Target, ".app"+string(filepath.Separator)) {
 		return nil, ErrUnsupported
 	}
