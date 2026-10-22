@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:37:09Z
+updated_at: 2026-10-22T20:43:37Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -94,3 +94,13 @@ Disposition for review 2722, finding 1 (cancellation): fixed. All native operati
 Disposition for review 2722, finding 2 (D-Bus activation): fixed. A NameHasNoOwner result now triggers context-bound StartServiceByName, followed by unique-owner resolution. Operations/signals remain bound to that unique owner, never the activatable name. The resolution reply's sequence distinguishes earlier startup transitions from later owner loss; existing owner-loss/reused-ID/spoofed-signal protections remain. TestManagedDBusActivatesIdleService installs a private-bus .service entry launching the test executable, first verifies NameHasNoOwner, then proves activation, capability discovery, post, replacement and dismissal. This exercises actual D-Bus activation rather than pre-owning the name.
 
 Validation: CGO_ENABLED=0 notify suite passed 20 consecutive runs. Full just ci passed in the library and examples, including all eight prescribed cross targets and ticket validation. just test-gui passed on both native Linux WebKitGTK stacks, including showcase/loopback and the private-bus regressions. These remain protocol/runtime Linux evidence only; native macOS/Windows/BSD validation is unavailable and compilation does not establish it. Public cancellation and startup documentation updated. A fresh exact-head/base model review will be requested after push; no merge or release is authorized.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:42:05Z
+
+Fresh review 2724 (Actions #554, run e64a5bd0-d477-44ea-a2ac-509c8fe94db0) reviewed 490233c1747c41f40cb384d645d4cef643b3a5ce against 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099. It explicitly resolved both review 2722 findings and found a valid new medium issue: late cancellation cleanup for macOS replacement A can remove a later successful replacement B because both use the same native request ID. Forgejo CI #551 passed for 490233c.
+
+Fix: keep native replacement IDs, but associate asynchronous submissions with per-ID generations. Cleanup checks its generation and invokes native removal under the same lock used to admit the next generation, preventing a check/remove race. Reference counts retain generation history until both each waiter and native completion finish; idle IDs are then removed, so long-lived clients do not retain every historical notification ID. The actual shared asynchronous wait/cleanup path is exercised on Linux using a controlled native-center adapter: cancel A, return its waiter, successfully complete B under the same ID, then deliver A's late completion. A second regression proves the latest cancelled request is still cleaned up if accepted after its waiter returns. This tests ordering logic, not native macOS delivery. New identifiers for every replacement were rejected because they would abandon native replacement and could create duplicate banners. Full validation and another exact-head/base review follow.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:43:37Z
+
+Disposition for review 2724, finding 1 (late cancellation cleanup): fixed with generation-guarded asynchronous submission cleanup. The controlled delayed-completion regression and latest-cancelled cleanup regression pass; the full cgo-free notify suite passed 20 consecutive runs. Full CGO_ENABLED=0 just ci passed in both modules with all eight prescribed cross builds and strict ticket checks; just test-gui passed on both native Linux WebKitGTK stacks. Native macOS delivery/completion behavior remains unexecuted here; the regression runs the actual shared asynchronous control path used by macBackend.post, not a native center. Requesting another exact-head/base review after push; no merge or release performed.
