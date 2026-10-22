@@ -78,6 +78,30 @@ func pipeSecurity(sid *windows.SID) (*windows.SecurityAttributes, error) {
 }
 
 func acquire(id string, onMessage func(Message)) (*Lock, error) {
+	s, err := newPipeServer(id, onMessage)
+	if err != nil {
+		return nil, err
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.run()
+	}()
+
+	return &Lock{release: func() error {
+		// run returns once it sees stop, having cancelled and waited out any
+		// pending I/O, so the handles are no longer in use when they close.
+		if err := windows.SetEvent(s.stop); err != nil {
+			return err
+		}
+		<-done
+		return s.close()
+	}}, nil
+}
+
+// newPipeServer reserves the pipe name and allocates its I/O events. The pipe
+// can accept a client immediately, before run starts serving it.
+func newPipeServer(id string, onMessage func(Message)) (*pipeServer, error) {
 	sid, err := currentUser()
 	if err != nil {
 		return nil, err
@@ -110,21 +134,7 @@ func acquire(id string, onMessage func(Message)) (*Lock, error) {
 		_ = s.close()
 		return nil, err
 	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.run()
-	}()
-
-	return &Lock{release: func() error {
-		// run returns once it sees stop, having cancelled and waited out any
-		// pending I/O, so the handles are no longer in use when they close.
-		if err := windows.SetEvent(s.stop); err != nil {
-			return err
-		}
-		<-done
-		return s.close()
-	}}, nil
+	return s, nil
 }
 
 // pipeServer is the running instance's end of the pipe. It is allocated on
@@ -157,15 +167,16 @@ func (s *pipeServer) run() {
 			_, err = s.wait(windows.INFINITE)
 		}
 		switch {
-		case err == nil, errors.Is(err, windows.ERROR_PIPE_CONNECTED):
+		case err == nil, errors.Is(err, windows.ERROR_PIPE_CONNECTED), errors.Is(err, windows.ERROR_NO_DATA):
+			// ERROR_NO_DATA means a client connected and closed before this
+			// ConnectNamedPipe call. Its buffered bytes still need reading;
+			// DisconnectNamedPipe would discard them.
 			r := &pipeReader{s: s, deadline: time.Now().Add(s.timeout)}
 			// Its own goroutine, as on Unix, so a callback that waits on a
 			// thread calling Release cannot deadlock the two.
 			if m, ok := readMessage(r); ok && s.onMessage != nil {
 				go s.onMessage(m)
 			}
-		case errors.Is(err, windows.ERROR_NO_DATA):
-			// The sender connected and left before it was served.
 		default:
 			// Release, or a failure that would recur on every try. Stop
 			// serving, but leave the pipe, which is the lock, to Release.
