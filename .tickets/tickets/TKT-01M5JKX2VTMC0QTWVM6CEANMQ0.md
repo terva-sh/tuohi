@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T20:55:49Z
+updated_at: 2026-10-22T20:58:38Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -76,3 +76,7 @@ Private D-Bus regressions pass for real SNI/dbusmenu updates, same tray generati
 **agent:codex/t3-b903096c** at 2026-10-22T20:55:49Z
 
 Final validation: CGO_ENABLED=0 just ci passed in the library and examples with all eight prescribed cross targets and strict ticket checks. Both native Linux WebKitGTK stacks passed just test-gui, including all private-bus tray regressions and the showcase/loopback consumers. Five repeated tray-suite runs passed during concurrency/lifetime development. Native macOS/Windows/BSD UI runtime validation remains unavailable; these results do not establish visual tray presence. Publishing the coupled runtime/availability PR against t3/managed-notifications and requesting its own model review. No merge/release.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:58:38Z
+
+PR #83 review 2727 / Actions #566, exact head b6bfd13c2c8ba2354bbb9d273ef5f29774594a21 against base 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc, identified a high-severity macOS worker autorelease pool thread-affinity defect. Accepted: pin the goroutine before creating the pool and keep it pinned through drain, then unlock before waiting for the queued result. The actual enqueue path now uses withTrayAutoreleasePool. A Darwin-native regression yields between NSNumber allocations and checks pthread_self throughout that scope. Native Darwin execution is unavailable here; this test is compiled only, and Linux/shared tests cannot establish AppKit runtime behavior.

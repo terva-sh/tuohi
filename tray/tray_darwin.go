@@ -328,11 +328,22 @@ func update(ctx context.Context, c Changes) error {
 		return applyMacUpdate(source, c)
 	}
 	token, r := macUpdates.add(ctx, c, source)
-	pool := class("NSAutoreleasePool").Send(sel("alloc")).Send(sel("init"))
-	number := class("NSNumber").Send(sel("numberWithUnsignedLongLong:"), uint64(token))
-	dispatcher.Send(sel("performSelectorOnMainThread:withObject:waitUntilDone:"), sel("applyTrayUpdate:"), number, false)
-	pool.Send(sel("drain"))
+	withTrayAutoreleasePool(func() {
+		number := class("NSNumber").Send(sel("numberWithUnsignedLongLong:"), uint64(token))
+		dispatcher.Send(sel("performSelectorOnMainThread:withObject:waitUntilDone:"), sel("applyTrayUpdate:"), number, false)
+	})
 	return macUpdates.wait(token, r)
+}
+
+// Autorelease pools belong to their creating thread. Release the pin before
+// waiting for the main-thread update, so a stalled UI never holds a worker OS
+// thread unnecessarily.
+func withTrayAutoreleasePool(fn func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pool := class("NSAutoreleasePool").Send(sel("alloc")).Send(sel("init"))
+	defer pool.Send(sel("drain"))
+	fn()
 }
 
 func applyMacUpdate(source *availabilitySource, c Changes) error {
