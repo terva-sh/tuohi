@@ -33,7 +33,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-22T20:12:41Z
+updated_at: 2026-10-22T20:13:25Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -65,6 +65,18 @@ tuohi's own tests have a hook for this: the unexported `openExternal` variable (
 
 - [ ] A consumer's test can record every URL a view hands outside, without a real browser opening, on all three engines
 - [ ] The hook's shape and when it may be set are documented
+
+## Implementation plan
+
+### Approach
+
+Add App.OpenExternal func(string) error to the committed appConfig snapshot and capture it in every viewCore during App.Show. App.Open validates its URL before either path; native navigation and bridge interception keep the existing navigation policy and call an engine-scoped refusal method. A configured hook runs for outside links in a goroutine so the UI thread cannot block, and App.Open calls it synchronously and returns its error. Nil keeps the system opener. Remove the test-only global opener and migrate the shared native navigation scenarios to per-App hooks.
+
+Add headless tests for scheme refusal, isolation, committed settings and error propagation, plus a public consumer example check using a link to an external origin and App.Open without launching a browser. Run just ci and both WebKitGTK GUI stacks with CGO_ENABLED=0. Native macOS/Windows execution is unavailable here; cross builds and shared scenarios are compilation evidence only until hosted CI runs after an authorized merge.
+
+### Alternatives
+
+An exported package variable would introduce global mutable state and cross-app interference. A navigation-only hook would leave App.Open untestable. A synchronous navigation callback could block the UI; a callback on a worker lets consumers record or open a link without blocking native event dispatch. Like other App fields, configure it before the first App method; later assignments do not change the committed scope.
 
 ## Notes
 
