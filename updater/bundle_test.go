@@ -101,6 +101,7 @@ func TestRejectUnsafeBundleArchives(t *testing.T) {
 		"file-parent":                       {{"Desktop.app/dir", "x", 0644}, {"Desktop.app/dir/file", "x", 0644}},
 		"root-file":                         {{"Desktop.app", "x", 0644}},
 		"non-app":                           {{"file", "x", 0644}},
+		"path-depth":                        {{"Desktop.app/" + strings.Repeat("dir/", 64) + "file", "x", 0644}},
 		"absolute-link":                     {{"Desktop.app/link", "/etc/passwd", os.ModeSymlink | 0777}},
 		"escaping-link":                     {{"Desktop.app/link", "../outside", os.ModeSymlink | 0777}},
 		"link-cycle":                        {{"Desktop.app/a", "b", os.ModeSymlink | 0777}, {"Desktop.app/b", "a", os.ModeSymlink | 0777}},
@@ -175,5 +176,43 @@ func TestBundleModeExplicitlyUnavailableElsewhere(t *testing.T) {
 	cfg.Kind = AppBundle
 	if _, err := New(cfg); !errors.Is(err, ErrUnsupported) {
 		t.Fatal(err)
+	}
+}
+
+func TestBundleResourceMutationAbortsBeforeReplacement(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "Desktop.app")
+	work := filepath.Join(dir, "work")
+	if err := os.Mkdir(work, 0700); err != nil {
+		t.Fatal(err)
+	}
+	archive := makeBundleZIP(t, []zipEntry{{"Desktop.app/Contents/MacOS/Desktop", "executable", 0755}, {"Desktop.app/Contents/Resources/room.html", "old", 0644}})
+	if err := extractBundle(context.Background(), archive, target); err != nil {
+		t.Fatal(err)
+	}
+	candidate := filepath.Join(work, "candidate.app")
+	if err := extractBundle(context.Background(), archive, candidate); err != nil {
+		t.Fatal(err)
+	}
+	old, err := treeDigest(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := treeDigest(context.Background(), candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(candidate, "Contents/Resources/room.html"), []byte("tampered"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p := installPlan{Options: RestartOptions{Mode: BundleInstall, Target: target}, Work: work, OldDigest: old, NewDigest: next}
+	starts := 0
+	state, err := install(p, func(string, string) error { t.Fatal("moved tampered bundle"); return nil }, func(installPlan) error { starts++; return nil })
+	if !errors.Is(err, ErrInvalid) || state != "rolled-back" || starts != 1 {
+		t.Fatal(state, err, starts)
+	}
+	current, err := treeDigest(context.Background(), target)
+	if err != nil || current != old {
+		t.Fatal("old bundle changed", err)
 	}
 }

@@ -39,10 +39,13 @@ func extractBundle(ctx context.Context, archive, dst string) (err error) {
 	fold := cases.Fold()
 	for _, f := range z.File {
 		name := strings.TrimSuffix(f.Name, "/")
-		if name == "" || strings.ContainsAny(name, "\\:\x00") || !norm.NFC.IsNormalString(name) || path.IsAbs(name) || path.Clean(name) != name {
+		if name == "" || len(name) > 4096 || strings.ContainsAny(name, "\\:\x00") || !norm.NFC.IsNormalString(name) || path.IsAbs(name) || path.Clean(name) != name {
 			return fmt.Errorf("%w: archive path", ErrInvalid)
 		}
 		parts := strings.Split(name, "/")
+		if len(parts) > 64 {
+			return fmt.Errorf("%w: archive path depth", ErrInvalid)
+		}
 		for i := range parts {
 			prefix := strings.Join(parts[:i+1], "/")
 			key := fold.String(prefix)
