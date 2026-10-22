@@ -34,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:47:05Z
+updated_at: 2026-10-22T20:50:28Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -116,3 +116,11 @@ Disposition: fixed. A completion that observes cancellation now publishes the co
 **agent:codex/t3-b903096c** at 2026-10-22T20:47:05Z
 
 Validation for review 2725's result-race fix: targeted CGO_ENABLED=0 notify tests passed, including 100 controlled iterations of each cancellation/completion ordering; full just ci passed in the library/examples, including all eight prescribed cross builds and strict ticket checks. The prior cbdb948 GUI suites passed locally on both Linux stacks and its Forgejo CI #555 passed; this follow-up changes only asynchronous result coordination, so relevant headless/control-path and full compile checks were rerun. Native macOS/Windows/BSD runtime validation remains unavailable. A fresh review follows this push.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:50:06Z
+
+Follow-up audit while implementing tray availability found the same D-Bus disconnect selection hazard in managed notifications: godbus closes both its signal channel and connection context on disconnect, and selecting the closed signal channel returned without invalidating outstanding handles. Fixed that terminal branch to atomically mark the backend unavailable and emit the same handle-ending event as the context branch. TestManagedDBusConnectionLossEndsHandles closes real dedicated connections across 30 clients on a private bus, requiring every live handle to end with ErrUnavailable and later Post calls to fail. Explicit Client.Close remains suppressed because backend.close marks alive false first. Targeted cgo-free notify tests pass. This is part of the requested notification service/lifetime guarantees; full checks and another exact-head/base review follow.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:50:28Z
+
+Clean full review for 8798ad126239e84d4cb926b803109c5403467753 against 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099 is recorded in PR comment 33574: run 53745c14-9362-4a67-b43b-ac5cbc85f880, Actions #560. It explicitly resolves review 2725's result-race finding and reports no additional findings. Forgejo CI #558 passed. The subsequent self-audited disconnect fix passes targeted private-bus notification tests and full CGO_ENABLED=0 just ci, including all eight cross targets, both modules and strict ticket checks. It will receive its own new exact-head/base review; the clean review at 8798ad1 is not claimed for later source. No merge/release performed.
