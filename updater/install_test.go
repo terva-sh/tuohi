@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -149,6 +150,19 @@ func TestUpdaterWorker(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "launched"), []byte(strings.Join(os.Args[1:], "\n")), 0600); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(dir, "launched-pid"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			if _, err := os.Stat(filepath.Join(dir, "release-relaunch")); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("test parent did not observe relaunch")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 		return
 	}
 	f := newFixture(t)
@@ -209,8 +223,10 @@ func TestUpdaterWorker(t *testing.T) {
 }
 
 func TestPortableSubprocessRestart(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("real subprocess install exercised on native Linux; other platforms need native runners")
+	switch runtime.GOOS {
+	case "linux", "darwin", "windows", "freebsd", "netbsd":
+	default:
+		t.Skip("no native process-watch backend")
 	}
 	for _, mode := range []string{"install", "cancel"} {
 		t.Run(mode, func(t *testing.T) {
@@ -220,6 +236,9 @@ func TestPortableSubprocessRestart(t *testing.T) {
 				t.Fatal(err)
 			}
 			target := filepath.Join(d, "desktop")
+			if runtime.GOOS == "windows" {
+				target += ".exe"
+			}
 			if _, err = copyFile(context.Background(), current, target, 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -244,7 +263,7 @@ func TestPortableSubprocessRestart(t *testing.T) {
 			var result Result
 			for {
 				result, err = ReadResult(string(resultPath))
-				_, launched := os.Stat(filepath.Join(d, "launched"))
+				_, launched := os.Stat(filepath.Join(d, "launched-pid"))
 				if err == nil && launched == nil {
 					break
 				}
@@ -263,6 +282,25 @@ func TestPortableSubprocessRestart(t *testing.T) {
 			}
 			if !strings.Contains(string(args), "a room with spaces\nliteral;$value") {
 				t.Fatalf("arguments changed: %q", args)
+			}
+			pidBytes, e := os.ReadFile(filepath.Join(d, "launched-pid"))
+			if e != nil {
+				t.Fatal(e)
+			}
+			pid, e := strconv.Atoi(string(pidBytes))
+			if e != nil {
+				t.Fatal(e)
+			}
+			watch, e := watchProcess(pid)
+			if e != nil {
+				t.Fatal("cannot observe relaunched consumer", e)
+			}
+			defer watch.Close()
+			if e = os.WriteFile(filepath.Join(d, "release-relaunch"), nil, 0600); e != nil {
+				t.Fatal(e)
+			}
+			if e = watch.Wait(ctx); e != nil {
+				t.Fatal("relaunched consumer did not exit", e)
 			}
 			if _, err = os.Stat(filepath.Join(filepath.Dir(string(resultPath)), "backup")); err != nil {
 				t.Fatal("no rollback backup", err)

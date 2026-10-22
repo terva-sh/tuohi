@@ -178,3 +178,94 @@ user; the updater never requests administrator rights.
 Extraction/security regressions run on Linux. The macOS-native plist/codesign and
 process-watch paths are cross-compiled here; native macOS update execution is not
 available in this workspace and is not claimed as tested runtime behavior.
+
+## Reference consumer
+
+From `examples/`, build `selfupdate` to a persistent, user-owned installation
+path. The example starts in managed mode and does nothing until you choose an
+update action. Configure a real HTTPS feed and its trusted publisher public key:
+
+```sh
+CGO_ENABLED=0 go build -ldflags '-X main.releaseSequence=41' -o ./desktop ./selfupdate
+./desktop -feed https://updates.example/stable.json \
+  -public-key BASE64_PUBLIC_KEY -key-id publisher-2026 \
+  -install-mode portable -target /absolute/installed/path/desktop
+```
+
+The example's command-line public key/feed settings represent trusted packaging
+configuration. Production consumers should embed the pinned public key and
+release sequence or read them from their existing trusted settings, not a web
+page or update response. Preserve these settings across relaunch. For a real
+signed `.app`, select `-install-mode bundle -target /absolute/path/Desktop.app`
+and set `-application` to its bundle identifier. Package-managed distributions
+keep managed mode and direct users to their existing installer/store instead.
+
+The UI has distinct download and install/restart actions, displays progress using
+public view events, and never enables the second action before staging succeeds.
+After consent, the application must persist unsaved model data before Schedule.
+After Schedule, it quits normally, cancels ongoing operations, closes its view,
+releases single-instance ownership and returns from main. The helper then performs
+replacement. This needs no global hook, no updater fields on App, and no renderer
+reset or close interception. An application that abandons shutdown calls Cancel.
+
+`selfupdate -check` is a native GUI smoke check: it uses a fresh in-memory test
+publisher and harmless payload, verifies and stages it through the bridge, quits,
+and proves the single-instance ID can be acquired again. It never installs or
+contacts an update server. `just test-gui` runs it alongside the other examples
+on both Linux WebKitGTK stacks. Library subprocess regressions independently
+exercise real portable replacement/restart and the parent-exit ordering.
+
+## Publisher procedure
+
+1. Assign a strictly increasing sequence per application/channel and compile it
+   into the new executable. Build all selected targets with `CGO_ENABLED=0`.
+2. Finish each platform artifact before hashing: preserve native Windows signing
+   where applicable; finish signing/notarizing/stapling a complete macOS `.app`
+   before creating its symlink-preserving ZIP. This library does not provision
+   signing identities or publish releases.
+3. Record the exact artifact size, SHA-256, kind, OS/architecture and immutable
+   HTTPS URL in a schema-1 manifest. Use an expiry appropriate for your release
+   operations. An expired manifest must be re-signed, even for unchanged assets.
+4. In the offline release-signing environment, provide a private file containing
+   a standard-base64 **32-byte Ed25519 seed** from the publisher's secret manager.
+   Use the reference signing command from `examples/`:
+
+   ```sh
+   CGO_ENABLED=0 go run ./updatefeed -manifest release.json \
+     -key-id publisher-2026 -key-file /private/offline/seed-file > signed-feed.json
+   ```
+
+   This command normalizes the typed manifest into exact protocol JSON field
+   names, signs those payload bytes with the protocol domain prefix, and writes
+   only the public envelope to stdout. It publishes nothing and never prints
+   seed/private-key contents. Private-key buffers are cleared on return where Go
+   permits; this example is not a hardware-signing or secret-isolation service.
+   Keep the seed file out of source control, artifacts, logs and tickets.
+5. Before publication, validate the signed feed and staged artifacts with actual
+   consumers for each shipped target/install mode. Signing authenticates the
+   publisher's assertions; it does not prove the referenced files are usable.
+6. Publish immutable artifacts first, then atomically replace the channel feed.
+   Publication is a separate owner-controlled release action. To revert bad
+   source, publish corrected artifacts with a **higher** sequence. For planned
+   key rotation, ship the next public key in a trusted application release before
+   switching the feed's key ID. Do not fetch replacement keys from the feed.
+
+## Support and validation
+
+| Installation | Behavior | Evidence in this Linux workspace |
+|---|---|---|
+| Linux standalone executable | pidfd parent watch, prepared replacement/backup and restart | Actual subprocess install/restart/cancel, fault regressions and both WebKitGTK GUI stacks |
+| Windows standalone executable | Native process-handle wait, replacement after image release | Cgo-free amd64/arm64 compilation; native execution unavailable |
+| macOS standalone executable | kqueue watch; refuses executables inside bundles | Cgo-free amd64/arm64 compilation; native execution unavailable |
+| macOS signed `.app` | Complete helper clone, bounded ZIP/tree verification, identity/team checks and whole-directory replacement | Portable archive/resource regressions plus compiled native code/tests; native execution unavailable |
+| FreeBSD/NetBSD standalone executable | kqueue watch and same-filesystem replacement | Prescribed cgo-free compilation only; Tier 2, native execution unavailable |
+| Package/store/administrator managed | Explicit `ErrManaged`, consumer directs to normal manager | Unit-tested refusal; no automatic ownership inference/elevation |
+
+Filesystem transaction failure tests establish ordinary rollback and backup
+retention, not power-loss durability. Portable subprocess tests are enabled on all supported native targets, including
+macOS/Windows runners after the owner-authorized merge/mirror workflow. Only their
+Linux execution is established here. Native code-signature/relative-dylib tests
+are included for macOS runners; the dylib fixture uses ad-hoc signing without
+credentials and tests loader layout independently of the production team policy.
+Native successful production signing/notarization and installation need their own
+platform release acceptance. Cross compilation is not native runtime evidence.

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Desktop updates</title>
+<style>body{font:16px system-ui;max-width:38rem;margin:2rem;line-height:1.5;color-scheme:light dark}button{font:inherit;padding:.6rem;margin:.3rem}#status{white-space:pre-wrap}</style>
+<h1>Desktop updates</h1>
+<p>Check and download a verified release. Installing will close and restart this application.</p>
+<button id="prepare">Check and download</button>
+<button id="install" disabled>Install and restart</button>
+<p id="status" role="status">Ready to check. This example starts with updates managed externally.</p>
+<p id="previous"></p>
+<script>
+const status=document.querySelector('#status'),prepare=document.querySelector('#prepare'),install=document.querySelector('#install');
+events.on('download',p=>{status.textContent=`Downloading ${p.Received} / ${p.Total} bytes`;});
+prepare.onclick=async()=>{prepare.disabled=true;install.disabled=true;try{const version=await updates.prepare();status.textContent=`Version ${version} is ready.`;install.disabled=false;if(location.hash==='#check')await updates.checked(version);}catch(e){status.textContent=String(e);}finally{prepare.disabled=false;}};
+install.onclick=async()=>{install.disabled=true;try{await updates.install();status.textContent='Restarting…';}catch(e){status.textContent=String(e);prepare.disabled=false;}};
+if(location.hash==='#check')prepare.click();
+else updates.previous().then(state=>{if(state)document.querySelector('#previous').textContent=`Previous update: ${state}. Recovery backup is retained.`;});
+</script></html>
