@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T22:42:41Z
-updated_at: 2026-10-22T22:42:51Z
+updated_at: 2026-10-22T22:43:36Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -51,3 +51,9 @@ The owner requested review and merge of remaining PR work. Several stacked PRs w
 ## Implementation plan
 
 Retarget PR #87 to main so the portable installer, bundle support and examples land together; request fresh full review for the cumulative main diff. Merge the reviewed desktop stack into a new main-based branch, inspect conflict resolution and consumer docs, validate cgo-free checks and both GUI stacks, then request its own final-base review. Merge only passing reviewed heads using SHA guards, sync the GitHub mirror normally and report native check status. Preserve separate source commits and all existing review dispositions; avoid rewriting branches or publishing releases.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:43:36Z
+
+Integration has no source conflicts; README additions merge automatically. PR #87 now targets main and has fresh full review dispatched. Windows mirror CI previously exercised only the root and instance packages, so it would omit new updater helper/restart and notify/tray regressions. Extend its existing subpackage step to all four test packages; Linux validates shared behavior and Windows compilation locally, while actual Windows execution remains hosted evidence pending mirror sync.

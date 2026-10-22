@@ -245,10 +245,10 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
 
-      # The step below runs only the root package, so the single-instance
-      # package, whose Windows backend nothing else exercises, runs here.
-      - name: Run single-instance tests
-        run: go test -count=1 -timeout 120s ./instance/
+      # The window watchdog below runs only the root package. Run the native
+      # helper restart and package state-machine regressions separately too.
+      - name: Run native subpackage tests
+        run: go test -count=1 -timeout 120s ./instance/ ./notify/ ./tray/ ./updater/
 
       # The reference programs in examples/, run as a consumer's binary runs.
       # Each test bounds its program, and -timeout bounds the tests.
