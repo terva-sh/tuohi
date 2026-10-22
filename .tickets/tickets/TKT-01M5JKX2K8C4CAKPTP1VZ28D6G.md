@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M5JKX2K8C4CAKPTP1VZ28D6G
 title: Add interactive notification handles and permission management
 type: task
-status: done
-status_reason: null
+status: in-progress
+status_reason: "Integration PR #89 review 2747 confirms notification autorelease pools lack OS-thread pinning."
 priority: normal
 due_on: null
 labels:
@@ -24,10 +24,17 @@ references:
   - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/82
     path: null
 moved_to: null
-claim: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/complete-desktop-stack
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: 42761833bbe3db5b4f2dd6a1d702a18af26abd72
+  session: null
+  claimed_at: 2026-10-22T22:48:11Z
+  expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T22:44:14Z
+updated_at: 2026-10-22T22:48:11Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -50,23 +57,7 @@ The owner selected this work on 2026-10-22 through the Kuiske session. Kuiske's 
 
 ## Implementation plan
 
-### Public API and lifetime
-
-Add an opt-in notify.Client constructed with a lifetime context and Config containing the display name and an activation callback. Client.Post returns a Handle with an opaque application correlation ID, Replace and Dismiss, and completion/error state. Capabilities distinguish activation, replacement, dismissal and permission prompting. Permission and RequestPermission are explicit, never requested merely by posting. Close and context cancellation stop activation delivery, dismiss tracked notifications best-effort and release backend resources. Callbacks run serially off native UI threads; callers may safely focus a tuohi View from them. Existing Show, ShowOpts, Alert and Beep retain their defaults and platform paths.
-
-The application ID remains only in Go. OS correlation uses independent random identifiers (macOS) or daemon-assigned IDs (D-Bus). Neither errors nor diagnostic logs contain notification title/body or routing IDs. Message composition/privacy and account/room lookup remain in the consumer. Replacement retains application identity; a duplicate live application ID is an error. Cancellation stops waiting but cannot promise to undo an OS operation already accepted; Close reports cleanup errors.
-
-### Backends
-
-Linux uses a dedicated session-bus connection with signal matches installed before posting, GetCapabilities, Notify with the default action and replaces_id, and CloseNotification. Bind to the unique daemon owner so a daemon restart cannot alias an old ID to another client's notification. Service loss closes outstanding handles and requires a new client. Permission is explicitly not required by this protocol; there is no permission dialog API. Test against a private D-Bus notification service, including activation, replacement, dismissal, service loss and spoofed/unknown signal IDs.
-
-macOS uses UNUserNotificationCenter with Objective-C blocks through purego, a retained delegate and random request identifiers. Before asking for a center, verify NSBundle identifies an APPL .app with an identifier and the executable inside it; unbundled clients return ErrUnavailable. Check for an existing center delegate rather than stealing it. Query and request authorization explicitly, handle add completion/cancellation, default activation and foreground presentation, and remove pending/delivered requests on dismiss/close. Managed icon attachments may report ErrUnsupported initially rather than move a caller's image file; existing icon-capable helpers are unchanged. A headless native macOS test checks that an unbundled test process fails without crashing. Native bundled-app delivery/permission validation is unavailable on this Linux host and must be recorded, not inferred from compilation.
-
-Windows' existing shared Shell_NotifyIcon balloon has no durable independent notification identity and no managed message-pump ownership. The managed constructor returns ErrUnsupported instead of inventing unreliable correlation/replacement or silently using a read-only fallback. Existing helpers remain supported. Other unsupported targets return the same explicit sentinel.
-
-### Validation and alternatives
-
-Use shared fake-backend tests for state, concurrency, cancellation, duplicate IDs, replacement and shutdown; private D-Bus tests for real wire/signals; a public-API managed-notification example; docs with exact capability and bundle requirements. Run CGO_ENABLED=0 just ci and both Linux GUI stacks. An exported global callback was rejected because notifications are scoped and consumers need deterministic cleanup. A best-effort CLI fallback was rejected for managed clients because it cannot promise activation/identity/dismissal. Replacing the legacy Show path was rejected to preserve existing consumers and defaults.
+Preserve managed APIs and defaults. Pin notificationPool using runtime.LockOSThread before creating the pool, defer unlock before deferred drain so drain runs first. Add Darwin notification-path thread-affinity regression using NSThread currentThread across repeated Gosched calls. Run cgo-free tests/cross checks, explicitly compile Darwin tests, post disposition and request a fresh full #89 review.
 
 ## Notes
 
@@ -121,6 +112,14 @@ Clean full review for 8798ad126239e84d4cb926b803109c5403467753 against 4f8d5e638
 **agent:codex/t3-b903096c** at 2026-10-22T20:54:16Z
 
 PR #82 is ready for owner review/merge at exact source head 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc against base 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099. Clean full review Actions #564 (27048), run 1d45de26-f37a-47fb-8622-5dcbddc4308a, reports no additional findings and confirms prior resolutions; PR clean-status comment 33574 records the named revision. Forgejo CI #562 passed its check and both Linux GUI stacks. Current head has all original review 2722 fixes, follow-up 2724/2725 fixes, individual dispositions, and the audited bus-disconnect fix. Kuiske received tested source and exact check/review evidence. Native bundled macOS delivery/permission/delegate validation remains unavailable; cross builds and control-path regressions are not that evidence. This note is recorded on the subsequent tray work branch to preserve the clean reviewed notification head. No merge or release is authorized/performed.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:48:11Z
+
+done to in-progress: Integration PR #89 review 2747 confirms notification autorelease pools lack OS-thread pinning.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:48:11Z
+
+Accepted high finding in PR #89 review 2747 at 3d01112: notificationPool creates/drains a thread-local NSAutoreleasePool on arbitrary unpinned Go workers. Mirror the existing tray OS-thread pinning, and add a native Darwin notification-pool regression that yields and compares native thread identities. Native execution is unavailable locally; compile the regression without cgo and require mirror CI evidence.
 
 ## Summary
 
