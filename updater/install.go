@@ -254,13 +254,26 @@ func (s *Staged) Schedule(ctx context.Context, opts RestartOptions) (_ *Pending,
 	if runtime.GOOS == "windows" {
 		helper += ".exe"
 	}
-	_, err = copyFile(ctx, runningTarget, helper, 0700)
-	if err != nil {
-		return nil, err
+	helperRoot := helper
+	if opts.Mode == BundleInstall {
+		helperRoot = filepath.Join(s.dir, "helper.app")
+		if err = cloneBundle(ctx, opts.Target, helperRoot); err != nil {
+			return nil, err
+		}
+		helper, err = validateBundle(ctx, helperRoot, opts.Target, s.r.c.cfg.Application)
+		if err != nil {
+			_ = os.RemoveAll(helperRoot)
+			return nil, err
+		}
+	} else {
+		_, err = copyFile(ctx, runningTarget, helper, 0700)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer func() {
 		if !keep {
-			_ = os.Remove(helper)
+			_ = os.RemoveAll(helperRoot)
 		}
 	}()
 	cfg := s.r.c.cfg
