@@ -18,12 +18,27 @@ var resGoroutineCalls atomic.Value // string
 // path. Waiting for Eval's report matters: evaluation is asynchronous, so an
 // immediate navigation can replace the page before the script executes.
 func goroutineCallsScenario() string {
+	var request, diagnostic atomic.Value
+	request.Store("none")
+	diagnostic.Store("none")
 	base, closeServer, err := servePlain(func(target string) (string, string) {
+		if strings.HasPrefix(target, "/diag?") {
+			diagnostic.Store(strings.TrimPrefix(target, "/diag?"))
+			return "", ""
+		}
+		request.Store(target)
 		return "", `<!DOCTYPE html><html><body><script>
+function diagnostic(stage, error) {
+  new Image().src = '/diag?stage=' + stage + '&path=' + encodeURIComponent(location.pathname) +
+    '&shown=' + typeof window.shown + '&step=' + typeof window.step + '&error=' + encodeURIComponent(error || '');
+}
+window.addEventListener('error', function(event) { diagnostic('error', event.message); });
 window.addEventListener('pageshow', function(){
+  diagnostic('pageshow');
   window.shown(location.pathname);
   if (location.pathname === '/a') { window.step(); }
 });
+diagnostic('script');
 </script></body></html>`
 	})
 	if err != nil {
@@ -31,7 +46,8 @@ window.addEventListener('pageshow', function(){
 	}
 	defer closeServer()
 
-	w := &View{}
+	var ready atomic.Int32
+	w := &View{Ready: func() { ready.Add(1) }}
 	if err := testApp().Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
@@ -39,18 +55,22 @@ window.addEventListener('pageshow', function(){
 
 	shown := make(chan string, 16)
 	var offUI atomic.Bool
-	_ = w.w.Bind("shown", func(s string) {
+	if err := w.w.Bind("shown", func(s string) {
 		shown <- s
 		if s == "eval:/a" {
 			offUI.Store(offUI.Load() && !onUIThread())
 			w.Navigate(base + "b")
 		}
-	})
-	_ = w.w.Bind("step", func() {
+	}); err != nil {
+		return "bind shown: " + err.Error()
+	}
+	if err := w.w.Bind("step", func() {
 		offUI.Store(!onUIThread())
 		w.Eval(`window.shown('eval:' + location.pathname)`)
 		w.Focus(true)
-	})
+	}); err != nil {
+		return "bind step: " + err.Error()
+	}
 
 	result := make(chan string, 1)
 	watchdog := time.AfterFunc(30*time.Second, func() { w.Close() })
@@ -74,7 +94,11 @@ window.addEventListener('pageshow', function(){
 			}
 		}
 		got := []string{"start=" + next(), "eval=" + next(), "navigate=" + next()}
-		result <- fmt.Sprintf("%s offUI=%v", strings.Join(got, " "), offUI.Load())
+		report := fmt.Sprintf("%s offUI=%v", strings.Join(got, " "), offUI.Load())
+		if expired {
+			report += fmt.Sprintf(" request=%s page=%s ready=%d", request.Load(), diagnostic.Load(), ready.Load())
+		}
+		result <- report
 	}()
 
 	w.w.Navigate(base + "a")

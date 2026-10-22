@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M5JTA6MQ25ZDBGKAHJ1B47MJ
 title: Synchronize GUI clipboard and binding lifecycle scenarios
 type: bug
-status: in-progress
-status_reason: "PR #89 CI #640 GTK4 binding scenario received no page reports; investigate independently of the previous fixed Eval/navigation race."
+status: done
+status_reason: null
 priority: normal
 due_on: null
 labels:
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/complete-desktop-stack
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: 3e8d58871fcd93fbf30b4eebd9a61f1b7bba4b29
-  session: null
-  claimed_at: 2026-10-22T22:56:51Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T22:04:41Z
-updated_at: 2026-10-22T22:56:51Z
+updated_at: 2026-10-22T23:04:13Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -66,6 +59,16 @@ done to in-progress: PR #89 CI #640 GTK4 binding scenario received no page repor
 
 CI #640 at 3e8d588 fails only TestViewMethodsFromBinding on WebKitGTK 6.0 with start=none eval=none navigate=none offUI=false. GTK3 and all subpackages/examples pass. This differs from the fixed Eval/navigation ordering issue: no initial page binding arrived. Existing output cannot establish whether navigation, page script or bridge failed. Preserve strict assertions; reproduce in the CI base runtime and add independent page/network phase diagnostics if necessary.
 
+**agent:codex/t3-b903096c** at 2026-10-22T23:04:12Z
+
+CI #640 disposition: no initial binding report on GTK4, with no established production cause. Four fresh processes of exact baseline 3e8d588 in the Go 1.27 Debian trixie CI image, limited to two CPUs, pass with WebKitGTK 2.54.0-1~deb13u3 and the complete preceding TestMain sequence. The container reports unavailable bubblewrap and uses the supported sandbox fallback. The original failure is not claimed fixed.
+
+Added checked binding-registration errors and independent HTTP request/page-script/native-ready diagnostics, retaining the same 20-second observation deadline, off-thread Eval/Focus/Navigate calls and exact success assertions. A scratch-only controlled page error produced the expected strict failure with request=/a, page stage=error, shown=function, step=function and ready=1, proving the new failure path distinguishes page execution from missing bridge delivery. No intentional fault was added to repository source.
+
+Full CGO_ENABLED=0 just ci passes both modules and all eight cross targets; full just test-gui passes both Linux WebKitGTK stacks and available examples. Pinned golangci-lint v2.13.1 passes both modules on darwin/linux/windows with Go 1.26.0; make lint-bsd passes too. An initial local run used a long task scratch prefix that exceeded the existing instance test's Unix socket path limit; rerunning in the existing shorter task scratch directory passes, without changing production code. Native macOS/Windows evidence from GitHub run 39867971162 applies only to main19811cf, not this unmerged desktop head. Native packaged notification and team-signed bundle acceptance remains unavailable.
+
+TKT-01M5JXMTDYT0V6SG8K7MNPN3VB (Diagnose GTK4 windows missing initial binding reports) retains the original unconfirmed stall as an unselected draft. These diagnostics and the earlier synchronization fixes are complete; fresh PR #89 review/checks gate integration. No production threading/security behavior was changed or relaxed.
+
 ## Summary
 
-Fixed clipboard startup ordering and asynchronous evaluation/navigation ordering in 3f67b4d (PR #87), merged into PR #88. Both native Linux WebKitGTK stacks, both modules and all eight cgo-free CI/cross targets pass. Review 2741 inspected these changes and raised a separate macOS bundle guard issue; its diagnosis/fix is owned by the reopened bundle ticket, with individual disposition posted in PR #87. No production UI threading behavior changed.
+Original synchronization fixes remain in 3f67b4d. Added checked binding registration and independent network/page/native-load timeout diagnostics, verified with a controlled strict-failure fixture; full cgo-free CI/all cross builds and both native Linux stacks pass. Four exact-baseline CI-image processes did not reproduce the initial-report stall; TKT-01M5JXMTDYT0V6SG8K7MNPN3VB (Diagnose GTK4 windows missing initial binding reports) retains that unresolved investigation. PR #89 fresh review/checks gate integration; no production cause or original-stall resolution is claimed.
