@@ -22,6 +22,8 @@ references:
     path: null
   - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
     path: null
+  - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/81
+    path: null
 moved_to: null
 claim:
   actor: agent:codex/t3-b903096c
@@ -33,7 +35,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-22T20:17:13Z
+updated_at: 2026-10-22T20:19:08Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
