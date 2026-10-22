@@ -161,7 +161,9 @@ links are rejected. The ZIP digest and complete prepared tree digest are checked
 code signatures, app identity and team equality are checked before scheduling and
 again before replacement.
 
-The helper replaces the whole `.app`, retains `backup.app`, then starts the
+The helper runs from a complete private copy of the current `.app`, preserving
+`@executable_path`/relative loader dependencies, bundle resources and native metadata.
+It replaces the whole installed `.app`, retains `backup.app`, then starts the
 installed bundle executable. This preserves the bundle location and process bundle
 identity. Executable-name changes are unsupported, so ordinary rollback can use
 the same executable path. Power loss between the two directory moves can require

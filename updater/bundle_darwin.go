@@ -9,6 +9,26 @@ import (
 	"strings"
 )
 
+// ditto preserves the complete signed bundle layout, including native metadata
+// and executable-relative loader paths. Copying just the Mach-O is insufficient
+// for consumers that link bundled frameworks or dylibs.
+func cloneBundle(ctx context.Context, src, dst string) (err error) {
+	if _, err = os.Lstat(dst); !os.IsNotExist(err) {
+		return ErrBusy
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(dst)
+		}
+	}()
+	if err = exec.CommandContext(ctx, "/usr/bin/ditto", src, dst).Run(); err != nil {
+		return fmt.Errorf("tuohi: updater: copy helper bundle: %w", err)
+	}
+	complete = true
+	return nil
+}
+
 func bundleExecutable(ctx context.Context, root, application string) (string, error) {
 	i, err := os.Lstat(root)
 	if err != nil {

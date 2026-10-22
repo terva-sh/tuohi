@@ -8,3 +8,5 @@ func bundleExecutable(context.Context, string, string) (string, error) { return 
 func validateBundle(context.Context, string, string, string) (string, error) {
 	return "", ErrUnsupported
 }
+
+func cloneBundle(context.Context, string, string) error { return ErrUnsupported }
