@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JKX3C39YNR5SM64A8EK6YR
 title: Add close interception and native window lifecycle events
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -34,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T20:12:40Z
+updated_at: 2026-10-22T20:59:37Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -54,3 +54,17 @@ The owner selected this work on 2026-10-22 through the Kuiske session. Kuiske's 
 - [ ] Native focus/activation and visibility changes reach supported public callbacks with defined thread and ordering semantics.
 - [ ] Programmatic teardown and App.Quit do not get trapped by interception; defaults and existing consumers retain their behavior.
 - [ ] Meaningful state-machine and Linux GUI tests plus a public-API example cover lifecycle behavior; CGO_ENABLED=0 and prescribed cross builds pass, with native evidence distinguished from compilation.
+
+## Implementation plan
+
+### Approach
+
+Add View.CloseRequested func(*CloseRequest), with default allow, explicit Cancel/Allow, and Defer for asynchronous decisions. A per-engine state machine coalesces repeated native requests, admits only the first decision and invalidates pending work on teardown/quit. Deferred Allow marshals to the UI and targets the captured engine lifetime. View.RequestClose serves custom chrome through the same policy; View.Close remains unconditional. GTK delete-event/close-request, NSWindow windowShouldClose and Windows WM_CLOSE feed this state machine. App quit invalidates pending requests and bypasses interception without changing its existing process/run-loop policy.
+
+Add View.WindowChanged func(WindowState) and View.WindowState() for native mapped visibility and top-level activation. Deliver snapshots on the UI thread after engine publication, suppress duplicates, and finish with Closed on destruction. GTK map/unmap/is-active, NSWindow key/minimize/order notifications, and Windows WM_ACTIVATE/WM_SHOWWINDOW/WM_SIZE feed native sampling. Visibility means OS shown/mapped state, not proof of pixels visible through occlusion or another workspace. Embedded internal host windows have no close interception guarantee.
+
+Test the shared decision state machine (defer/cancel/allow/repeated requests, teardown/quit, stale queued allows and reentrancy), add native Linux GUI scenarios preserving JS state and the native handle across hide/show, and update the public examples and API documentation in the same PR. Run CGO_ENABLED=0 just ci and both Linux GUI stacks; distinguish compilation from unavailable native macOS/Windows/BSD runtime validation. Publish a scoped internal PR and request exact-head/base review; do not merge or release.
+
+### Alternatives
+
+A bool-only close callback cannot defer a consumer decision. Blocking the UI for a dialog or worker would stop renderer/native dispatch. Recreating a destroyed view loses renderer state. A package-global callback would mix windows and lifetimes. Keep the lifecycle machine separate from the bridge mutex so consumer callbacks never run under internal locks.
