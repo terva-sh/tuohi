@@ -17,9 +17,10 @@ import (
 const managedDelegateClass = "TUOHIManagedNotificationDelegate"
 
 type macBackend struct {
-	center   objc.ID
-	delegate objc.ID
-	event    func(managedEvent)
+	center      objc.ID
+	delegate    objc.ID
+	event       func(managedEvent)
+	submissions notificationSubmissions
 }
 
 var (
@@ -283,41 +284,37 @@ func (b *macBackend) post(ctx context.Context, id, _ string, n Notification) (st
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	result := make(chan bool, 1)
-	notificationPool(func() {
-		content := class("UNMutableNotificationContent").Send(sel("alloc")).Send(sel("init"))
-		defer content.Send(sel("release"))
-		content.Send(sel("setTitle:"), nsstr(n.Title))
-		content.Send(sel("setBody:"), nsstr(n.Message))
-		if n.Options.Urgency.level() == 2 {
-			content.Send(sel("setSound:"), class("UNNotificationSound").Send(sel("defaultSound")))
-		}
-		request := class("UNNotificationRequest").Send(sel("requestWithIdentifier:content:trigger:"), nsstr(id), content, objc.ID(0))
-		// The completion may outlive a cancelled Post and Client.Close.
-		// Keep the center alive for late best-effort cancellation cleanup.
-		center := b.center.Send(sel("retain"))
-		block := objc.NewBlock(func(_ objc.Block, nativeErr objc.ID) {
-			notificationPool(func() {
-				defer center.Send(sel("release"))
-				if ctx.Err() != nil {
-					removeManagedMacNotification(center, id)
-				}
-				result <- nativeErr == 0
+	err = b.submissions.run(ctx, id, func(complete func(error)) {
+		notificationPool(func() {
+			content := class("UNMutableNotificationContent").Send(sel("alloc")).Send(sel("init"))
+			defer content.Send(sel("release"))
+			content.Send(sel("setTitle:"), nsstr(n.Title))
+			content.Send(sel("setBody:"), nsstr(n.Message))
+			if n.Options.Urgency.level() == 2 {
+				content.Send(sel("setSound:"), class("UNNotificationSound").Send(sel("defaultSound")))
+			}
+			request := class("UNNotificationRequest").Send(sel("requestWithIdentifier:content:trigger:"), nsstr(id), content, objc.ID(0))
+			// A native completion can outlive cancellation and Client.Close. Its
+			// retain also keeps the center valid for generation-guarded late cleanup.
+			center := b.center.Send(sel("retain"))
+			block := objc.NewBlock(func(_ objc.Block, nativeErr objc.ID) {
+				notificationPool(func() {
+					defer center.Send(sel("release"))
+					var err error
+					if nativeErr != 0 {
+						err = fmt.Errorf("%w: notification center rejected the request", ErrUnavailable)
+					}
+					complete(err)
+				})
 			})
+			defer block.Release()
+			b.center.Send(sel("addNotificationRequest:withCompletionHandler:"), request, block)
 		})
-		defer block.Release()
-		b.center.Send(sel("addNotificationRequest:withCompletionHandler:"), request, block)
-	})
-	select {
-	case <-ctx.Done():
-		notificationPool(func() { removeManagedMacNotification(b.center, id) })
-		return "", ctx.Err()
-	case ok := <-result:
-		if !ok {
-			return "", fmt.Errorf("%w: notification center rejected the request", ErrUnavailable)
-		}
-		return id, nil
+	}, func() { notificationPool(func() { removeManagedMacNotification(b.center, id) }) })
+	if err != nil {
+		return "", err
 	}
+	return id, nil
 }
 
 func (b *macBackend) dismiss(ctx context.Context, id string) error {
