@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T23:25:00Z
-updated_at: 2026-10-22T23:25:11Z
+updated_at: 2026-10-22T23:28:37Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -47,10 +47,24 @@ This is necessary native-validation follow-through under the owner-authorized me
 
 ## Acceptance criteria
 
-- [ ] The native lifecycle scenario uses App.Wait and retains the existing close, renderer, state, callback-thread, deferred-decision, coalescing and quit assertions.
-- [ ] Worker operations start during an active UI loop and timeout failures identify their stage without waiting for the outer CI kill.
-- [ ] Cgo-free CI/cross builds and both Linux stacks pass; native macOS/Windows outcomes are recorded accurately.
+- [x] The native lifecycle scenario uses App.Wait and retains the existing close, renderer, state, callback-thread, deferred-decision, coalescing and quit assertions.
+- [x] Worker operations start during an active UI loop and timeout failures identify their stage without waiting for the outer CI kill.
+- [x] Cgo-free CI/cross builds and both Linux stacks pass; native macOS/Windows outcomes are recorded accurately.
 
 ## Implementation plan
 
 Replace the internal per-view Run plus second App.Wait phase with one public App.Wait. Queue a UI-turn gate before off-thread operations; continue after deferred Allow only when native terminal state arrives, request a deferred close on the peer under the same loop, then call App.Quit and check invalidation after Wait returns. Failure/watchdog paths quit the whole app and retain stage diagnostics; a later hard timeout yields a Go panic/stack even before m.Run. Keep exact renderer/window identity, callbacks, activation/visibility/terminal state and request-count assertions. Validate full cgo-free checks and both Linux GUI stacks, compile Windows/Darwin tests and request fresh exact-head/base review. No production change or inferred cause of the original native stall.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T23:28:36Z
+
+Replaced the test-only per-view Run/second-Wait sequence with one public App.Wait and off-thread App.Quit. A queued View.Window turn admits the worker only after the application loop runs. All original behavior checks remain: allowed native close, native activation/deactivation, callback UI-thread assertions, cancellation/hide, same window/renderer state after Show, visibility/terminal snapshots, deferred cancel/allow, coalescing, and App.Quit invalidating the peer request. Terminal state is now explicitly awaited before proceeding while the peer keeps the application alive. Failures quit the whole application; a 30-second soft watchdog and 35-second hard panic with stage and all goroutine stacks bound native stalls even before m.Run, including deferred teardown.
+
+CGO_ENABLED=0 just ci passes both modules/all eight prescribed targets. Full just test-gui passes library/packages/examples on WebKitGTK 6.0 and 4.1. Updated Windows amd64 and Darwin arm64 root test binaries compile; pinned Windows lint passes. A scratch-only intentional renderer-state mutation produces TestNativeWindowLifecycle failure: restoring retained renderer: renderer state lost: lost fixture. The process exits normally with failure in 30.5 seconds including all preceding scenarios, rather than reaching the outer CI kill. The fault was never applied to repository source.
+
+Original native WebView2 155.0.4283.62 timeout at 4be7f93 did not establish the exact blocked call or a production cause, and no production change is claimed. The public-loop harness is validated on Linux; new native macOS/Windows outcomes remain pending after internal review/merge and mirror sync. PR #91 already merged ticket closure for the independently confirmed Windows pipe fix; that native subpackage result remains valid despite the later WebView2 timeout.
+
+## Summary
+
+Native lifecycle validation now uses the supported public App.Wait/App.Quit contract in one application loop, preserving every original close/renderer/state/thread/deferred/quit assertion. Failures carry stages and quit the whole app; a hard watchdog includes goroutine stacks before the outer CI kill. Both Linux WebKitGTK stacks, cgo-free CI/all prescribed cross builds, Windows/Darwin test compilation and Windows lint pass. A controlled renderer-state fault fails strictly and exits the loop. New native macOS/Windows execution remains pending; no original production cause or native timeout resolution is inferred.
