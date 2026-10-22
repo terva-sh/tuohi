@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -345,10 +346,13 @@ func (s *Staged) Close() error {
 // implementations must agree on exactly what was signed.
 func strictJSON(b []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(b))
-	var scan func(int) error
-	scan = func(depth int) error {
+	var scan func(int, reflect.Type) error
+	scan = func(depth int, typ reflect.Type) error {
 		if depth > 32 {
 			return ErrInvalid
+		}
+		for typ.Kind() == reflect.Pointer {
+			typ = typ.Elem()
 		}
 		t, err := d.Token()
 		if err != nil {
@@ -356,6 +360,25 @@ func strictJSON(b []byte, v any) error {
 		}
 		switch t {
 		case json.Delim('{'):
+			fields := map[string]reflect.Type{}
+			if typ.Kind() == reflect.Struct {
+				for i := 0; i < typ.NumField(); i++ {
+					f := typ.Field(i)
+					if !f.IsExported() {
+						continue
+					}
+					name := strings.Split(f.Tag.Get("json"), ",")[0]
+					if name == "-" {
+						continue
+					}
+					if name == "" {
+						name = f.Name
+					}
+					fields[name] = f.Type
+				}
+			} else if typ.Kind() != reflect.Map {
+				return ErrInvalid
+			}
 			seen := map[string]bool{}
 			for d.More() {
 				k, err := d.Token()
@@ -367,15 +390,27 @@ func strictJSON(b []byte, v any) error {
 					return ErrInvalid
 				}
 				seen[key] = true
-				if err = scan(depth + 1); err != nil {
+				var fieldType reflect.Type
+				if typ.Kind() == reflect.Map {
+					fieldType = typ.Elem()
+				} else {
+					fieldType = fields[key]
+					if fieldType == nil {
+						return ErrInvalid
+					}
+				}
+				if err = scan(depth+1, fieldType); err != nil {
 					return err
 				}
 			}
 			_, err = d.Token()
 			return err
 		case json.Delim('['):
+			if typ.Kind() != reflect.Slice && typ.Kind() != reflect.Array {
+				return ErrInvalid
+			}
 			for d.More() {
-				if err = scan(depth + 1); err != nil {
+				if err = scan(depth+1, typ.Elem()); err != nil {
 					return err
 				}
 			}
@@ -384,7 +419,7 @@ func strictJSON(b []byte, v any) error {
 		}
 		return nil
 	}
-	if err := scan(0); err != nil {
+	if err := scan(0, reflect.TypeOf(v)); err != nil {
 		return err
 	}
 	if _, err := d.Token(); err != io.EOF {
