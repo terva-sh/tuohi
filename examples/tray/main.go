@@ -5,11 +5,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
-	"os"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/terva-sh/tuohi/notify"
 	"github.com/terva-sh/tuohi/tray"
@@ -21,35 +24,60 @@ func main() {
 	// Dark mode icon: bright cyan (Windows dark theme / taskbar).
 	iconDark := generateIcon(22, color.RGBA{R: 0, G: 230, B: 230, A: 255})
 
-	cfg := tray.Config{
-		Icon:          iconLight,
-		DarkModeIcon:  iconDark,
-		Tooltip:       "tuohi tray test",
-		OnClick:       func() { fmt.Println("Left click!") },
-		OnDoubleClick: func() { fmt.Println("Double click!") },
-		OnRightClick:  func() { fmt.Println("Right click!") },
-		Items: []tray.Item{
-			{Label: "Hello", OnClick: func() { fmt.Println("Hello clicked!") }},
-			{Label: "Show Notification", OnClick: func() {
-				fmt.Println("Sending notification...")
+	var unread atomic.Bool
+	var renderMu sync.Mutex
+	var renderMenu func() []tray.Item
+	updateUnread := func(value bool) {
+		unread.Store(value)
+		// Keep native callbacks short and serialize snapshots from Linux's
+		// potentially concurrent D-Bus callbacks. Update marshals to native UI.
+		go func() {
+			renderMu.Lock()
+			defer renderMu.Unlock()
+			active := unread.Load()
+			light, dark := iconLight, iconDark
+			tooltip, title := "tuohi tray demo", ""
+			if active {
+				light = generateIcon(22, color.RGBA{R: 240, G: 120, A: 255})
+				dark = light
+				tooltip = "New activity"
+				title = "1"
+			}
+			items := renderMenu()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := tray.Update(ctx, tray.Changes{Icon: light, DarkModeIcon: dark, Tooltip: &tooltip, Title: &title, Items: &items}); err != nil {
+				fmt.Println("Update:", err)
+			}
+		}()
+	}
+	renderMenu = func() []tray.Item {
+		active := unread.Load()
+		return []tray.Item{
+			{Label: "Unread indicator", Checkbox: true, Checked: active, OnClick: func() { updateUnread(!unread.Load()) }},
+			{Label: "Mark unread", Disabled: active, OnClick: func() { updateUnread(true) }},
+			{Label: "Mark read", Disabled: !active, OnClick: func() { updateUnread(false) }},
+			{Label: "Show notification", OnClick: func() {
 				if err := notify.Show("tuohi tray demo", "tuohi", "Hello from tray!"); err != nil {
-					fmt.Println("Notify error:", err)
+					fmt.Println("Notify:", err)
 				}
 			}},
 			{Separator: true},
-			{Label: "More...", Submenu: []tray.Item{
-				{Label: "Sub Item 1", OnClick: func() { fmt.Println("Sub 1") }},
-				{Label: "Sub Item 2", OnClick: func() { fmt.Println("Sub 2") }},
-			}},
-			{Label: "Check me", Checkbox: true, Checked: false, OnClick: func() {
-				fmt.Println("Checkbox toggled")
-			}},
-			{Separator: true},
-			{Label: "Quit", OnClick: func() {
-				fmt.Println("Quit clicked, removing tray...")
-				tray.Stop()
-				os.Exit(0)
-			}},
+			{Label: "Quit", OnClick: tray.Stop},
+		}
+	}
+	cfg := tray.Config{
+		Icon: iconLight, DarkModeIcon: iconDark, Tooltip: "tuohi tray demo", Items: renderMenu(),
+		OnClick: func() { fmt.Println("Left click") }, OnDoubleClick: func() { fmt.Println("Double click") }, OnRightClick: func() { fmt.Println("Right click") },
+		OnAvailability: func(state tray.Availability) {
+			current := tray.CurrentAvailability()
+			if state.Generation != current.Generation {
+				return
+			}
+			fmt.Printf("Tray registered=%v host=%v error=%v\n", current.Registered, current.HostPresent, current.Err)
+			// A window-owning adapter should keep its only window reachable unless
+			// Running, Registered, HostPresent are true and Err is nil. Even then,
+			// registration cannot prove the user can see the icon.
 		},
 	}
 

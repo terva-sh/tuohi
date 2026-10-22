@@ -24,12 +24,15 @@ package tray
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"image"
 	_ "image/png" // registers the PNG decoder for tray icons
 	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -76,10 +79,19 @@ type itemState struct {
 
 // linuxTray is the running SNI service backing the single active tray.
 type linuxTray struct {
-	conn      *dbus.Conn
-	props     *prop.Properties
-	menuProps *prop.Properties
-	busName   string
+	ops             chan struct{}
+	closed          bool
+	cfg             Config
+	availability    *availabilitySource
+	signals         chan *dbus.Signal
+	watcherOwner    string
+	registeredOwner string
+	menuBase        int32
+	menuNext        int32
+	conn            *dbus.Conn
+	props           *prop.Properties
+	menuProps       *prop.Properties
+	busName         string
 
 	mu         sync.RWMutex
 	menuRoot   []Item
@@ -130,20 +142,27 @@ type menuEvent struct {
 
 var (
 	linuxMu sync.Mutex
-	linuxT  *linuxTray
+	linuxT  atomic.Pointer[linuxTray]
 )
 
 // set opens the session-bus connection, exports the SNI and dbusmenu
 // objects, and makes the icon visible. Requires a running session bus.
-func set(cfg Config) error {
-	linuxMu.Lock()
-	if linuxT != nil {
-		linuxMu.Unlock()
-		return ErrAlreadyRunning
+func set(cfg Config) error { _, err := startLinuxTray(cfg); return err }
+
+func startLinuxTray(cfg Config) (*linuxTray, error) {
+	// Resolve startup fallbacks once; nil updates preserve effective values.
+	if cfg.Tooltip == "" {
+		cfg.Tooltip = cfg.Title
 	}
-	linuxMu.Unlock()
+	cfg.Title = cfg.Tooltip
+	linuxMu.Lock()
+	defer linuxMu.Unlock()
+	if linuxT.Load() != nil {
+		return nil, ErrAlreadyRunning
+	}
 
 	t := &linuxTray{
+		cfg: cfg, ops: make(chan struct{}, 1), menuNext: 1, signals: make(chan *dbus.Signal, 32),
 		menuByID:        make(map[int32]*itemState),
 		status:          sniStatusActive,
 		onClickFn:       cfg.OnClick,
@@ -152,42 +171,94 @@ func set(cfg Config) error {
 		quit:            make(chan struct{}),
 	}
 	if err := t.create(cfg); err != nil {
-		return err
+		return nil, err
 	}
-	linuxMu.Lock()
-	linuxT = t
-	linuxMu.Unlock()
-	return nil
+	t.availability = newAvailability(cfg.OnAvailability)
+	linuxT.Store(t)
+	t.availability.publish(Availability{Running: true, Err: ErrUnavailable})
+	go t.watchAvailability()
+	return t, nil
 }
 
 // run shows the tray and blocks until Remove/Stop destroys it.
 func run(cfg Config) error {
-	if err := set(cfg); err != nil {
+	t, err := startLinuxTray(cfg)
+	if err != nil {
 		return err
 	}
-	linuxMu.Lock()
-	t := linuxT
-	linuxMu.Unlock()
 	<-t.quit
-	linuxMu.Lock()
-	if linuxT == t {
-		linuxT = nil
-	}
-	linuxMu.Unlock()
 	return nil
 }
 
 // stop destroys the running tray (if any). Safe from any goroutine.
 func stop() {
 	linuxMu.Lock()
-	t := linuxT
-	linuxMu.Unlock()
-	if t != nil {
+	defer linuxMu.Unlock()
+	if t := linuxT.Swap(nil); t != nil {
 		t.destroy()
 	}
 }
 
 func remove() { stop() }
+
+func update(ctx context.Context, c Changes) error {
+	t := linuxT.Load()
+	if t == nil {
+		return ErrNotRunning
+	}
+	select {
+	case t.ops <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-t.ops }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t.mu.RLock()
+	closed := t.closed
+	t.mu.RUnlock()
+	if closed {
+		return ErrNotRunning
+	}
+	if t.conn.Context().Err() != nil {
+		return ErrUnavailable
+	}
+	cfg := applyChanges(t.cfg, c)
+	var pixmaps []dbusPixmap
+	if c.Icon != nil && len(cfg.Icon) > 0 {
+		w, h, data, err := pngToARGB(cfg.Icon)
+		if err != nil {
+			return err
+		}
+		pixmaps = []dbusPixmap{{W: int32(w), H: int32(h), Data: data}}
+	}
+	if c.Items != nil && int64(t.menuNext)+int64(itemCount(cfg.Items)) > 1<<31-1 {
+		return fmt.Errorf("tray: menu identities exhausted; recreate the tray")
+	}
+	t.cfg = cfg
+	if c.Icon != nil {
+		t.publishIcon(pixmaps)
+	}
+	if c.Title != nil || c.Tooltip != nil {
+		t.setText(cfg.Title, cfg.Tooltip)
+	}
+	if c.Items != nil {
+		t.setMenu(cfg.Items)
+	}
+	if t.conn.Context().Err() != nil {
+		return ErrUnavailable
+	}
+	return nil
+}
+
+func itemCount(items []Item) int {
+	n := len(items)
+	for _, it := range items {
+		n += itemCount(it.Submenu)
+	}
+	return n
+}
 
 func bounds() (x, y, w, h int) { return 0, 0, 0, 0 }
 
@@ -361,8 +432,18 @@ func (t *linuxTray) create(cfg Config) error {
 		return fmt.Errorf("tray: export dbusmenu introspection: %w", err)
 	}
 
-	// Re-register if the watcher (the desktop's panel) restarts later.
-	go t.watchWatcherRestart()
+	// Subscribe before initial registration so watcher/host changes cannot be missed.
+	conn.Signal(t.signals)
+	for _, options := range [][]dbus.MatchOption{
+		{dbus.WithMatchSender("org.freedesktop.DBus"), dbus.WithMatchInterface("org.freedesktop.DBus"), dbus.WithMatchMember("NameOwnerChanged"), dbus.WithMatchArg(0, watcherInterface)},
+		{dbus.WithMatchInterface(watcherInterface), dbus.WithMatchObjectPath(watcherPath)},
+		{dbus.WithMatchInterface("org.freedesktop.DBus.Properties"), dbus.WithMatchObjectPath(watcherPath)},
+	} {
+		if err := conn.AddMatchSignal(options...); err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("tray: observe watcher: %w", err)
+		}
+	}
 
 	// Apply the declarative config: icon, tooltip, menu, status.
 	if len(cfg.Icon) > 0 {
@@ -371,115 +452,128 @@ func (t *linuxTray) create(cfg Config) error {
 			return err
 		}
 	}
-	tooltip := cfg.Tooltip
-	if tooltip == "" {
-		tooltip = cfg.Title
-	}
-	if tooltip != "" {
-		t.setTooltip(tooltip)
-	}
+	t.setText(cfg.Title, cfg.Tooltip)
 	if len(cfg.Items) > 0 {
 		t.setMenu(cfg.Items)
 	}
 
-	// Register with the StatusNotifierWatcher so the icon appears in the
-	// desktop's tray, now that the item is fully populated. The watcher may
-	// not be running yet (non-fatal): watchWatcherRestart re-registers when
-	// it gains an owner.
-	if err := t.registerWithWatcher(); err != nil {
-		fmt.Fprintf(os.Stderr, "tray: initial watcher registration failed (will retry): %v\n", err)
-	}
 	return nil
 }
 
-// watchWatcherRestart re-registers with the StatusNotifierWatcher when it gets
-// a new owner (panel restarts), until the tray is destroyed.
-func (t *linuxTray) watchWatcherRestart() {
-	ch := make(chan *dbus.Signal, 4)
-	t.conn.Signal(ch)
-	defer t.conn.RemoveSignal(ch)
-	if err := t.conn.AddMatchSignal(
-		dbus.WithMatchInterface("org.freedesktop.DBus"),
-		dbus.WithMatchMember("NameOwnerChanged"),
-		dbus.WithMatchArg(0, watcherInterface),
-	); err != nil {
-		return
-	}
+// Watcher refreshes always query a current unique owner, never stale signal IDs.
+func (t *linuxTray) watchAvailability() {
+	defer t.conn.RemoveSignal(t.signals)
+	retry := time.NewTicker(5 * time.Second)
+	defer retry.Stop()
+	t.refreshAvailability()
 	for {
 		select {
-		case sig, ok := <-ch:
-			if !ok {
-				return
-			}
-			if sig.Name != "org.freedesktop.DBus.NameOwnerChanged" || len(sig.Body) < 3 {
-				continue
-			}
-			if newOwner, ok := sig.Body[2].(string); !ok || newOwner == "" {
-				continue
-			}
-			_ = t.registerWithWatcher()
 		case <-t.quit:
 			return
+		case <-t.conn.Context().Done():
+			t.availability.publish(Availability{Running: true, Err: fmt.Errorf("%w: session bus disconnected; recreate the tray", ErrUnavailable)})
+			return
+		case sig, ok := <-t.signals:
+			if !ok {
+				t.availability.publish(Availability{Running: true, Err: fmt.Errorf("%w: session bus disconnected; recreate the tray", ErrUnavailable)})
+				return
+			}
+			if sig.Sender != "org.freedesktop.DBus" && sig.Sender != t.watcherOwner {
+				continue
+			}
+			t.refreshAvailability()
+		case <-retry.C:
+			t.refreshAvailability()
 		}
 	}
 }
 
-func (t *linuxTray) registerWithWatcher() error {
-	obj := t.conn.Object(watcherInterface, watcherPath)
-	call := obj.Call(watcherInterface+".RegisterStatusNotifierItem", 0, t.busName)
-	if call.Err != nil {
-		return fmt.Errorf("register status notifier item: %w", call.Err)
+func (t *linuxTray) refreshAvailability() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	v := Availability{Running: true}
+	var owner string
+	if err := t.conn.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, watcherInterface).Store(&owner); err != nil {
+		t.watcherOwner = ""
+		t.registeredOwner = ""
+		v.Err = fmt.Errorf("%w: no status notifier watcher", ErrUnavailable)
+		t.availability.publish(v)
+		return
 	}
-	return nil
+	t.watcherOwner = owner
+	if t.registeredOwner != owner {
+		t.registeredOwner = ""
+		if err := t.conn.Object(owner, watcherPath).CallWithContext(ctx, watcherInterface+".RegisterStatusNotifierItem", 0, t.busName).Err; err != nil {
+			v.Err = fmt.Errorf("%w: watcher rejected tray registration", ErrUnavailable)
+			t.availability.publish(v)
+			return
+		}
+		t.registeredOwner = owner
+	}
+	var host dbus.Variant
+	hostErr := t.conn.Object(owner, watcherPath).CallWithContext(ctx, "org.freedesktop.DBus.Properties.Get", 0, watcherInterface, "IsStatusNotifierHostRegistered").Store(&host)
+	var current string
+	if err := t.conn.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, watcherInterface).Store(&current); err != nil || current != owner {
+		t.watcherOwner = ""
+		t.registeredOwner = ""
+		v.Err = fmt.Errorf("%w: watcher changed during registration", ErrUnavailable)
+	} else {
+		v.Registered = true
+		var valid bool
+		v.HostPresent, valid = host.Value().(bool)
+		if hostErr != nil || !valid {
+			v.Err = fmt.Errorf("%w: watcher host state unavailable", ErrUnavailable)
+		} else if !v.HostPresent {
+			v.Err = fmt.Errorf("%w: no status notifier host", ErrUnavailable)
+		}
+	}
+	t.availability.publish(v)
 }
 
-// destroy flags the item as Passive, releases the bus name, closes the
-// connection, and unblocks Run. Safe from any goroutine; idempotent.
 func (t *linuxTray) destroy() {
+	t.ops <- struct{}{}
+	defer func() { <-t.ops }()
 	t.mu.Lock()
-	if t.conn == nil {
+	if t.closed {
 		t.mu.Unlock()
 		return
 	}
-	conn := t.conn
-	t.conn = nil
+	t.closed = true
+	close(t.quit)
 	t.mu.Unlock()
-
-	if t.props != nil {
-		t.props.SetMust(sniInterface, "Status", sniStatusPassive)
-		_ = conn.Emit(sniPath, sniInterface+".NewStatus", sniStatusPassive)
-	}
-	_, _ = conn.ReleaseName(t.busName)
-	_ = conn.Close()
-	select {
-	case <-t.quit:
-	default:
-		close(t.quit)
-	}
+	t.availability.close()
+	// Keep conn immutable; native handlers and watcher can race with Close.
+	_ = t.conn.Close()
 }
 
 // --- config application ---
 
-func (t *linuxTray) setIcon(png []byte) error {
-	w, h, argb, err := pngToARGB(png)
+func (t *linuxTray) setIcon(data []byte) error {
+	w, h, argb, err := pngToARGB(data)
 	if err != nil {
-		return fmt.Errorf("convert PNG to ARGB: %w", err)
+		return fmt.Errorf("tray: convert PNG to ARGB: %w", err)
 	}
-	t.mu.Lock()
-	t.iconPixmap = []dbusPixmap{{W: int32(w), H: int32(h), Data: argb}}
-	t.mu.Unlock()
-	t.props.SetMust(sniInterface, "IconPixmap", t.iconPixmap)
-	_ = t.conn.Emit(sniPath, sniInterface+".NewIcon")
+	t.publishIcon([]dbusPixmap{{W: int32(w), H: int32(h), Data: argb}})
 	return nil
 }
-
-func (t *linuxTray) setTooltip(text string) {
+func (t *linuxTray) publishIcon(pixmaps []dbusPixmap) {
+	if pixmaps == nil {
+		pixmaps = []dbusPixmap{}
+	}
 	t.mu.Lock()
-	t.tooltip = text
+	t.iconPixmap = pixmaps
 	t.mu.Unlock()
-	t.props.SetMust(sniInterface, "Title", text)
-	t.props.SetMust(sniInterface, "ToolTip", dbusTooltip{Title: text})
+	t.props.SetMust(sniInterface, "IconPixmap", pixmaps)
+	_ = t.conn.Emit(sniPath, sniInterface+".NewIcon")
+}
+func (t *linuxTray) setText(title, tooltip string) {
+	t.mu.Lock()
+	t.tooltip = tooltip
+	t.mu.Unlock()
+	t.props.SetMust(sniInterface, "Title", title)
+	t.props.SetMust(sniInterface, "ToolTip", dbusTooltip{Title: title, Text: tooltip})
 	_ = t.conn.Emit(sniPath, sniInterface+".NewTitle")
+	_ = t.conn.Emit(sniPath, sniInterface+".NewToolTip")
 }
 
 // setMenu replaces the whole menu tree, assigning depth-first ids (root
@@ -488,7 +582,8 @@ func (t *linuxTray) setMenu(items []Item) {
 	t.mu.Lock()
 	t.menuRoot = items
 	t.menuByID = make(map[int32]*itemState)
-	next := int32(1)
+	next := t.menuNext
+	t.menuBase = next
 	var walk func([]Item)
 	walk = func(level []Item) {
 		for i := range level {
@@ -502,6 +597,7 @@ func (t *linuxTray) setMenu(items []Item) {
 		}
 	}
 	walk(items)
+	t.menuNext = next
 	t.menuRev++
 	rev := t.menuRev
 	t.mu.Unlock()
@@ -562,7 +658,7 @@ func (m *dbusMenuService) buildLayout(id int32, maxDepth, currentDepth int32) me
 		}
 		var children []dbus.Variant
 		if maxDepth != 0 && m.tray.menuRoot != nil {
-			children = m.buildChildren(m.tray.menuRoot, 1, maxDepth, currentDepth+1)
+			children = m.buildChildren(m.tray.menuRoot, m.tray.menuBase, maxDepth, currentDepth+1)
 		}
 		return menuLayout{V0: 0, V1: rootProps, V2: children}
 	}
@@ -677,18 +773,19 @@ func (m *dbusMenuService) Event(id int32, eventID string, _ dbus.Variant, _ uint
 	}
 	m.tray.mu.Lock()
 	st, ok := m.tray.menuByID[id]
-	if !ok {
+	if !ok || m.tray.closed || st.item.Disabled || st.item.Separator || st.item.Submenu != nil {
 		m.tray.mu.Unlock()
 		return nil
 	}
-	toggle := st.item.Checkbox && !st.item.Disabled
+	toggle := st.item.Checkbox
 	if toggle {
 		st.checked = !st.checked
 	}
 	onClick := st.item.OnClick
+	checked := st.checked
 	m.tray.mu.Unlock()
 	if toggle {
-		m.publishItemState(id, st)
+		m.publishItemState(id, checked)
 	}
 	if onClick != nil {
 		onClick()
@@ -698,9 +795,9 @@ func (m *dbusMenuService) Event(id int32, eventID string, _ dbus.Variant, _ uint
 
 // publishItemState broadcasts ItemsPropertiesUpdated for a single item so
 // the desktop repaints its checkmark in place.
-func (m *dbusMenuService) publishItemState(id int32, st *itemState) {
+func (m *dbusMenuService) publishItemState(id int32, checked bool) {
 	props := make(map[string]dbus.Variant)
-	if st.checked {
+	if checked {
 		props["toggle-state"] = dbus.MakeVariant(int32(1))
 	} else {
 		props["toggle-state"] = dbus.MakeVariant(int32(0))

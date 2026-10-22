@@ -219,13 +219,15 @@ func TestUINestedLoopsCancelOnlyAtLast(t *testing.T) {
 	f.exitLoop()
 }
 
-// closeCountingEngine counts Close calls; every other engine method panics
-// through the nil embedded interface, so the test proves Close touches
-// nothing else.
+// closeCountingEngine supplies the lifecycle core and counts native Close
+// calls; other engine methods panic through the nil embedded interface.
 type closeCountingEngine struct {
 	engine
+	c      viewCore
 	closes atomic.Int32
 }
+
+func (e *closeCountingEngine) core() *viewCore { return &e.c }
 
 func (e *closeCountingEngine) Close() { e.closes.Add(1) }
 

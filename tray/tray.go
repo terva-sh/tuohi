@@ -16,13 +16,11 @@
 //		},
 //	})
 //
-// Config is fully declarative and read exactly once by Set/Run: icon,
-// tooltip, tray-level click handlers and the whole menu tree. The menu stays
-// fixed for the tray's lifetime - there is no imperative handle and no
-// dynamic-update machinery to change items after the icon is up (a tray is a
-// launcher, not a live dashboard). Menu state that a native checkbox owns
-// (Item.Checked) starts from the Config and toggles when the user clicks the
-// item; the backend tracks that one moving part.
+// Set/Run copy the initial Config. Update applies explicit runtime patches to
+// icons, text and menu snapshots without replacing the native status item.
+// Nil patch fields preserve current values, including native checkbox toggles.
+// CurrentAvailability and Config.OnAvailability report registration/host state;
+// a registered host never proves the user can see the icon.
 //
 // Threading: Run owns the process's UI event loop, so it must be called from
 // the main goroutine, locked to the main OS thread:
@@ -32,9 +30,10 @@
 //		tray.Run(cfg)
 //	}
 //
-// A menu item's OnClick runs on that UI thread; keep it short or hand the
-// work to another goroutine. Stop, by contrast, is safe to call from any
-// goroutine.
+// macOS/Windows click callbacks run on the UI thread; Linux callbacks run on
+// D-Bus handler goroutines and may overlap. Keep callbacks short. Update, Stop
+// and Remove are safe from any goroutine; native UI updates require a serviced
+// event loop, and off-thread Windows removal is queued to that loop.
 //
 // Set/Remove are the non-loop-owning pair for hosts that already run the UI
 // event loop - a tuohi.App, for example. Set shows the icon and menu
@@ -55,7 +54,7 @@ package tray
 import "errors"
 
 // ErrUnsupported is returned by Run and Set on a platform with no tray
-// backend.
+// backend, including Update.
 var ErrUnsupported = errors.New("tray: not supported on this platform")
 
 // ErrAlreadyRunning is returned by Run and Set when a tray is already active
@@ -63,7 +62,7 @@ var ErrUnsupported = errors.New("tray: not supported on this platform")
 var ErrAlreadyRunning = errors.New("tray: already running")
 
 // Config describes the tray icon, its tray-level click handlers and its
-// menu. It is read once by Set/Run.
+// menu. Set/Run copy it; use Update to change the active tray.
 type Config struct {
 	// Icon is a PNG image for the tray / menu bar. macOS renders it scaled
 	// to fit and falls back to Title when it is empty; Windows converts it
@@ -73,9 +72,9 @@ type Config struct {
 
 	// DarkModeIcon is an alternative PNG shown in dark mode. On Windows the
 	// tray picks it from the system theme (HKCU Personalize) at Set time and
-	// switches live when the theme changes (WM_SETTINGCHANGE). macOS and
-	// Linux adapt the single Icon / TemplateIcon to the theme themselves and
-	// ignore this field.
+	// switches live when the theme changes (WM_SETTINGCHANGE). macOS uses
+	// TemplateIcon for theme adaptation. Linux exports Icon without a theme
+	// selector. Both ignore DarkModeIcon.
 	DarkModeIcon []byte
 
 	// TemplateIcon is a macOS template image: a monochrome glyph the system
@@ -90,8 +89,8 @@ type Config struct {
 	AppName string
 
 	// Title is a short text label. macOS shows it in the menu bar (next to
-	// the icon, or alone when Icon is empty). Windows ignores it. Linux uses
-	// it as the SNI tooltip fallback when Tooltip is empty.
+	// the icon, or alone when Icon is empty). Windows/Linux use it as an
+	// initial tooltip fallback when Tooltip is empty.
 	Title string
 
 	// Tooltip is shown on hover.
@@ -122,6 +121,14 @@ type Config struct {
 	// Items are the menu entries, top to bottom. nil or empty attaches no
 	// menu.
 	Items []Item
+
+	// OnAvailability observes native registration/host changes on a serial
+	// worker, never under native UI locks. Rapid changes may coalesce to the
+	// latest state. Removal drops queued delivery; a callback already admitted
+	// may finish afterwards. Consult CurrentAvailability before deciding to
+	// hide the only window. This callback may call Update/Remove; give Update
+	// a deadline while waiting for the native UI loop to start.
+	OnAvailability func(Availability)
 }
 
 // Item is one entry in the tray menu.
@@ -168,7 +175,7 @@ type Item struct {
 // thread, before that loop runs, and pair it with Remove. It returns
 // ErrUnsupported on platforms with no backend and ErrAlreadyRunning if a
 // tray is already active.
-func Set(cfg Config) error { return set(cfg) }
+func Set(cfg Config) error { return set(cloneConfig(cfg)) }
 
 // Remove hides the tray that Set showed. It is safe to call from any
 // goroutine, is a no-op when no tray is active, and leaves the host's run
@@ -179,7 +186,7 @@ func Remove() { remove() }
 // blocks and must be called from the main goroutine (see the package doc on
 // threading). It returns ErrUnsupported on platforms with no backend and
 // ErrAlreadyRunning if a tray is already active.
-func Run(cfg Config) error { return run(cfg) }
+func Run(cfg Config) error { return run(cloneConfig(cfg)) }
 
 // Stop hides the tray and makes Run return. It is safe to call from any
 // goroutine and is a no-op when no tray is running.
