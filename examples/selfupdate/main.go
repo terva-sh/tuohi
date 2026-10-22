@@ -107,6 +107,27 @@ func runProgram() error {
 	}
 	stateDir := filepath.Join(cache, "tuohi-selfupdate")
 	view.Bind = map[string]any{
+		"updates.previous": func() string {
+			if *check {
+				return ""
+			}
+			f, e := os.Open(filepath.Join(stateDir, "result-path"))
+			if e != nil {
+				return ""
+			}
+			defer f.Close()
+			path, e := io.ReadAll(io.LimitReader(f, 4097))
+			if e != nil || len(path) > 4096 || !filepath.IsAbs(string(path)) {
+				return ""
+			}
+			result, e := updater.ReadResult(string(path))
+			if e != nil {
+				return ""
+			}
+			// Display the outcome without trusting its sequence or automatically
+			// deleting the retained backup before application health is known.
+			return result.State
+		},
 		"updates.prepare": func() (string, error) {
 			if !op.TryLock() {
 				return "", updater.ErrBusy
