@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T22:07:33Z
+updated_at: 2026-10-22T22:10:38Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -77,3 +77,7 @@ Final validation improvement: portable subprocess restart/cancellation regressio
 **agent:codex/t3-b903096c** at 2026-10-22T22:07:33Z
 
 Final integration source bd63b0a merges GUI harness fix 3f67b4d from PR #87. The updater example/native-test source f26f14d received clean full review 4fa95d92-d59c-4cda-9130-2fe448f47470, Actions #602, at exact base 3f5e402; hosted CI #603 passed. New integration CGO_ENABLED=0 just ci passes all eight targets. Root GUI fixes passed full just test-gui on both Linux WebKitGTK 6.0 and 4.1; the final selfupdate example separately passed both native stacks before this test-only merge. No native macOS/Windows/BSD runtime evidence is claimed. Remaining work: fresh exact-head/base reviews/checks on PRs #87/#88, then close the integration and GUI-validation tickets and epic, commit ticket records, and carry the review. No merge or public release.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:10:38Z
+
+Integrated PR #87 fix 643ba16553867276b3be2ecb6757f18ad4a2b084 for review 2741 high finding: bundle/stage overlap now uses filesystem identity rather than case-sensitive string containment. Complete cgo-free ci/all eight targets and Linux updater tests passed on the fix; case-alias test skips truthfully on this case-sensitive volume, Darwin and Windows test binaries compile, native macOS remains unavailable. The bundle ticket is reopened until the fresh review/check cycle is complete. The GUI harness ticket is complete; review 2741 raised no defect in its changes. Request a fresh full exact-head/base review for this integrated example head after publication.
