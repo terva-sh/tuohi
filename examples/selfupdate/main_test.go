@@ -48,7 +48,7 @@ func TestCheckFeedCanOnlyStageHarmlessPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if r.Version() != "example-2" || r.Sequence() != 2 {
 		t.Fatal("unexpected reference release")
 	}
@@ -95,7 +95,7 @@ func TestTransportRejectsBadStatusAndDowngradeRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b, err := io.ReadAll(r)
 	if err != nil || string(b) != "artifact" {
 		t.Fatal(string(b), err)

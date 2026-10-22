@@ -214,7 +214,7 @@ func (c *Client) read(ctx context.Context, raw string, limit int64) ([]byte, err
 	if r == nil {
 		return nil, fmt.Errorf("%w: nil download", ErrInvalid)
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	b, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, r: r}, limit+1))
 	if err != nil {
 		return nil, err
@@ -279,7 +279,7 @@ func (r *Release) Stage(ctx context.Context, progress func(Progress)) (_ *Staged
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	src, err := r.c.cfg.Fetch(ctx, r.asset.URL)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (r *Release) Stage(ctx context.Context, progress func(Progress)) (_ *Staged
 	if src == nil {
 		return nil, fmt.Errorf("%w: nil download", ErrInvalid)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	h := sha256.New()
 	w := &progressWriter{w: io.MultiWriter(f, h), total: r.asset.Size, callback: progress}
 	n, err := io.Copy(w, io.LimitReader(&contextReader{ctx: ctx, r: src}, r.asset.Size+1))

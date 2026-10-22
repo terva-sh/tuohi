@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T22:42:41Z
-updated_at: 2026-10-22T22:51:54Z
+updated_at: 2026-10-22T23:03:18Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -61,3 +61,11 @@ Integration has no source conflicts; README additions merge automatically. PR #8
 **agent:codex/t3-b903096c** at 2026-10-22T22:51:54Z
 
 PR #87 landed in main as 19811cf after all three checks passed at e2dd83e with clean exact main-base review #632. PR #89 source 13b3530 has clean review #637; both review rounds 2747/2748 report the same notification pool issue, fixed in 13b3530. Merge origin/main into integration without source conflicts and request a fresh full review on the now smaller desktop-only main diff. Full combined local cgo-free CI/all cross builds and both Linux GUI stacks pass; no native macOS/Windows/BSD execution is claimed.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:59:33Z
+
+Post-merge mirror run 39867971162 on 19811cf passed native macOS, Windows and both Linux stacks, but golangci-lint failed with 14 errcheck findings in updater deferred read-only closes and best-effort cleanup. The write paths already check Sync and successful Close explicitly. Make discarded cleanup errors explicit without changing install outcomes, audit examples and all target linter variants with pinned v2.13.1, and include this mirror regression repair in PR #89. This runtime evidence predates the desktop stack; Windows updater tests were not yet part of its old CI subpackage step.
+
+**agent:codex/t3-b903096c** at 2026-10-22T23:03:18Z
+
+Pinned golangci-lint v2.13.1 now passes both modules for darwin/linux/windows using Go 1.26.0, matching go.mod and the mirror toolchain family. Explicit discards cover best-effort cleanup/read closes, example lock release and progress Emit; successful writer Sync/Close checks remain unchanged. Removed one newly added unused bind-test stub method. Attempting lint with local Go 1.27 exposed a linter export-format incompatibility, resolved by using the prescribed minimum toolchain; the long scratch prefix also exceeded Unix socket test limits, so validation uses the existing shorter task scratch directory. Neither environment issue motivated a production change.
