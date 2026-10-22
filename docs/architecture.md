@@ -95,6 +95,7 @@ package) did it. The layout:
 | `tuohi/clipboard` | the clipboard: `Copy` and `Paste`, in place of `App.Copy` and `App.Paste` |
 | `tuohi/notify` | notifications. It existed already; `App.Notify` is gone, and callers use `notify.Show`. |
 | `tuohi/tray` | tray icon and menu. It existed already; `App.Tray` is gone, and callers set the tray up in `App.Start`. |
+| `tuohi/updater` | Optional signed release verification, bounded staging and explicit install/restart. Consumers supply transport, consent, release policy and normal shutdown; the root package imports none of it. See [updater/README.md](../updater/README.md). |
 
 None of the subpackages imports the root, and that direction stays. Where a
 service needs the UI thread, `tuohi` provides a hook and does not import the

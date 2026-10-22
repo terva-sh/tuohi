@@ -12,9 +12,11 @@ var resGoroutineCalls atomic.Value // string
 
 // goroutineCallsScenario checks that View's methods work when called from a
 // binding, which runs on its own goroutine, off the UI thread. The page at /a
-// calls the "step" binding, and the binding calls Eval, Focus, and Navigate
+// calls the "step" binding, and the bindings call Eval, Focus, and Navigate
 // on the View directly, with no Dispatch. Eval makes the page report through
-// the "shown" binding, and Navigate loads /b, which reports its path.
+// the "shown" binding, which then calls Navigate to load /b and report its
+// path. Waiting for Eval's report matters: evaluation is asynchronous, so an
+// immediate navigation can replace the page before the script executes.
 func goroutineCallsScenario() string {
 	base, closeServer, err := servePlain(func(target string) (string, string) {
 		return "", `<!DOCTYPE html><html><body><script>
@@ -37,23 +39,37 @@ window.addEventListener('pageshow', function(){
 
 	shown := make(chan string, 16)
 	var offUI atomic.Bool
-	_ = w.w.Bind("shown", func(s string) { shown <- s })
+	_ = w.w.Bind("shown", func(s string) {
+		shown <- s
+		if s == "eval:/a" {
+			offUI.Store(offUI.Load() && !onUIThread())
+			w.Navigate(base + "b")
+		}
+	})
 	_ = w.w.Bind("step", func() {
 		offUI.Store(!onUIThread())
 		w.Eval(`window.shown('eval:' + location.pathname)`)
 		w.Focus(true)
-		w.Navigate(base + "b")
 	})
 
 	result := make(chan string, 1)
-	time.AfterFunc(30*time.Second, func() { w.Close() })
+	watchdog := time.AfterFunc(30*time.Second, func() { w.Close() })
+	defer watchdog.Stop()
 	go func() {
 		defer w.Close()
+		// One deadline for all reports expires before the emergency close, so
+		// failures retain their partial observations instead of "no report".
+		deadline := time.After(20 * time.Second)
+		expired := false
 		next := func() string {
+			if expired {
+				return "none"
+			}
 			select {
 			case s := <-shown:
 				return s
-			case <-time.After(10 * time.Second):
+			case <-deadline:
+				expired = true
 				return "none"
 			}
 		}
