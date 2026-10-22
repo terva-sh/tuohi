@@ -1,0 +1,51 @@
+---
+schema: 4
+id: TKT-01M5JTA6MQ25ZDBGKAHJ1B47MJ
+title: Synchronize GUI clipboard and binding lifecycle scenarios
+type: bug
+status: in-progress
+status_reason: null
+priority: normal
+due_on: null
+labels:
+  - area/ci
+assignees: []
+milestone: null
+parent: TKT-01M5JR0E6ZM7D41HHX2QN1ZK7B
+origin: null
+dependencies: []
+blocks_on: none
+references: []
+moved_to: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/updater-bundle
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: 3f5e4024f383622564810f4e03360c084d1df39e
+  session: null
+  claimed_at: 2026-10-22T22:04:41Z
+  expires_at: null
+archive: null
+created_at: 2026-10-22T22:04:41Z
+updated_at: 2026-10-22T22:04:41Z
+created_by:
+  id: agent:codex/t3-b903096c
+  name: ""
+updated_by:
+  id: agent:codex/t3-b903096c
+  name: ""
+extensions: {}
+---
+
+## Description
+
+CI run #599 on PR #87 exposed two existing GUI scenario races, in root tests unchanged by the updater. clipboardScenario starts off-thread synchronous clipboard work before webview.Run enters the UI dispatcher loop; it can correctly receive errUILoopStopped. goroutineCallsScenario assumes asynchronous Eval completes before a following Navigate; navigation can replace the page before its report arrives, and its three independent 10-second waits race the 30-second watchdog. Gate clipboard work on a dispatched UI turn, chain navigation after the evaluation report, use a single shorter observation deadline, and cancel watchdogs after each scenario. Preserve actual off-UI API calls and exact expected reports. Authorized as necessary validation work under the selected updater epic; no production API behavior change.
+
+## Acceptance criteria
+
+- [ ] Off-thread clipboard work starts after a UI loop turn; binding navigation waits for the evaluated page report, with bounded deterministic results.
+- [ ] Both Linux WebKitGTK stacks, cgo-free CI and cross builds pass; review dispositions and validation evidence are recorded.
+
+## Implementation plan
+
+Use a queued native dispatch turn as clipboard startup barrier; navigate from the evaluation-report binding; share one observation deadline and cancel watchdog timers. Run both native Linux stacks, required ci/cross builds, then fresh exact-head/base review. Archive failure and fix in PR #87 and ticket.
