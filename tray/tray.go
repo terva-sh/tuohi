@@ -122,6 +122,14 @@ type Config struct {
 	// Items are the menu entries, top to bottom. nil or empty attaches no
 	// menu.
 	Items []Item
+
+	// OnAvailability observes native registration/host changes on a serial
+	// worker, never under native UI locks. Rapid changes may coalesce to the
+	// latest state. Removal drops queued delivery; a callback already admitted
+	// may finish afterwards. Consult CurrentAvailability before deciding to
+	// hide the only window. This callback may call Update/Remove; give Update
+	// a deadline while waiting for the native UI loop to start.
+	OnAvailability func(Availability)
 }
 
 // Item is one entry in the tray menu.
@@ -168,7 +176,7 @@ type Item struct {
 // thread, before that loop runs, and pair it with Remove. It returns
 // ErrUnsupported on platforms with no backend and ErrAlreadyRunning if a
 // tray is already active.
-func Set(cfg Config) error { return set(cfg) }
+func Set(cfg Config) error { return set(cloneConfig(cfg)) }
 
 // Remove hides the tray that Set showed. It is safe to call from any
 // goroutine, is a no-op when no tray is active, and leaves the host's run
@@ -179,7 +187,7 @@ func Remove() { remove() }
 // blocks and must be called from the main goroutine (see the package doc on
 // threading). It returns ErrUnsupported on platforms with no backend and
 // ErrAlreadyRunning if a tray is already active.
-func Run(cfg Config) error { return run(cfg) }
+func Run(cfg Config) error { return run(cloneConfig(cfg)) }
 
 // Stop hides the tray and makes Run return. It is safe to call from any
 // goroutine and is a no-op when no tray is running.
