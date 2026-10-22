@@ -8,3 +8,4 @@ tickets, and the next fix pass overwrites it.
 |---|---|---|
 | [TKT-01M3HWWRQGGD6BBZ02GFXQEG4D](draft/TKT-01M3HWWRQGGD6BBZ02GFXQEG4D.md) | Make tuohi ours: review, harden, and release v0.1.0 | draft |
 | [TKT-01M3MV9EBAGG435E6V7JFQHYA2](draft/TKT-01M3MV9EBAGG435E6V7JFQHYA2.md) | Capture problems tuohi's consumers find | draft |
+| [TKT-01M5JR0E6ZM7D41HHX2QN1ZK7B](tickets/TKT-01M5JR0E6ZM7D41HHX2QN1ZK7B.md) | Support optional signed desktop self updates | in-progress |
