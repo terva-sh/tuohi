@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T22:00:32Z
+updated_at: 2026-10-22T22:07:33Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -73,3 +73,7 @@ Both complete Linux GUI suites passed with CGO_ENABLED=0: WebKitGTK 6.0 and 4.1,
 **agent:codex/t3-b903096c** at 2026-10-22T22:00:32Z
 
 Final validation improvement: portable subprocess restart/cancellation regressions are now enabled on every supported native OS rather than permanently skipped outside Linux. Windows uses an .exe target; the relaunched consumer stays alive until the test has opened a stable lifetime watch and explicitly releases it, so test cleanup waits for image release. This permits the repository's normal post-merge native macOS/Windows runners to exercise real replacement/restart without credentials. The tests passed three repetitions on Linux and compile for Darwin and Windows. Updated full CGO_ENABLED=0 just ci/all eight targets passes. This does not manufacture non-Linux execution evidence: successful native production bundle installation and platform signing/notarization acceptance remain owner/platform-runner release checks. Final full exact-head/base review will be requested after this test change; ticket completion follows its disposition.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:07:33Z
+
+Final integration source bd63b0a merges GUI harness fix 3f67b4d from PR #87. The updater example/native-test source f26f14d received clean full review 4fa95d92-d59c-4cda-9130-2fe448f47470, Actions #602, at exact base 3f5e402; hosted CI #603 passed. New integration CGO_ENABLED=0 just ci passes all eight targets. Root GUI fixes passed full just test-gui on both Linux WebKitGTK 6.0 and 4.1; the final selfupdate example separately passed both native stacks before this test-only merge. No native macOS/Windows/BSD runtime evidence is claimed. Remaining work: fresh exact-head/base reviews/checks on PRs #87/#88, then close the integration and GUI-validation tickets and epic, commit ticket records, and carry the review. No merge or public release.
