@@ -305,3 +305,65 @@ func TestInstallationLockSerializesStages(t *testing.T) {
 	}
 	_ = b.Close()
 }
+
+type cancelDuringHelperCopy struct {
+	context.Context
+	cancel context.CancelFunc
+	helper string
+}
+
+func (c *cancelDuringHelperCopy) Err() error {
+	if info, err := os.Stat(c.helper); err == nil && info.Size() > 0 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func TestScheduleRetriesAfterCancelledHelperCopy(t *testing.T) {
+	f := newFixture(t)
+	target, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.data, err = os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256(f.data)
+	f.m.Assets[0].Size = int64(len(f.data))
+	f.m.Assets[0].SHA256 = hex.EncodeToString(h[:])
+	f.envelope = f.sign(t, f.m)
+	r, err := f.c.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := r.Stage(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	helper := filepath.Join(s.dir, "helper")
+	if runtime.GOOS == "windows" {
+		helper += ".exe"
+	}
+	base, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ctx := &cancelDuringHelperCopy{Context: base, cancel: cancel, helper: helper}
+	opts := RestartOptions{Mode: PortableInstall, Target: target}
+	if _, err = s.Schedule(ctx, opts); !errors.Is(err, context.Canceled) {
+		t.Fatal("helper copy was not interrupted", err)
+	}
+	if _, err = os.Stat(helper); !os.IsNotExist(err) {
+		t.Fatal("partial helper retained", err)
+	}
+	if _, err = os.Stat(filepath.Join(s.dir, "artifact")); err != nil {
+		t.Fatal("stage lost", err)
+	}
+	p, err := s.Schedule(context.Background(), opts)
+	if err != nil {
+		t.Fatal("same stage cannot be retried", err)
+	}
+	if err = p.Cancel(); err != nil {
+		t.Fatal(err)
+	}
+}

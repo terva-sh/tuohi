@@ -23,7 +23,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T21:35:31Z
+updated_at: 2026-10-22T21:43:33Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -52,6 +52,14 @@ Implement private helper copy and authenticated lifetime handshake with stable n
 **agent:codex/t3-b903096c** at 2026-10-22T21:35:30Z
 
 Implemented explicit portable/managed installation modes, early-main helper handling, same-directory prepared candidates/backups, stable native parent watchers (Linux pidfd, BSD/macOS kqueue, Windows process handle), cross-process install locks, cancellation/readiness deadlines, target/candidate digest rechecks, ordinary replacement/launch rollback, explicit argv/environment/working directory semantics and retained private result/recovery records. Real Linux subprocess tests demonstrate no replacement before parent termination, exact argument preservation and cancellation. Fault tests cover changed target/candidate, replacement failure, launch failure, failed backup restoration, serialized installs and native-watch cancellation. CGO_ENABLED=0 focused tests passed five repetitions and full just ci passed, including all eight cross targets and ticket strict check. Native macOS/Windows/BSD execution remains unavailable; compilation is not claimed as runtime validation. Backups remain until the consumer confirms health; Windows cannot unlink its running helper and retains its stage for later cleanup. These limits and power-loss recovery are documented. Existing App defaults are untouched. Integration/producer example and final model reviews remain under the dependent integration ticket.
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:42:23Z
+
+done to in-progress: Address PR #86 review 2734 partial helper copy prevents retry
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:43:33Z
+
+PR #86 full review 2734, run 7b882fd5-44f0-4bb5-a0ba-146a3aa851fe (Actions #584), head d36d5efbb4098c36ec5c0ddf0bdc55d251a89c0d against base 1d8d40e487df3c60a8d96d97ff8fd50eaa287259: accepted medium finding that a partially copied helper could survive cancellation/write/sync failure and prevent retry via O_EXCL. Fixed copyFile to remove any destination it created unless the complete write/chmod/sync/close succeeds. This also hardens every prepared copy, not just the helper call. A deterministic regression cancels after the actual helper destination has received bytes, asserts it is gone and the signed staged artifact remains, retries Schedule on that exact Staged handle successfully, then cancels the waiting helper. CGO_ENABLED=0 just ci/all eight target cross builds pass. Fresh full review will be requested after pushing. The preceding #85 case-alias fix now has a clean full review, run daedd397-f228-445d-b4da-67fc25850afd / Actions #580 at 1d8d40e against dc693b2.
 
 ## Summary
 

@@ -522,7 +522,13 @@ func copyFile(ctx context.Context, src, dst string, mode os.FileMode) (string, e
 	if err != nil {
 		return "", err
 	}
-	defer out.Close()
+	complete := false
+	defer func() {
+		_ = out.Close()
+		if !complete {
+			_ = os.Remove(dst)
+		}
+	}()
 	h := sha256.New()
 	if _, err = io.Copy(io.MultiWriter(out, h), &contextReader{ctx: ctx, r: in}); err != nil {
 		return "", err
@@ -536,6 +542,7 @@ func copyFile(ctx context.Context, src, dst string, mode os.FileMode) (string, e
 	if err = out.Close(); err != nil {
 		return "", err
 	}
+	complete = true
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
