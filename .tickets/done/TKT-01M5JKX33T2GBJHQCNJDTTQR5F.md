@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JKX33T2GBJHQCNJDTTQR5F
 title: Expose tray host registration state and availability changes
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -23,17 +23,10 @@ references:
   - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
     path: null
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/prepare-library-changes
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be
-  session: null
-  claimed_at: 2026-10-22T20:12:40Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T21:04:35Z
+updated_at: 2026-10-22T22:44:15Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -81,3 +74,7 @@ Final validation: CGO_ENABLED=0 just ci passed in the library and examples with 
 **agent:codex/t3-b903096c** at 2026-10-22T21:04:35Z
 
 Coupled PR #83 is ready at abc50ac336d37fa3e0aeb3751a529e0fe6a2f48e against base 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc. Full review #569/run d8d3e9ad-7211-459b-b730-f1d09426a4a7 is clean and Forgejo CI #567 passed both jobs. Native runtime evidence is Linux only. Await owner merge; no release was published.
+
+## Summary
+
+Implemented with public API docs/examples, meaningful shared and native Linux regressions, cgo-free cross builds and clean reviewed source. PR #83 was owner-merged into its stack parent; final integration to main is tracked by TKT-01M5JWFSGV9TKY437YPS9G9021 (Land reviewed desktop and updater stacks on main). Native macOS/Windows validation remains a separate hosted/runtime requirement; managed notifications on Windows explicitly return ErrUnsupported.

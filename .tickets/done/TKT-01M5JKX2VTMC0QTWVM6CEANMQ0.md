@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JKX2VTMC0QTWVM6CEANMQ0
 title: Support safe runtime updates to tray icons and menus
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -22,17 +22,10 @@ references:
   - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
     path: null
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/prepare-library-changes
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be
-  session: null
-  claimed_at: 2026-10-22T20:12:40Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T21:04:35Z
+updated_at: 2026-10-22T22:44:14Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -84,3 +77,7 @@ PR #83 review 2727 / Actions #566, exact head b6bfd13c2c8ba2354bbb9d273ef5f29774
 **agent:codex/t3-b903096c** at 2026-10-22T21:04:35Z
 
 PR #83 is clean after the autorelease-pool fix at abc50ac336d37fa3e0aeb3751a529e0fe6a2f48e against base 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc. Full Terva review Actions #569 / run d8d3e9ad-7211-459b-b730-f1d09426a4a7 resolves the original finding and reports no additional concrete defects. Forgejo CI #567 passed check and both Linux GUI stacks. Local cgo-free just ci/all cross builds passed; Darwin regression compiled explicitly with go test -c but was not executed. Disposition comment 33597. PR awaits owner merge; no merge/release authorization was inferred.
+
+## Summary
+
+Implemented with public API docs/examples, meaningful shared and native Linux regressions, cgo-free cross builds and clean reviewed source. PR #83 was owner-merged into its stack parent; final integration to main is tracked by TKT-01M5JWFSGV9TKY437YPS9G9021 (Land reviewed desktop and updater stacks on main). Native macOS/Windows validation remains a separate hosted/runtime requirement; managed notifications on Windows explicitly return ErrUnsupported.

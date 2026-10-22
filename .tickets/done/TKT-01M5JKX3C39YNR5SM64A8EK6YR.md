@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JKX3C39YNR5SM64A8EK6YR
 title: Add close interception and native window lifecycle events
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -26,17 +26,10 @@ references:
   - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/84
     path: null
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/prepare-library-changes
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be
-  session: null
-  claimed_at: 2026-10-22T20:12:40Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T21:12:08Z
+updated_at: 2026-10-22T22:44:15Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -94,3 +87,7 @@ Final API adjustments: RequestClose is harmless before Show/after Close and bind
 Internal PR #84 is ready: https://git.local.sothr.com/terva-sh/tuohi/pulls/84. Tested implementation head ed3d734523ead9e11199512e64dee60513877a4d against exact base abc50ac336d37fa3e0aeb3751a529e0fe6a2f48e (PR #83). Full review Actions #572 / run 6af1d51b-40ef-4ecb-8331-248023de24f8, request window-lifecycle-ready-ed3d734, is clean: comment 33615. There are no findings requiring dispositions. The review accurately identifies native macOS/Windows runtime validation and notification ordering/reentrancy there as limits; this Linux session supplies compilation and Linux runtime evidence only. Local cgo-free just ci, all prescribed cross builds, both Linux GUI stacks and 20 shared lifecycle regression repetitions passed. Forgejo CI #571 validates the same implementation head. Kuiske received all five API decisions, tickets, tested source and PR links. No public version has been published.
 
 The following ticket-only commit records this result and PR reference. Request review carry for that head; implementation code remains the reviewed ed3d734 source. Ticket remains in-progress awaiting owner merge. This session does not have merge/release authorization.
+
+## Summary
+
+Implemented with public API docs/examples, meaningful shared and native Linux regressions, cgo-free cross builds and clean reviewed source. PR #84 was owner-merged into its stack parent; final integration to main is tracked by TKT-01M5JWFSGV9TKY437YPS9G9021 (Land reviewed desktop and updater stacks on main). Native macOS/Windows validation remains a separate hosted/runtime requirement; managed notifications on Windows explicitly return ErrUnsupported.

@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JKX2K8C4CAKPTP1VZ28D6G
 title: Add interactive notification handles and permission management
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -24,17 +24,10 @@ references:
   - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/82
     path: null
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/prepare-library-changes
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be
-  session: null
-  claimed_at: 2026-10-22T20:12:40Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:54:16Z
+updated_at: 2026-10-22T22:44:14Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -128,3 +121,7 @@ Clean full review for 8798ad126239e84d4cb926b803109c5403467753 against 4f8d5e638
 **agent:codex/t3-b903096c** at 2026-10-22T20:54:16Z
 
 PR #82 is ready for owner review/merge at exact source head 9ffc04f7a1b66f2fb45b53da3f9a18b981ca7cdc against base 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099. Clean full review Actions #564 (27048), run 1d45de26-f37a-47fb-8622-5dcbddc4308a, reports no additional findings and confirms prior resolutions; PR clean-status comment 33574 records the named revision. Forgejo CI #562 passed its check and both Linux GUI stacks. Current head has all original review 2722 fixes, follow-up 2724/2725 fixes, individual dispositions, and the audited bus-disconnect fix. Kuiske received tested source and exact check/review evidence. Native bundled macOS delivery/permission/delegate validation remains unavailable; cross builds and control-path regressions are not that evidence. This note is recorded on the subsequent tray work branch to preserve the clean reviewed notification head. No merge or release is authorized/performed.
+
+## Summary
+
+Implemented with public API docs/examples, meaningful shared and native Linux regressions, cgo-free cross builds and clean reviewed source. PR #82 was owner-merged into its stack parent; final integration to main is tracked by TKT-01M5JWFSGV9TKY437YPS9G9021 (Land reviewed desktop and updater stacks on main). Native macOS/Windows validation remains a separate hosted/runtime requirement; managed notifications on Windows explicitly return ErrUnsupported.
