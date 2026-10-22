@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:29:05Z
+updated_at: 2026-10-22T20:33:48Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -82,3 +82,7 @@ Implemented the opt-in notify.Client/Handle API with serial worker activation, G
 Validation: final CGO_ENABLED=0 just ci passed in both modules, including all eight prescribed target cross builds. just test-gui passed on both native Linux WebKitGTK stacks, including showcase/loopback. Shared client tests cover identity, duplicate IDs, errors, replacement, dismissal, queued activation, callback-initiated close, cancellation interrupting permission waits, cleanup and service loss. Private D-Bus integration tests exercised actual GetCapabilities/Notify/actions/replacement/CloseNotification wire behavior, spoofed/unknown IDs, daemon ownership changes and redaction of service error bodies. These are protocol tests, not proof a real notification banner appeared. The public managednotify example demonstrates desktop-adapter activation/focus, replacement and room-read dismissal. A native macOS test is provided for unbundled safety, but this Linux host cannot execute it or validate bundled permission/delivery behavior; macOS/Windows/BSD compilation is not native runtime evidence. No version was published.
 
 Primary API reference consulted: Apple's UNUserNotificationCenter documentation says the shared center is safe from any application thread and requires the delegate to be installed before interacting with it: https://developer.apple.com/documentation/usernotifications/unusernotificationcenter.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:33:48Z
+
+PR #82 review 2722 (run #549) reviewed exact head 48a07f9ee66cc0c3c3daaffbf3ecf98391c45c2e against base 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099 and contains two valid medium findings. Finding 1: the state mutex remains held during native operations, so a queued caller cannot observe its own cancellation. Replace admission with a context-aware gate and keep state locking short, buffering native events only while publishing a mutation's resulting correlation. Regress deadline expiration for Permission, RequestPermission, Post, Replace and Dismiss behind an independently blocked permission request, plus early native event correlation. Finding 2: GetNameOwner does not activate an idle installed notification daemon. StartServiceByName only when the name has no owner, then resolve/bind the unique owner while retaining owner-change and stale-ID protections. Add a genuinely activatable service on a private bus, initially without an owner. Rerun required cgo-free checks, post individual dispositions and request a fresh exact-head/base review. Ownership remains this session alone; Kuiske inspected read-only.
