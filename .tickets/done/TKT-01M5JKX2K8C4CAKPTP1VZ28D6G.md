@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M5JKX2K8C4CAKPTP1VZ28D6G
 title: Add interactive notification handles and permission management
 type: task
-status: in-progress
-status_reason: "Integration PR #89 review 2747 confirms notification autorelease pools lack OS-thread pinning."
+status: done
+status_reason: null
 priority: normal
 due_on: null
 labels:
@@ -24,17 +24,10 @@ references:
   - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/82
     path: null
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/complete-desktop-stack
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: 42761833bbe3db5b4f2dd6a1d702a18af26abd72
-  session: null
-  claimed_at: 2026-10-22T22:48:11Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T22:48:31Z
+updated_at: 2026-10-22T22:51:54Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -125,6 +118,10 @@ Accepted high finding in PR #89 review 2747 at 3d01112: notificationPool creates
 
 notificationPool now locks its worker to one OS thread before pool allocation and defers unlock before drain, ensuring drain completes while pinned. Added a notification-specific Darwin worker regression with 1,000 autoreleased NSNumber allocations/yields and pthread_self identity checks, following the already-reviewed tray native test. The Darwin/arm64 notification test binary compiles with CGO_ENABLED=0; native execution is unavailable here. Linux notify/tray/updater regressions pass. NSThread in the plan was replaced by pthread_self to match the existing tray fixture and directly compare native OS-thread identity.
 
+**agent:codex/t3-b903096c** at 2026-10-22T22:51:53Z
+
+Notification pool affinity finding in PR #89 reviews 2747 and 2748 is resolved by 13b3530. Fresh full review Actions #637 / run de8ca529-80d3-4dbc-8148-452d797bab75 is clean at 13b3530 / 9196aaf and explicitly confirms resolution. Full combined CGO_ENABLED=0 just ci/all eight builds pass after the fix; Linux package regressions execute, and Darwin/arm64 notification test binary compiles. Native macOS execution and packaged delivery/permissions remain unavailable locally; mirror CI must supply actual runtime evidence. Integration to main remains tracked separately.
+
 ## Summary
 
-Implemented with public API docs/examples, meaningful shared and native Linux regressions, cgo-free cross builds and clean reviewed source. PR #82 was owner-merged into its stack parent; final integration to main is tracked by TKT-01M5JWFSGV9TKY437YPS9G9021 (Land reviewed desktop and updater stacks on main). Native macOS/Windows validation remains a separate hosted/runtime requirement; managed notifications on Windows explicitly return ErrUnsupported.
+Notification pool affinity finding in PR #89 reviews 2747 and 2748 is resolved by 13b3530. Fresh full review Actions #637 / run de8ca529-80d3-4dbc-8148-452d797bab75 is clean at 13b3530 / 9196aaf and explicitly confirms resolution. Full combined CGO_ENABLED=0 just ci/all eight builds pass after the fix; Linux package regressions execute, and Darwin/arm64 notification test binary compiles. Native macOS execution and packaged delivery/permissions remain unavailable locally; mirror CI must supply actual runtime evidence. Integration to main remains tracked separately.

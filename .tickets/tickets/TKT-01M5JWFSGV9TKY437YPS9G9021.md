@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T22:42:41Z
-updated_at: 2026-10-22T22:43:36Z
+updated_at: 2026-10-22T22:51:54Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -44,7 +44,7 @@ The owner requested review and merge of remaining PR work. Several stacked PRs w
 
 ## Acceptance criteria
 
-- [ ] Updater stack lands on main with final-base review and passing checks.
+- [x] Updater stack lands on main with final-base review and passing checks.
 - [ ] Desktop notification, tray and window lifecycle stack lands on main with final-base review and passing checks.
 - [ ] Mirror is synchronized and native validation results or remaining gaps are reported accurately.
 
@@ -57,3 +57,7 @@ Retarget PR #87 to main so the portable installer, bundle support and examples l
 **agent:codex/t3-b903096c** at 2026-10-22T22:43:36Z
 
 Integration has no source conflicts; README additions merge automatically. PR #87 now targets main and has fresh full review dispatched. Windows mirror CI previously exercised only the root and instance packages, so it would omit new updater helper/restart and notify/tray regressions. Extend its existing subpackage step to all four test packages; Linux validates shared behavior and Windows compilation locally, while actual Windows execution remains hosted evidence pending mirror sync.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:51:54Z
+
+PR #87 landed in main as 19811cf after all three checks passed at e2dd83e with clean exact main-base review #632. PR #89 source 13b3530 has clean review #637; both review rounds 2747/2748 report the same notification pool issue, fixed in 13b3530. Merge origin/main into integration without source conflicts and request a fresh full review on the now smaller desktop-only main diff. Full combined local cgo-free CI/all cross builds and both Linux GUI stacks pass; no native macOS/Windows/BSD execution is claimed.
