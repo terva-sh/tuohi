@@ -23,6 +23,8 @@ references:
     path: null
   - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
     path: null
+  - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/84
+    path: null
 moved_to: null
 claim:
   actor: agent:codex/t3-b903096c
@@ -34,7 +36,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T21:10:40Z
+updated_at: 2026-10-22T21:12:08Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -86,3 +88,9 @@ A separate pre-existing GTK3 maximize-mask issue was filed as draft TKT-01M5JPZ2
 Final local validation passed: CGO_ENABLED=0 just ci, including vet on Linux/Darwin/Windows, formatting, import and embedded-JS checks, headless tests in both modules, all eight target cross builds and ticket checks. CGO_ENABLED=0 just test-gui passed on native Linux WebKitGTK 6.0 and 4.1, including synchronous native allow/terminal state, cancellation/hide/show preserving the native handle and JavaScript state, native activation/deactivation, deferred cancellation/allow, unconditional View.Close and App.Quit invalidation while Wait pumps. Xvfb has no window manager; the focus test uses real X FocusIn/FocusOut events. This does not establish compositor-managed minimization/workspace behavior. Native macOS/Windows/BSD execution is unavailable. No runtime claims are made for those platforms.
 
 Final API adjustments: RequestClose is harmless before Show/after Close and binds queued work to the captured engine, with a regression for a queued request racing teardown and a replacement view. Shared lifecycle tests passed 20 repetitions. Darwin Active requires both application activation and a key window. The native quit scenario waits for an actual pumping loop so AppKit can marshal and Windows consumes WM_QUIT before the next native scenario. The example retains renderer-owned textarea state, shows cancel/hide/show and deferred allow, and keeps its only window reachable by automatically reopening it. No power-management behavior was added. Ready for internal PR and full exact-head/base review; no merge/release authorization inferred.
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:12:08Z
+
+Internal PR #84 is ready: https://git.local.sothr.com/terva-sh/tuohi/pulls/84. Tested implementation head ed3d734523ead9e11199512e64dee60513877a4d against exact base abc50ac336d37fa3e0aeb3751a529e0fe6a2f48e (PR #83). Full review Actions #572 / run 6af1d51b-40ef-4ecb-8331-248023de24f8, request window-lifecycle-ready-ed3d734, is clean: comment 33615. There are no findings requiring dispositions. The review accurately identifies native macOS/Windows runtime validation and notification ordering/reentrancy there as limits; this Linux session supplies compilation and Linux runtime evidence only. Local cgo-free just ci, all prescribed cross builds, both Linux GUI stacks and 20 shared lifecycle regression repetitions passed. Forgejo CI #571 validates the same implementation head. Kuiske received all five API decisions, tickets, tested source and PR links. No public version has been published.
+
+The following ticket-only commit records this result and PR reference. Request review carry for that head; implementation code remains the reviewed ed3d734 source. Ticket remains in-progress awaiting owner merge. This session does not have merge/release authorization.
