@@ -470,6 +470,7 @@ func (t *linuxTray) watchAvailability() {
 			return
 		case sig, ok := <-t.signals:
 			if !ok {
+				t.availability.publish(Availability{Running: true, Err: fmt.Errorf("%w: session bus disconnected; recreate the tray", ErrUnavailable)})
 				return
 			}
 			if sig.Sender != "org.freedesktop.DBus" && sig.Sender != t.watcherOwner {

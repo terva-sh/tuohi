@@ -222,10 +222,16 @@ func set(cfg Config) error {
 	app.Send(sel("finishLaunching"))
 
 	target := class(targetClassName).Send(sel("alloc")).Send(sel("init"))
-	target.Send(sel("retain"))
 
 	bar := class("NSStatusBar").Send(sel("systemStatusBar"))
 	item := bar.Send(sel("statusItemWithLength:"), float64(nsVariableStatusItemLength))
+	if item == 0 {
+		target.Send(sel("release"))
+		mu.Lock()
+		running = false
+		mu.Unlock()
+		return ErrUnavailable
+	}
 	item.Send(sel("retain")) // the status bar does not keep it alive for us
 
 	btn := item.Send(sel("button"))
@@ -265,14 +271,14 @@ func set(cfg Config) error {
 
 // run shows the tray and drives NSApplication's loop until Stop is called.
 func run(cfg Config) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := set(cfg); err != nil {
 		return err
 	}
 	mu.Lock()
 	ownsLoop = true
 	mu.Unlock()
-
-	runtime.LockOSThread()
 
 	app := class("NSApplication").Send(sel("sharedApplication"))
 	app.Send(sel("run")) // blocks until trayStop stops the loop

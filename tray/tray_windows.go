@@ -206,7 +206,6 @@ var (
 	iconDark         []byte // Config.DarkModeIcon
 	tip              string
 
-	cbMu  sync.Mutex
 	cmdMu sync.Mutex
 
 	trayWndProcCB uintptr
@@ -334,11 +333,11 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam, lParam unsafe.Pointer) uintpt
 		return 0
 	case trayCallbackMsg:
 		ev := uintptr(lParam) & 0xFFFF // #nosec G103 -- event id in LOWORD
-		cbMu.Lock()
+		mu.Lock()
 		left := trayClickFn
 		dbl := trayDblClickFn
 		right := trayRightClickFn
-		cbMu.Unlock()
+		mu.Unlock()
 		switch ev {
 		case wmLButtonUp:
 			if left != nil {
@@ -593,18 +592,20 @@ func isSystemDarkMode() bool {
 // toggling checkbox marks and then running the item's OnClick.
 func showMenu(hwnd uintptr) {
 	mu.Lock()
+	if hwnd != trayHwnd {
+		mu.Unlock()
+		return
+	}
 	menu := hMenu
 	if menu != 0 {
 		menuOpen = true
 	}
-	cbMu.Lock()
 	fns := map[uintptr]*cmdEntry{}
 	cmdMu.Lock()
 	for id, e := range cmdByID {
 		fns[id] = e
 	}
 	cmdMu.Unlock()
-	cbMu.Unlock()
 	mu.Unlock()
 	if menu == 0 {
 		return
@@ -807,14 +808,14 @@ func set(cfg Config) error {
 
 // run shows the tray and drives the thread's message loop until Stop is called.
 func run(cfg Config) error {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := set(cfg); err != nil {
 		return err
 	}
 	mu.Lock()
 	ownsLoop = true
 	mu.Unlock()
-
-	runtime.LockOSThread()
 
 	var msg msgStruct
 	for {
