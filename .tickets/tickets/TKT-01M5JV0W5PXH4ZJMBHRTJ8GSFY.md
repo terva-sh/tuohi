@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T22:17:04Z
-updated_at: 2026-10-22T22:17:04Z
+updated_at: 2026-10-22T22:20:17Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -50,3 +50,11 @@ PR #87 Actions run #611 failed only TestPermissions on Linux WebKitGTK 6.0: the 
 ## Implementation plan
 
 Inspect native logs and browser operations; add progress/error reporting, align observation/watchdog lifetimes and stop watchdogs; reproduce under a constrained CPU where possible. Keep the GTK3 known-issue workaround and strict native permission verdicts. Validate both Linux stacks/full cgo-free CI, request fresh review and record unresolved runtime evidence honestly.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:20:17Z
+
+CI #611 at 643ba16 failed only the clipboard-granted permission run on WebKitGTK 6.0 with no report; no updater failure, process panic or native crash appears in the log. The native log does not establish which browser promise stalled. Confirmed a separate harness defect: its page wait (40 seconds) and click wait (10 seconds) could outlive its 45-second close watchdog. Changed the observation phases to share one 40-second deadline, stopped the watchdog on return, and added browser stage reports (video/audio/read/notify/frame/click) used in timeout errors. Strict expected permission and gesture results remain unchanged. This improves diagnosis and lifetime correctness; it does not yet establish the original stall's root cause.
+
+Full CGO_ENABLED=0 just ci and all eight targets pass. Reproducing with the workflow's documented Go 1.27 Debian trixie image under rootless podman, two CPUs, WebKitGTK 2.54.0-1~deb13u3, a private bus/Xvfb, and required GUI checks; image/tool caches and builds are confined to task scratch/default container storage. Four fresh process runs are planned, followed by both local native stacks. Fresh reviews are required after publishing this source change.
