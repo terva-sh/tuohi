@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N2Q0BCTNFZ9PNWTK1CMX99
 title: Let a consumer's test see links handed to the system browser
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -20,16 +20,25 @@ blocks_on: none
 references:
   - ref: ticket:git-ticket-canvas/TKT-01M3N0ZZFZKWNRCWQQ3GY2AYJT
     path: null
+  - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
+    path: null
 moved_to: null
-claim: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/prepare-library-changes
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be
+  session: null
+  claimed_at: 2026-10-22T20:12:41Z
+  expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-01T05:14:22Z
+updated_at: 2026-10-22T20:12:41Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-6bca1629
+  id: agent:codex/t3-b903096c
   name: ""
 extensions: {}
 ---
@@ -68,3 +77,7 @@ The owner decided, 2026-10-01. Add an `App` field, for example `OpenExternal fun
 The alternatives lost for these reasons. A navigations-only field leaves `App.Open` untestable for the same reason. An exported package variable is global and has to be set before any view exists.
 
 It does not block v0.1.0.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:12:41Z
+
+The owner selected this existing ticket on 2026-10-22 as one of five Kuiske upstream improvements. Reuse the committed App-scoped OpenExternal decision, covering App.Open and outside navigation on all engines; no exported mutable global. Source Kuiske thread: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
