@@ -86,6 +86,64 @@ func TestExtractBundlePreservesExecutableAndFrameworkLinks(t *testing.T) {
 	}
 }
 
+func TestBundleWithSymlinkedParent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges are not guaranteed on Windows")
+	}
+	ctx := context.Background()
+	parent := t.TempDir()
+	realParent := filepath.Join(parent, "real")
+	alias := filepath.Join(parent, "alias")
+	if err := os.Mkdir(realParent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realParent, alias); err != nil {
+		t.Fatal(err)
+	}
+	archive := makeBundleZIP(t, []zipEntry{
+		{"Desktop.app/Contents/Frameworks/F.framework/Versions/A/F", "framework", 0755},
+		{"Desktop.app/Contents/Frameworks/F.framework/Versions/Current", "A", os.ModeSymlink | 0777},
+		{"Desktop.app/Contents/Frameworks/F.framework/F", "Versions/Current/F", os.ModeSymlink | 0777},
+	})
+	dst := filepath.Join(alias, "Desktop.app")
+	if err := extractBundle(ctx, archive, dst); err != nil {
+		t.Fatal("extract through parent alias:", err)
+	}
+	first, err := treeDigest(ctx, dst)
+	if err != nil {
+		t.Fatal("digest through parent alias:", err)
+	}
+	canonical, err := treeDigest(ctx, filepath.Join(realParent, "Desktop.app"))
+	if err != nil || first != canonical {
+		t.Fatal("alias changed tree digest", err)
+	}
+	rootAlias := filepath.Join(parent, "Root.app")
+	if err := os.Symlink(dst, rootAlias); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := treeDigest(ctx, rootAlias); !errors.Is(err, ErrInvalid) {
+		t.Fatal("symlink bundle root accepted", err)
+	}
+	framework := filepath.Join(dst, "Contents/Frameworks/F.framework/Versions/A/F")
+	if err := os.WriteFile(framework, []byte("changed"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	second, err := treeDigest(ctx, dst)
+	if err != nil || first == second {
+		t.Fatal("mutation not detected through alias", err)
+	}
+	outside := filepath.Join(parent, "outside")
+	if err := os.WriteFile(outside, []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dst, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := treeDigest(ctx, dst); !errors.Is(err, ErrInvalid) {
+		t.Fatal("escaping link accepted through alias", err)
+	}
+}
+
 func TestRejectUnsafeBundleArchives(t *testing.T) {
 	tests := map[string][]zipEntry{
 		"traversal":                         {{"Desktop.app/../outside", "x", 0644}},
