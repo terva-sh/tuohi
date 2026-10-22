@@ -150,6 +150,11 @@ var (
 func set(cfg Config) error { _, err := startLinuxTray(cfg); return err }
 
 func startLinuxTray(cfg Config) (*linuxTray, error) {
+	// Resolve startup fallbacks once; nil updates preserve effective values.
+	if cfg.Tooltip == "" {
+		cfg.Tooltip = cfg.Title
+	}
+	cfg.Title = cfg.Tooltip
 	linuxMu.Lock()
 	defer linuxMu.Unlock()
 	if linuxT.Load() != nil {
@@ -562,12 +567,6 @@ func (t *linuxTray) publishIcon(pixmaps []dbusPixmap) {
 	_ = t.conn.Emit(sniPath, sniInterface+".NewIcon")
 }
 func (t *linuxTray) setText(title, tooltip string) {
-	if tooltip == "" {
-		tooltip = title
-	}
-	if title == "" {
-		title = tooltip
-	}
 	t.mu.Lock()
 	t.tooltip = tooltip
 	t.mu.Unlock()

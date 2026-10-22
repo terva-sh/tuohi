@@ -44,6 +44,7 @@ const (
 	wmRButtonUp     = 0x0205
 	wmSettingChange = 0x001A
 	wmContextMenu   = 0x007B
+	wmTimer         = 0x0113
 
 	trayCallbackMsg = wmApp + 1
 	trayUpdateMsg   = wmApp + 2
@@ -190,6 +191,7 @@ var (
 	hiconOwned      bool
 	winConfig       Config
 	winAvailability *availabilitySource
+	winProbeActive  bool
 	winUpdates      updateQueue
 	ownerThread     uint32
 	menuOpen        bool
@@ -224,6 +226,7 @@ var (
 	getCursorPos             func(*point) int32
 	endMenu                  func() int32
 	registerWindowMessageW   func(*uint16) uint32
+	setTimer                 func(hwnd, id uintptr, interval uint32, callback uintptr) uintptr
 	setForegroundWindow      func(hwnd uintptr) int32
 	trackPopupMenu           func(menu uintptr, flags uint32, x, y, reserved int32, hwnd, rect uintptr) int32
 	createPopupMenu          func() uintptr
@@ -281,6 +284,7 @@ func ensureInit() error {
 		reg(&getCursorPos, user32, "GetCursorPos")
 		reg(&endMenu, user32, "EndMenu")
 		reg(&registerWindowMessageW, user32, "RegisterWindowMessageW")
+		reg(&setTimer, user32, "SetTimer")
 		reg(&setForegroundWindow, user32, "SetForegroundWindow")
 		reg(&trackPopupMenu, user32, "TrackPopupMenu")
 		reg(&createPopupMenu, user32, "CreatePopupMenu")
@@ -328,6 +332,11 @@ func trayWndProc(hwnd uintptr, msg uint32, wParam, lParam unsafe.Pointer) uintpt
 		return 0
 	}
 	switch msg {
+	case wmTimer:
+		if uintptr(wParam) == 1 {
+			probeTrayRegistration()
+			return 0
+		}
 	case trayUpdateMsg:
 		applyQueuedWindowsUpdate(uintptr(wParam))
 		return 0
@@ -425,10 +434,34 @@ func restoreTrayRegistration() {
 	}
 	publishWindowsAvailability(a, ok)
 }
+
+// A no-op modification probes current shell registration. TaskbarCreated
+// announces a returning shell, but has no matching disappearance broadcast.
+func probeTrayRegistration() {
+	mu.Lock()
+	a, n := winAvailability, nid
+	mu.Unlock()
+	if a == nil {
+		return
+	}
+	n.uFlags = 0
+	if shellNotifyIconW(nimModify, &n) != 0 {
+		publishWindowsAvailability(a, true)
+		return
+	}
+	restoreTrayRegistration()
+}
 func publishWindowsAvailability(a *availabilitySource, ok bool) {
 	v := Availability{Running: true, Registered: ok, HostPresent: ok}
 	if !ok {
 		v.Err = ErrUnavailable
+	} else {
+		mu.Lock()
+		probing := winProbeActive
+		mu.Unlock()
+		if !probing {
+			v.Err = fmt.Errorf("%w: shell registration probing unavailable", ErrUnavailable)
+		}
 	}
 	a.publish(v)
 }
@@ -512,9 +545,6 @@ func applyWindowsUpdate(a *availabilitySource, c Changes) error {
 	n.hIcon = icon
 	n.szTip = [128]uint16{}
 	text := cfg.Tooltip
-	if text == "" {
-		text = cfg.Title
-	}
 	setTip(&n, text)
 	operation := uint32(nimModify)
 	a.mu.Lock()
@@ -722,6 +752,9 @@ func buildMenuItems(hmenu uintptr, items []Item, depth int) {
 // set creates the hidden helper window, the icon and the menu without owning
 // the message loop (Set). It must be called from the UI thread.
 func set(cfg Config) error {
+	if cfg.Tooltip == "" {
+		cfg.Tooltip = cfg.Title
+	}
 	mu.Lock()
 	if running {
 		mu.Unlock()
@@ -802,6 +835,11 @@ func set(cfg Config) error {
 	winAvailability = newAvailability(cfg.OnAvailability)
 	source := winAvailability
 	mu.Unlock()
+	// Timers are destroyed with their hidden window and need a serviced loop.
+	probing := setTimer(hwnd, 1, 2000, 0) != 0
+	mu.Lock()
+	winProbeActive = probing
+	mu.Unlock()
 	publishWindowsAvailability(source, registered)
 	return nil
 }
@@ -839,6 +877,7 @@ func releaseTrayResources() {
 	running = false
 	ownsLoop = false
 	winAvailability = nil
+	winProbeActive = false
 	trayHwnd = 0
 	ownerThread = 0
 	hicon = 0

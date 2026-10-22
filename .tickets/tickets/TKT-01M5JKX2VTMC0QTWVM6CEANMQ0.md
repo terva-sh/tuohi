@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T20:30:16Z
+updated_at: 2026-10-22T20:55:49Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -48,10 +48,10 @@ The owner selected this work on 2026-10-22 through the Kuiske session. Kuiske's 
 
 ## Acceptance criteria
 
-- [ ] An existing tray supports runtime icon variants, tooltip and menu/item state updates without replacing the status item or resetting Dock policy.
-- [ ] Updates and removal have documented thread/lifetime semantics; existing callbacks and static consumers retain their behavior.
-- [ ] Meaningful tests and a public-API example exercise updates; documentation names platform limitations.
-- [ ] CGO_ENABLED=0 checks and all prescribed cross builds pass, with native runtime evidence recorded honestly.
+- [x] An existing tray supports runtime icon variants, tooltip and menu/item state updates without replacing the status item or resetting Dock policy.
+- [x] Updates and removal have documented thread/lifetime semantics; existing callbacks and static consumers retain their behavior.
+- [x] Meaningful tests and a public-API example exercise updates; documentation names platform limitations.
+- [x] CGO_ENABLED=0 checks and all prescribed cross builds pass, with native runtime evidence recorded honestly.
 
 ## Implementation plan
 
@@ -64,3 +64,15 @@ Linux updates the existing SNI object/properties and signals, with a serialized 
 ### Validation and alternatives
 
 Private Linux D-Bus tests will inspect the live SNI properties and menu, including state, callbacks, stale IDs, disabled items, clearing, and concurrent update/removal. Shared tests validate patch ownership/semantics. Update the public tray example and API docs. Run CGO_ENABLED=0 just ci and both GUI stacks; native macOS/Windows behavior remains unavailable locally. Removing/recreating the tray was rejected because it loses host/menu state and changes Dock behavior. An unbounded synchronous UI wait was rejected in favor of an explicit context. Returning mutable native item handles was rejected because whole-menu snapshots provide a clear lifetime and preserve the existing declarative API.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:55:24Z
+
+Implemented tray.Update(ctx, Changes) with copied patches, validated PNGs, nil-preserving fields, explicit clears, and full checked/disabled menu snapshots. Omitting Items preserves native checkbox toggles. Identity, Dock policy, tray-level callbacks and the native status item/window remain unchanged. Linux serializes updates/removal with a context-aware gate, keeps its connection immutable, rejects stale menu IDs using monotonic allocation, ignores disabled/separator/submenu activations, and publishes checkbox value snapshots rather than racing a mutable item. macOS queues integer-token updates through a process-lifetime dispatcher, checks the captured tray lifetime, updates the existing NSStatusItem, releases replaced menu/image resources and ignores old menu tags. Windows queues integer-token updates to its HWND thread, defers menu replacement during TrackPopupMenu, honors context cancellation, preserves checked state when Items is omitted, and tears its window down on the owning thread. Run pins its thread before native creation on macOS/Windows. Off-thread Windows Remove queues teardown; the loop must still be serviced. Native menu-tracking and removal behavior is documented explicitly.
+
+Private D-Bus regressions pass for real SNI/dbusmenu updates, same tray generation/object, caller-owned input mutation, state preservation, disabled/stale clicks, icon/menu/text clearing, invalid-PNG rejection, queued deadline expiry and concurrent removal. Shared tests cover UI work cancellation, removal/lifetime isolation and dropped queued availability delivery. Public tray example now changes unread icons, tooltip, title and checked/disabled items through public APIs. Docs explain icon variant platform behavior, threading, failure and lifetime semantics. Full cgo-free just ci passed with all eight cross targets; both Linux GUI stacks are being rerun. Native macOS/Windows/BSD runtime execution is unavailable; compilation and shared queue tests are not native UI evidence.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:55:49Z
+
+Final validation: CGO_ENABLED=0 just ci passed in the library and examples with all eight prescribed cross targets and strict ticket checks. Both native Linux WebKitGTK stacks passed just test-gui, including all private-bus tray regressions and the showcase/loopback consumers. Five repeated tray-suite runs passed during concurrency/lifetime development. Native macOS/Windows/BSD UI runtime validation remains unavailable; these results do not establish visual tray presence. Publishing the coupled runtime/availability PR against t3/managed-notifications and requesting its own model review. No merge/release.

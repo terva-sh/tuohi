@@ -211,6 +211,17 @@ func TestTrayRuntimeWireUpdatesPreserveLifetimeAndCheckbox(t *testing.T) {
 	if err := dbus.Store([]any{v.Value()}, &tip); err != nil || tip.Text != "unread" {
 		t.Fatalf("tooltip: %+v %v", tip, err)
 	}
+	clearTooltip := ""
+	if err := Update(context.Background(), Changes{Tooltip: &clearTooltip}); err != nil {
+		t.Fatal(err)
+	}
+	v, err = observer.Object(name, sniPath).GetProperty(sniInterface + ".ToolTip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dbus.Store([]any{v.Value()}, &tip); err != nil || tip.Text != "" {
+		t.Fatalf("tooltip clear reapplied startup fallback: %+v %v", tip, err)
+	}
 	newItems := []Item{{Label: "replacement", Checked: true, Disabled: true, OnClick: func() { newClicks.Add(100) }}, {Label: "enabled", OnClick: func() { newClicks.Add(1) }}}
 	if err := Update(context.Background(), Changes{Items: &newItems}); err != nil {
 		t.Fatal(err)

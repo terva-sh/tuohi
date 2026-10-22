@@ -33,7 +33,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T20:30:16Z
+updated_at: 2026-10-22T20:55:50Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -49,10 +49,10 @@ The owner selected this work on 2026-10-22 through the Kuiske session. Kuiske's 
 
 ## Acceptance criteria
 
-- [ ] A consumer can inspect tray host/registration state and observe absence, registration failure, disappearance and recovery.
-- [ ] State/callback lifetime is concurrency-safe, stops on removal, and does not imply registration proves visibility.
-- [ ] Linux mock-session-bus tests cover missing, failing, disappearing and returning hosts; docs/examples show conservative close-to-tray policy.
-- [ ] CGO_ENABLED=0 checks and prescribed cross builds pass; platform guarantees and runtime validation limits are recorded.
+- [x] A consumer can inspect tray host/registration state and observe absence, registration failure, disappearance and recovery.
+- [x] State/callback lifetime is concurrency-safe, stops on removal, and does not imply registration proves visibility.
+- [x] Linux mock-session-bus tests cover missing, failing, disappearing and returning hosts; docs/examples show conservative close-to-tray policy.
+- [x] CGO_ENABLED=0 checks and prescribed cross builds pass; platform guarantees and runtime validation limits are recorded.
 
 ## Implementation plan
 
@@ -65,3 +65,15 @@ Linux subscribes before its initial watcher registration and reports missing wat
 ### Validation and alternatives
 
 Private Linux D-Bus watcher tests cover no watcher, failed registration, watcher with no host, host disappearance/return, watcher replacement and bus loss. Document GNOME extensions, WSLg/nested sessions and consumer-owned background policy, with a public example. Couple this PR to the runtime-update ticket because both alter the same backend lifetime/concurrency boundary, while keeping separate acceptance evidence. Run the prescribed cgo-free checks and cross builds and distinguish native Linux protocol tests from unavailable native macOS/Windows execution. A bool returned from Set was rejected because host availability changes after startup. Treating registration as visibility was rejected because even a registered host may suppress or hide the icon.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:55:24Z
+
+Implemented Availability snapshots and serial/coalesced OnAvailability callbacks with tray generations and explicit removal semantics. Linux subscribes before initial registration, separates unique-watcher registration from IsStatusNotifierHostRegistered, verifies ownership before reporting success, observes watcher/host changes and retries failures, and marks bus loss unavailable regardless of which terminal channel wins select. Missing watcher remains a nonfatal Set result for static consumers; consumers now inspect observable state rather than relying on stderr. Watcher restart recovers in-place; a disconnected session bus requires explicit tray recreation. Windows reports actual shell registration return values, observes TaskbarCreated, and uses a two-second UI-loop registration probe to detect disappearance and recover. A failed probe-timer setup remains an explicit availability error. macOS reports status-item creation, with no independent host/visibility guarantee. No state implies the icon is actually visible.
+
+Private-bus tests cover no watcher, rejected registration, watcher without a host, host arrival/loss, watcher disappearance/replacement, recovery within the same tray generation, and session-bus disconnection. A regression exposed the closed-signal-channel selection bug during this work and now passes; the same notification listener bug was fixed/reviewed independently in PR #82. Public docs/example demonstrate the conservative Running/Registered/HostPresent/Err prerequisite and keep background policy with Kuiske. GNOME extensions, WSLg/nested sessions, snapshot staleness, blocked native loops and unavailable native macOS/Windows/BSD validation are named explicitly. Full CGO_ENABLED=0 just ci/all eight cross targets passed; both Linux GUI stacks are being rerun. This is protocol evidence, not proof a real desktop panel displayed an icon.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:55:49Z
+
+Final validation: CGO_ENABLED=0 just ci passed in the library and examples with all eight prescribed cross targets and strict ticket checks. Both native Linux WebKitGTK stacks passed just test-gui, including all private-bus tray regressions and the showcase/loopback consumers. Five repeated tray-suite runs passed during concurrency/lifetime development. Native macOS/Windows/BSD UI runtime validation remains unavailable; these results do not establish visual tray presence. Publishing the coupled runtime/availability PR against t3/managed-notifications and requesting its own model review. No merge/release.
