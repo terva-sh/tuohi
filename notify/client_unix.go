@@ -15,14 +15,15 @@ import (
 )
 
 type dbusBackend struct {
-	conn    *dbus.Conn
-	owner   string
-	name    string
-	caps    Capabilities
-	actions bool
-	alive   atomic.Bool
-	event   func(managedEvent)
-	signals chan *dbus.Signal
+	conn       *dbus.Conn
+	owner      string
+	ownerSince dbus.Sequence
+	name       string
+	caps       Capabilities
+	actions    bool
+	alive      atomic.Bool
+	event      func(managedEvent)
+	signals    chan *dbus.Signal
 }
 
 func openManagedBackend(ctx context.Context, cfg Config, event func(managedEvent)) (managedBackend, error) {
@@ -51,9 +52,21 @@ func newDBusBackend(ctx context.Context, c *dbus.Conn, cfg Config, event func(ma
 		dbus.WithMatchArg(0, notifInterface)); err != nil {
 		return nil, fmt.Errorf("%w: cannot observe notification service lifetime", ErrUnavailable)
 	}
-	if err = c.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, notifInterface).Store(&b.owner); err != nil {
+	ownerCall := c.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, notifInterface)
+	var native dbus.Error
+	if errors.As(ownerCall.Err, &native) && native.Name == "org.freedesktop.DBus.Error.NameHasNoOwner" {
+		// GetNameOwner never auto-activates a service. Start an installed idle
+		// daemon, then resolve its unique name; never send lifecycle calls to
+		// the well-known name where restarted daemons could reuse old IDs.
+		if err = c.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.StartServiceByName", 0, notifInterface, uint32(0)).Err; err != nil {
+			return nil, managedDBusError(ctx, err)
+		}
+		ownerCall = c.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, notifInterface)
+	}
+	if err = ownerCall.Store(&b.owner); err != nil {
 		return nil, managedDBusError(ctx, err)
 	}
+	b.ownerSince = ownerCall.ResponseSequence
 	if err = c.AddMatchSignal(dbus.WithMatchSender(b.owner), dbus.WithMatchInterface(notifInterface), dbus.WithMatchObjectPath(notifPath)); err != nil {
 		return nil, fmt.Errorf("%w: cannot observe notification actions", ErrUnavailable)
 	}
@@ -184,6 +197,11 @@ func (b *dbusBackend) listen() {
 				return
 			}
 			if signal.Name == "org.freedesktop.DBus.NameOwnerChanged" && signal.Sender == "org.freedesktop.DBus" && len(signal.Body) == 3 {
+				// Subscription precedes activation/resolution. Earlier transitions
+				// describe history, not the lifetime of the owner we just bound.
+				if signal.Sequence <= b.ownerSince {
+					continue
+				}
 				name, _ := signal.Body[0].(string)
 				owner, _ := signal.Body[2].(string)
 				if name == notifInterface && owner != b.owner {

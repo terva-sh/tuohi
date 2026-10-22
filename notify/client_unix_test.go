@@ -6,8 +6,12 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"html"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,7 +21,7 @@ import (
 )
 
 // A private bus avoids notifying the real desktop, even inside test-gui.
-func notificationTestBus(t *testing.T) string {
+func notificationTestBus(t *testing.T, serviceDirs ...string) string {
 	t.Helper()
 	bin, err := exec.LookPath("dbus-daemon")
 	if err != nil {
@@ -28,7 +32,21 @@ func notificationTestBus(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	cmd := exec.Command(bin, "--session", "--nofork", "--print-address=1", "--address=unix:tmpdir="+dir)
+	args := []string{"--session", "--nofork", "--print-address=1", "--address=unix:tmpdir=" + dir}
+	if len(serviceDirs) != 0 {
+		// Isolate activation from the real session's installed services.
+		config := `<busconfig><type>session</type><listen>unix:tmpdir=` + html.EscapeString(dir) + `</listen>`
+		for _, serviceDir := range serviceDirs {
+			config += `<servicedir>` + html.EscapeString(serviceDir) + `</servicedir>`
+		}
+		config += `<policy context="default"><allow own="*"/><allow send_destination="*"/><allow receive_sender="*"/></policy></busconfig>`
+		path := filepath.Join(dir, "bus.conf")
+		if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+			t.Fatal(err)
+		}
+		args = []string{"--config-file=" + path, "--nofork", "--print-address=1"}
+	}
+	cmd := exec.Command(bin, args...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -244,5 +262,83 @@ func TestManagedDBusCapabilitiesAndPrivateErrors(t *testing.T) {
 	}
 	if !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("permission error = %v", err)
+	}
+}
+
+// This test binary is the service executable launched by the private bus.
+// A normal test run returns immediately; only the .service entry opts in.
+func TestManagedDBusActivationHelper(t *testing.T) {
+	if os.Args[len(os.Args)-1] != "tuohi-notification-activation-helper" {
+		return
+	}
+	address := os.Getenv("DBUS_STARTER_ADDRESS")
+	if address == "" {
+		t.Fatal("activation did not supply a starter bus")
+	}
+	c := notificationTestConn(t, address)
+	serveNotifications(t, c, true)
+	select {
+	case <-c.Context().Done(): // the parent test stops the private bus
+	case <-time.After(15 * time.Second):
+		t.Fatal("activation helper outlived the private-bus test")
+	}
+}
+
+func TestManagedDBusActivatesIdleService(t *testing.T) {
+	dir, err := os.MkdirTemp("", "notify-services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := fmt.Sprintf("[D-BUS Service]\nName=%s\nExec=%s -test.run=^TestManagedDBusActivationHelper$ -- tuohi-notification-activation-helper\n", notifInterface, strconv.Quote(executable))
+	if err := os.WriteFile(filepath.Join(dir, notifInterface+".service"), []byte(service), 0600); err != nil {
+		t.Fatal(err)
+	}
+	address := notificationTestBus(t, dir)
+	observer := notificationTestConn(t, address)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var owner string
+	err = observer.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, notifInterface).Store(&owner)
+	var native dbus.Error
+	if !errors.As(err, &native) || native.Name != "org.freedesktop.DBus.Error.NameHasNoOwner" {
+		t.Fatalf("service already had an owner: %q %v", owner, err)
+	}
+	c, err := newClient(ctx, Config{}, func(ctx context.Context, cfg Config, event func(managedEvent)) (managedBackend, error) {
+		conn, err := dbus.Connect(address)
+		if err != nil {
+			return nil, err
+		}
+		return newDBusBackend(ctx, conn, cfg, event)
+	})
+	if err != nil {
+		t.Fatalf("client failed to activate installed service: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	if !c.Capabilities().Activation {
+		t.Fatal("activated service's capabilities were not discovered")
+	}
+	h, err := c.Post(ctx, Notification{ID: "after-activation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Replace(ctx, Notification{Title: "Updated"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Dismiss(ctx); err != nil {
+		t.Fatal(err)
+	}
+	awaitNotification(t, h.Done())
+	if err := h.Err(); err != nil {
+		t.Fatal(err)
+	}
+	// Existing owner-loss tests cover restarted daemons reusing numeric IDs.
+	// Close the activated client normally before stopping its helper's bus.
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
