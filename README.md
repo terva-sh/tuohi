@@ -984,6 +984,7 @@ go run ./showcase --framed         # same, with the OS window frame
 go run ./showcase --selftest       # showcase + automated self test (exit 0/1)
 go run ./tray                      # tray icons, menus, checkboxes
 go run ./notify                    # notifications
+go run ./managednotify             # managed activation, replacement and dismissal
 go run ./dialog                    # all four native file panels
 ```
 

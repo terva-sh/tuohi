@@ -32,7 +32,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:19:08Z
+updated_at: 2026-10-22T20:29:05Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -48,10 +48,10 @@ The owner selected this work on 2026-10-22 through the Kuiske session. Kuiske's 
 
 ## Acceptance criteria
 
-- [ ] A managed notification returns a correlation handle and supports activation, replacement and dismissal where available, with explicit capability/errors elsewhere.
-- [ ] Permission status/request and shutdown/cancellation are explicit; modern macOS notification access checks app bundle identity before native calls.
-- [ ] Routing carries only opaque IDs, with lifecycle/concurrency and privacy behavior documented and exercised by meaningful tests and a public-API example.
-- [ ] CGO_ENABLED=0 checks and all prescribed cross builds pass; native runtime evidence and unavailable platform validation are recorded separately.
+- [x] A managed notification returns a correlation handle and supports activation, replacement and dismissal where available, with explicit capability/errors elsewhere.
+- [x] Permission status/request and shutdown/cancellation are explicit; modern macOS notification access checks app bundle identity before native calls.
+- [x] Routing carries only opaque IDs, with lifecycle/concurrency and privacy behavior documented and exercised by meaningful tests and a public-API example.
+- [x] CGO_ENABLED=0 checks and all prescribed cross builds pass; native runtime evidence and unavailable platform validation are recorded separately.
 
 ## Implementation plan
 
@@ -72,3 +72,13 @@ Windows' existing shared Shell_NotifyIcon balloon has no durable independent not
 ### Validation and alternatives
 
 Use shared fake-backend tests for state, concurrency, cancellation, duplicate IDs, replacement and shutdown; private D-Bus tests for real wire/signals; a public-API managed-notification example; docs with exact capability and bundle requirements. Run CGO_ENABLED=0 just ci and both Linux GUI stacks. An exported global callback was rejected because notifications are scoped and consumers need deterministic cleanup. A best-effort CLI fallback was rejected for managed clients because it cannot promise activation/identity/dismissal. Replacing the legacy Show path was rejected to preserve existing consumers and defaults.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:29:04Z
+
+Implemented the opt-in notify.Client/Handle API with serial worker activation, Go-only application correlation, replacement, dismissal, completion/errors, explicit permissions and bounded best-effort shutdown. Lifetime cancellation also interrupts an in-flight permission wait before acquiring the operation lock; queued activation is coalesced and suppressed by dismissal/close. Existing Show/ShowOpts/Alert/Beep behavior is preserved. Linux uses a dedicated bus connection bound to the unique daemon owner and fails existing handles on service loss, avoiding reused-ID aliases. macOS uses modern UserNotifications after APPL bundle/identity/executable checks, retains its delegate, refuses another delegate, and uses Objective-C blocks without cgo. Managed macOS attachments and Windows balloons report ErrUnsupported; the limitations are documented rather than silently falling back.
+
+Validation: final CGO_ENABLED=0 just ci passed in both modules, including all eight prescribed target cross builds. just test-gui passed on both native Linux WebKitGTK stacks, including showcase/loopback. Shared client tests cover identity, duplicate IDs, errors, replacement, dismissal, queued activation, callback-initiated close, cancellation interrupting permission waits, cleanup and service loss. Private D-Bus integration tests exercised actual GetCapabilities/Notify/actions/replacement/CloseNotification wire behavior, spoofed/unknown IDs, daemon ownership changes and redaction of service error bodies. These are protocol tests, not proof a real notification banner appeared. The public managednotify example demonstrates desktop-adapter activation/focus, replacement and room-read dismissal. A native macOS test is provided for unbundled safety, but this Linux host cannot execute it or validate bundled permission/delivery behavior; macOS/Windows/BSD compilation is not native runtime evidence. No version was published.
+
+Primary API reference consulted: Apple's UNUserNotificationCenter documentation says the shared center is safe from any application thread and requires the delegate to be installed before interacting with it: https://developer.apple.com/documentation/usernotifications/unusernotificationcenter.

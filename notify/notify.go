@@ -38,6 +38,11 @@
 //
 // On platforms without a notification backend, Show, ShowOpts and Alert
 // return ErrUnsupported.
+//
+// NewClient is the opt-in managed API: it returns correlated notification
+// handles with activation, replacement, dismissal, permission queries and
+// explicit shutdown. Capabilities differ by backend; see Client and
+// notify/README.md. Existing helpers keep the platform paths described above.
 package notify
 
 import "errors"
