@@ -34,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T22:48:11Z
+updated_at: 2026-10-22T22:48:31Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -120,6 +120,10 @@ done to in-progress: Integration PR #89 review 2747 confirms notification autore
 **agent:codex/t3-b903096c** at 2026-10-22T22:48:11Z
 
 Accepted high finding in PR #89 review 2747 at 3d01112: notificationPool creates/drains a thread-local NSAutoreleasePool on arbitrary unpinned Go workers. Mirror the existing tray OS-thread pinning, and add a native Darwin notification-pool regression that yields and compares native thread identities. Native execution is unavailable locally; compile the regression without cgo and require mirror CI evidence.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:48:31Z
+
+notificationPool now locks its worker to one OS thread before pool allocation and defers unlock before drain, ensuring drain completes while pinned. Added a notification-specific Darwin worker regression with 1,000 autoreleased NSNumber allocations/yields and pthread_self identity checks, following the already-reviewed tray native test. The Darwin/arm64 notification test binary compiles with CGO_ENABLED=0; native execution is unavailable here. Linux notify/tray/updater regressions pass. NSThread in the plan was replaced by pthread_self to match the existing tray fixture and directly compare native OS-thread identity.
 
 ## Summary
 

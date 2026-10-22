@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
@@ -32,6 +33,9 @@ var (
 )
 
 func notificationPool(fn func()) {
+	// Autorelease pools belong to the native thread that created them.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	pool := class("NSAutoreleasePool").Send(sel("alloc")).Send(sel("init"))
 	defer pool.Send(sel("drain"))
 	fn()
