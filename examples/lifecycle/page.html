@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Window lifecycle</title>
+<style>body{font:18px system-ui;margin:2rem}button,input{font:inherit;margin:.5rem}textarea{display:block;width:90%;height:6rem}</style>
+<h1>Keep the current window</h1>
+<p>Write something, then close the window. With the option selected, it hides for two seconds and returns with your text intact.</p>
+<textarea placeholder="This text stays in the renderer across hide/show"></textarea>
+<label><input type="checkbox" checked onchange="demo.keep(this.checked)">Hide and reopen on close</label>
+<p><button onclick="demo.close()">Request close</button><button onclick="demo.quit()">Quit</button></p>
+</html>

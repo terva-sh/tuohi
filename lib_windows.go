@@ -2057,6 +2057,8 @@ const (
 	wmDestroy       = 0x0002
 	wmSize          = 0x0005
 	wmSetFocus      = 0x0007
+	wmActivate      = 0x0006
+	wmShowWindow    = 0x0018
 	wmClose         = 0x0010
 	wmGetMinMaxInfo = 0x0024
 	wmNCCalcSize    = 0x0083
@@ -2124,6 +2126,9 @@ var (
 	releaseCapture           func() int32
 	getSystemMetrics         func(index int32) int32
 	isZoomed                 func(hwnd uintptr) int32
+	isWindowVisible          func(hwnd uintptr) int32
+	isIconic                 func(hwnd uintptr) int32
+	getForegroundWindow      func() uintptr
 )
 
 // wndClassExW mirrors WNDCLASSEXW. Blank fields are left zero and unread by Go
@@ -2238,6 +2243,9 @@ func ensureWinInit() error {
 		reg(&releaseCapture, user32, "ReleaseCapture")
 		reg(&getSystemMetrics, user32, "GetSystemMetrics")
 		reg(&isZoomed, user32, "IsZoomed")
+		reg(&isWindowVisible, user32, "IsWindowVisible")
+		reg(&isIconic, user32, "IsIconic")
+		reg(&getForegroundWindow, user32, "GetForegroundWindow")
 		if winInitErr != nil {
 			return
 		}
@@ -2582,7 +2590,19 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		return 0, true
 	case wmSize:
 		w.resizeWebView()
+		w.lifecycle.update(w.windowState())
 		return 0, true
+	case wmActivate:
+		state := w.windowState()
+		state.Active = state.Visible && wp&0xffff != 0
+		w.lifecycle.update(state)
+		return 0, false
+	case wmShowWindow:
+		state := w.windowState()
+		state.Visible = wp != 0 && isIconic(hwnd) == 0
+		state.Active = state.Visible && getForegroundWindow() == hwnd
+		w.lifecycle.update(state)
+		return 0, false
 	case wmNCCalcSize:
 		// Frameless windows carry WS_THICKFRAME only so DefWindowProc will run
 		// the modal resize (SC_SIZE) - the frame itself is not wanted. Return 0
@@ -2622,6 +2642,9 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		}
 		return 0, false // not a drag box: let DefWindowProcW answer (HTCLIENT/edges)
 	case wmClose:
+		if !w.lifecycle.request() {
+			return 0, true
+		}
 		// WM_CLOSE is the user-initiated close (the X button / Alt+F4);
 		// Destroy() calls destroyWindow directly and never routes through
 		// here. destroyWindow runs WM_DESTROY synchronously (decrementing
@@ -2639,9 +2662,6 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		unregisterEngine(w.id)
 		if w.ownsWindow {
 			atomic.AddInt32(&windowCount, -1)
-			// Single per-window close event for the App scope (App.Wait).
-			dbg("destroy: owned window %d closed, reporting to the App scope", w.id)
-			w.reportClosed()
 		}
 		w.window = 0
 		setWindowLongPtrW(hwnd, gwlpUserData, 0)
@@ -2653,9 +2673,23 @@ func (w *webview) engineMsg(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, 
 		// the environment is released early.
 		w.closeController()
 		w.releaseEnvironment()
+		if w.ownsWindow {
+			// Publish terminal state after clearing handles: a consumer can
+			// call Close from WindowChanged without reentering DestroyWindow.
+			dbg("destroy: owned window %d closed, reporting to the App scope", w.id)
+			w.reportClosed()
+		}
 		return 0, true
 	}
 	return 0, false
+}
+
+func (w *webview) windowState() WindowState {
+	if w.window == 0 {
+		return WindowState{Closed: true}
+	}
+	visible := isWindowVisible(w.window) != 0 && isIconic(w.window) == 0
+	return WindowState{Visible: visible, Active: visible && getForegroundWindow() == w.window}
 }
 
 // clientPoint converts the screen-space point in a WM_NCHITTEST LPARAM to this

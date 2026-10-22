@@ -34,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:40Z
-updated_at: 2026-10-22T20:59:37Z
+updated_at: 2026-10-22T21:08:23Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -50,9 +50,9 @@ The owner selected this work on 2026-10-22 through the Kuiske session. Kuiske's 
 
 ## Acceptance criteria
 
-- [ ] User and keyboard close can be allowed, cancelled or deferred while preserving the same native view/renderer when hidden.
-- [ ] Native focus/activation and visibility changes reach supported public callbacks with defined thread and ordering semantics.
-- [ ] Programmatic teardown and App.Quit do not get trapped by interception; defaults and existing consumers retain their behavior.
+- [x] User and keyboard close can be allowed, cancelled or deferred while preserving the same native view/renderer when hidden.
+- [x] Native focus/activation and visibility changes reach supported public callbacks with defined thread and ordering semantics.
+- [x] Programmatic teardown and App.Quit do not get trapped by interception; defaults and existing consumers retain their behavior.
 - [ ] Meaningful state-machine and Linux GUI tests plus a public-API example cover lifecycle behavior; CGO_ENABLED=0 and prescribed cross builds pass, with native evidence distinguished from compilation.
 
 ## Implementation plan
@@ -68,3 +68,15 @@ Test the shared decision state machine (defer/cancel/allow/repeated requests, te
 ### Alternatives
 
 A bool-only close callback cannot defer a consumer decision. Blocking the UI for a dialog or worker would stop renderer/native dispatch. Recreating a destroyed view loses renderer state. A package-global callback would mix windows and lifetimes. Keep the lifecycle machine separate from the bridge mutex so consumer callbacks never run under internal locks.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:08:23Z
+
+Implemented View.CloseRequested, CloseRequest.Allow/Cancel/Defer/Done, View.RequestClose, View.WindowChanged and View.WindowState. Callbacks are captured per engine, run on the UI thread without internal locks, and can nest after native state changes. The initial snapshot follows engine publication; teardown emits a terminal Closed snapshot. A separate lifecycle mutex serializes decisions, coalesces repeated requests and invalidates stale queued allows on teardown/quit. Deferred native teardown uses the process UI dispatcher plus the captured View/engine identity, avoiding worker reads of mutable native handles. App.Quit invalidates pending requests without changing its existing Wait/process policy. View.Close remains unconditional.
+
+GTK uses delete-event/close-request, map/unmap, is-active, GTK3 window-state-event and GTK4 GdkSurface state notifications. Minimized masks are deliberately toolkit-specific. AppKit uses windowShouldClose, key/minimization/occlusion-change notifications and explicit show/hide sampling. Win32 uses WM_CLOSE, top-level WM_ACTIVATE, WM_SHOWWINDOW and WM_SIZE; it samples IsWindowVisible/IsIconic/GetForegroundWindow. Terminal callbacks are published after native handles are cleared where teardown could be reentered. Existing default close behavior and callback fields remain unchanged when the new fields are nil.
+
+Shared regressions cover implicit/explicit allow, cancel, defer, competing decisions, coalescing, Done invalidation, scope quit, stale queued teardown and callback reentrancy; 20 focused repetitions passed cgo-free. The native scenario covers native synchronous allow, cancel/hide/show retaining HWND/NSWindow/GtkWindow and JavaScript state, native focus changes, deferred cancel/allow and App.Quit invalidation. View.Close's existing native scenario now sets a cancelling handler and verifies it is bypassed. Native Linux validation is running on both WebKitGTK stacks for the final expanded scenario; previous retained-state/focus runs passed. CGO_ENABLED=0 just ci passed including all prescribed target builds; macOS/Windows/BSD execution remains unavailable and is not claimed. Public API documentation and examples/lifecycle are included in this PR.
+
+A separate pre-existing GTK3 maximize-mask issue was filed as draft TKT-01M5JPZ2XZDPQDQYBRYW5R902F (Use the GTK3 maximized bit when toggling window state); no unrelated fix was folded into this work.

@@ -593,6 +593,61 @@ if err := app.Wait(); err != nil { // returns when the window closes or Quit is 
 }
 ```
 
+### Window close and native state
+
+`View.CloseRequested` intercepts the window's user/keyboard close action
+(GTK delete/close request, macOS Close/⌘W, Windows Close/Alt+F4) and
+`View.RequestClose`, for custom chrome. Nil preserves normal closing. The
+callback runs on the UI thread and must return promptly:
+
+```go
+view.CloseRequested = func(request *tuohi.CloseRequest) {
+    request.Cancel()
+    view.Hide() // same native window and renderer; view.Show restores it
+}
+view.WindowChanged = func(state tuohi.WindowState) {
+    // Native top-level activation, independent of focus inside the web page.
+    // state.Visible, state.Active, state.Closed
+}
+```
+
+The consumer decides whether a hidden window remains reachable. A tray's
+registration cannot prove its icon is visible; use the tray availability API
+and your own background-running policy before hiding the only window.
+
+A callback that returns without a decision allows closing. `Cancel` keeps the
+window alive. `Defer` keeps the request pending after the callback returns;
+a worker can later `Allow` or `Cancel`. The first decision wins and the methods
+return whether they accepted it. Repeated close actions coalesce while pending.
+`request.Done()` closes on decision or invalidation so workers can stop waiting.
+An unresolved deferred request deliberately keeps that window open.
+`View.Close` is unconditional, invalidates outstanding requests immediately and
+queues native teardown when called off the UI thread. `App.Quit` invalidates
+requests and ends `Wait` without consulting close policy; it retains its
+existing run-loop behavior. Native application/session termination is not
+intercepted. Deferred decisions target only their original window lifetime.
+
+`WindowChanged` receives an initial snapshot after the engine is published,
+changes with duplicate snapshots suppressed, and one terminal `Closed` snapshot
+on native destruction. `view.WindowState()` safely reads the latest snapshot
+from any goroutine; an unshown/closed view reports `Closed`. Callbacks run on
+the UI thread without internal locks; changing native state inside one can
+produce a nested callback. Configure callbacks before `App.Show`.
+
+`Visible` describes the toolkit's mapped/shown window state (excluding native
+minimization where exposed); it does not report occlusion, another workspace,
+or whether the user can see any pixels. Linux uses GTK map/unmap and is-active
+signals; minimization/workspace reporting depends on the compositor and toolkit.
+macOS uses key-window, minimization and occlusion-change notifications while
+sampling `isVisible`, plus explicit show/hide operations. Windows uses
+`WM_ACTIVATE`, `WM_SHOWWINDOW` and `WM_SIZE`. Native activation cannot guarantee
+that the consumer's relevant conversation has focus: combine it with page state.
+Callbacks describe tuohi-owned windows; internal host embedding retains the
+host's close and lifecycle policy.
+
+[examples/lifecycle](examples/lifecycle/) demonstrates retained renderer state,
+close cancellation, deferred allow and unconditional quit through public APIs.
+
 The per-window knobs tuohi reads at window creation live directly on the
 `App` and the `View` - there is no nested settings struct:
 

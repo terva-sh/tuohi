@@ -21,10 +21,12 @@ func closeFromGoScenario() string {
 	app := &App{Exit: true}
 	ready := make(chan struct{})
 	var once sync.Once
+	var intercepted atomic.Bool
 	w := &View{
 		Width: 400, Height: 300,
-		URL:   "data:text/html,<p>close from Go</p>",
-		Ready: func() { once.Do(func() { close(ready) }) },
+		URL:            "data:text/html,<p>close from Go</p>",
+		Ready:          func() { once.Do(func() { close(ready) }) },
+		CloseRequested: func(r *CloseRequest) { intercepted.Store(true); r.Cancel() },
 	}
 	if err := app.Show(w); err != nil {
 		return "view error: " + err.Error()
@@ -55,6 +57,8 @@ func closeFromGoScenario() string {
 	open := atomic.LoadInt32(&scope.windows)
 	watchdog.Stop()
 	switch {
+	case intercepted.Load():
+		return "programmatic close was intercepted"
 	case noReady.Load():
 		return "the page never loaded, so the close was not tested after Ready"
 	case hung.Load():
