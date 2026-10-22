@@ -82,8 +82,12 @@ func lifecycleScenario() string {
 	started := make(chan struct{})
 	v.Window(func(_ unsafe.Pointer) { close(started) })
 	var pending *CloseRequest
+	workerDone := make(chan struct{})
 	go func() {
-		defer app.Quit()
+		defer func() {
+			app.Quit()
+			close(workerDone)
+		}()
 		fail := func(s string) { result <- stage.Load().(string) + ": " + s }
 		wait := func(predicate func() bool) bool {
 			for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
@@ -232,8 +236,16 @@ func lifecycleScenario() string {
 		stage.Store("quitting app with deferred peer close")
 		result <- "ok"
 	}()
-	if err := app.Wait(); err != nil {
-		return err.Error()
+	waitErr := app.Wait()
+	// Wait can return after Quit sets the exit flag but before Quit returns.
+	// Join the worker on every path while the hard watchdog is still armed.
+	select {
+	case <-workerDone:
+	case <-time.After(5 * time.Second):
+		return "App.Quit waited for deferred close: " + stage.Load().(string)
+	}
+	if waitErr != nil {
+		return waitErr.Error()
 	}
 	if timedOut.Load() {
 		return "lifecycle timeout: " + stage.Load().(string)

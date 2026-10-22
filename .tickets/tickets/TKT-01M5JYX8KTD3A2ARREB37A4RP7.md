@@ -27,7 +27,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T23:25:00Z
-updated_at: 2026-10-22T23:28:37Z
+updated_at: 2026-10-22T23:33:00Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -64,6 +64,18 @@ Replaced the test-only per-view Run/second-Wait sequence with one public App.Wai
 CGO_ENABLED=0 just ci passes both modules/all eight prescribed targets. Full just test-gui passes library/packages/examples on WebKitGTK 6.0 and 4.1. Updated Windows amd64 and Darwin arm64 root test binaries compile; pinned Windows lint passes. A scratch-only intentional renderer-state mutation produces TestNativeWindowLifecycle failure: restoring retained renderer: renderer state lost: lost fixture. The process exits normally with failure in 30.5 seconds including all preceding scenarios, rather than reaching the outer CI kill. The fault was never applied to repository source.
 
 Original native WebView2 155.0.4283.62 timeout at 4be7f93 did not establish the exact blocked call or a production cause, and no production change is claimed. The public-loop harness is validated on Linux; new native macOS/Windows outcomes remain pending after internal review/merge and mirror sync. PR #91 already merged ticket closure for the independently confirmed Windows pipe fix; that native subpackage result remains valid despite the later WebView2 timeout.
+
+**agent:codex/t3-b903096c** at 2026-10-22T23:31:07Z
+
+Review 2749 at exact head 553f9bff107d0d61c4a56e9da75c02e8bd53aa70 / base 07906df27de9fef631f6dc0cbe3f799855faf9c1 has one medium finding: the result channel is sent before deferred App.Quit completes, so Wait/result alone can falsely pass while Quit is still running. Accepted. Close workerDone only after Quit returns, and await it with a five-second bound immediately after App.Wait on both normal and error paths. Keep the hard watchdog armed through that join and deferred cleanup. Validate a scratch-only delayed completion fault fails strictly instead of passing, then rerun full cgo-free CI/all targets, both Linux GUI stacks and updated foreign test compilation/lint. Preserve all lifecycle assertions and make no production change. Request fresh full exact-head/base review.
+
+**agent:codex/t3-b903096c** at 2026-10-22T23:33:00Z
+
+Review 2749 finding-1 accepted and addressed: workerDone closes only after the deferred App.Quit returns. Immediately after App.Wait, every path awaits that completion for up to five seconds before proceeding or returning a Wait error. The hard watchdog remains armed during the join and deferred native cleanup. A result sent before Quit finishes can no longer prove success.
+
+Controlled scratch-only regression: delay worker completion ten seconds after Quit (which has already released App.Wait). With the join, TestNativeWindowLifecycle strictly fails after five seconds with App.Quit waited for deferred close: quitting app with deferred peer close (full process 34.814 seconds including preceding scenarios). Removing just the join from the same fault fixture makes the test pass, demonstrating the previous false-positive window. Neither fault nor removed join was applied to repository source.
+
+Updated CGO_ENABLED=0 just ci passes both modules/all eight prescribed targets; full just test-gui passes both Linux stacks and examples. Windows amd64 and Darwin arm64 root test binaries compile; pinned Windows lint passes. Native macOS/Windows runtime confirmation of this public-loop scenario remains pending after reviewed merge. Request a fresh full exact-head/base review after this synchronization fix. Original Windows 210-second timeout still has no established production cause.
 
 ## Summary
 
