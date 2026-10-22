@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T21:28:57Z
+updated_at: 2026-10-22T21:36:25Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -50,6 +50,14 @@ Read architecture/import restrictions; implement signed manifest parsing and imm
 **agent:codex/t3-b903096c** at 2026-10-22T21:28:56Z
 
 Implemented the optional updater package with copied pinned Ed25519 keys, domain-separated signatures, strict/duplicate-safe bounded JSON, app/channel/platform/sequence/expiry checks, HTTPS URL validation, streamed bounded SHA-256 staging, progress and cancellation cleanup. Transport stays consumer-injected so the root/module HTTP/TLS import boundary is unchanged. Public package docs and an external-package API example are included. Focused CGO_ENABLED=0 tests passed, including tampering/rollback/wrong identity, oversized metadata/downloads, partial/corrupt content, cancellation and cleanup. All eight prescribed target cross builds passed. Version remains display-only; compiled sequence plus consumer durable highest-installed floor governs rollback. Expiry is rechecked before staging and will be rechecked by installation. Full native GUI and final review occur in integration.
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:36:24Z
+
+done to in-progress: Address PR #85 exact-head review 2733 case-variant JSON field aliases
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:36:24Z
+
+PR #85 full exact-head/base review 2733 (run 5cbce308-119d-41b1-839c-ad6bf45863cb, Actions #578), head 33ba190c86b958ad1a4a4e695cb1ce7c835b76f7 against dc693b2b1c26a19c6dd467df35d938759635c76b, found one medium issue: encoding/json accepts case-insensitive struct aliases despite DisallowUnknownFields. Accepted and fixed. The bounded token pass now checks every object key against the destination type's exact JSON field names before decoding; map keys remain free but duplicate-checked. Case aliases are rejected, not merely lowercased. Regressions cover envelope alias and alias duplicate, signed sequence alias and alias duplicate, and nested asset alias. CGO_ENABLED=0 just ci passed, including all prescribed cross builds and ticket strict check. Request a fresh full review after this substantive fix. Installation remains in the dependent branch, unaffected by this review scope.
 
 ## Summary
 

@@ -260,3 +260,32 @@ func TestStrictJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestRejectCaseVariantFieldAliases(t *testing.T) {
+	for _, name := range []string{"envelope-alias", "envelope-duplicate", "payload-alias", "payload-duplicate", "asset-alias"} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			switch name {
+			case "envelope-alias":
+				f.envelope = bytes.Replace(f.envelope, []byte(`"key_id"`), []byte(`"KEY_ID"`), 1)
+			case "envelope-duplicate":
+				f.envelope = append([]byte(`{"KEY_ID":"one",`), f.envelope[1:]...)
+			default:
+				b, _ := json.Marshal(f.m)
+				if name == "payload-alias" {
+					b = bytes.Replace(b, []byte(`"sequence"`), []byte(`"Sequence"`), 1)
+				}
+				if name == "payload-duplicate" {
+					b = append([]byte(`{"Sequence":99,`), b[1:]...)
+				}
+				if name == "asset-alias" {
+					b = bytes.Replace(b, []byte(`"sha256"`), []byte(`"SHA256"`), 1)
+				}
+				f.envelope = f.signBytes(t, b)
+			}
+			if _, err := f.c.Check(context.Background()); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("ambiguous %s accepted: %v", name, err)
+			}
+		})
+	}
+}
