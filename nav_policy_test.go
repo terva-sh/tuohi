@@ -51,16 +51,16 @@ func navPolicyScenario() string {
 
 	var mu sync.Mutex
 	var external []string
-	prevOpen := openExternal
-	openExternal = func(rawurl string) {
+	app := testApp()
+	app.OpenExternal = func(rawurl string) error {
 		mu.Lock()
 		defer mu.Unlock()
 		external = append(external, rawurl)
+		return nil
 	}
-	defer func() { openExternal = prevOpen }()
 
 	w := &View{}
-	if err := testApp().Show(w); err != nil {
+	if err := app.Show(w); err != nil {
 		return "new error: " + err.Error()
 	}
 	defer w.Close()

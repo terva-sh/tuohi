@@ -33,7 +33,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-22T20:13:25Z
+updated_at: 2026-10-22T20:17:13Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -63,8 +63,8 @@ tuohi's own tests have a hook for this: the unexported `openExternal` variable (
 
 ## Acceptance criteria
 
-- [ ] A consumer's test can record every URL a view hands outside, without a real browser opening, on all three engines
-- [ ] The hook's shape and when it may be set are documented
+- [x] A consumer's test can record every URL a view hands outside, without a real browser opening, on all three engines
+- [x] The hook's shape and when it may be set are documented
 
 ## Implementation plan
 
@@ -93,3 +93,9 @@ It does not block v0.1.0.
 **agent:codex/t3-b903096c** at 2026-10-22T20:12:41Z
 
 The owner selected this existing ticket on 2026-10-22 as one of five Kuiske upstream improvements. Reuse the committed App-scoped OpenExternal decision, covering App.Open and outside navigation on all engines; no exported mutable global. Source Kuiske thread: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:17:13Z
+
+Implemented App.OpenExternal as a committed App setting, captured by each view. Removed the mutable test-only package opener. URL scheme checks and native/bridge navigation policy precede the hook, a failing hook never falls back, and navigation calls run on workers so native event dispatch stays responsive. The hook must be concurrency-safe.
+
+Validation: CGO_ENABLED=0 just ci passed in both modules, including vet for Linux/macOS/Windows, embedded JavaScript checks, unit tests, import rules, formatting, ticket validation and all eight target cross builds. CGO_ENABLED=0 just test-gui passed on native Linux WebKitGTK 6.0 and 4.1, including the migrated shared navigation scenarios and the public loopback consumer, which now verifies both outside links and App.Open without launching a browser. Headless tests cover app isolation, committed settings, returned errors and scheme/policy refusal. macOS/Windows/BSD runtime validation is unavailable on this Linux host; cross-compilation is not claimed as native validation. No public version was published.

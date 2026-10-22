@@ -114,6 +114,10 @@ type viewCore struct {
 	onReady      func()
 	onReadyFired bool
 
+	// externalOpener is the owning App's committed external URL handler.
+	// Set before the first navigation and then immutable.
+	externalOpener func(string) error
+
 	// serve resolves the app's content (App.FS) for requests on the app
 	// scheme, or on the loopback server; nil when the app serves no
 	// filesystem.
@@ -756,9 +760,17 @@ func (c *viewCore) navigationPolicy(rawurl string) navAction {
 // after the engine has cancelled it in the view: it opens the URL in the
 // system when action is navExternal, and logs it otherwise, so a developer
 // can see why a click did nothing.
-func refuseNavigation(rawurl string, action navAction) {
+func (c *viewCore) refuseNavigation(rawurl string, action navAction) {
 	if action == navExternal {
-		openExternal(rawurl)
+		opener := c.externalOpener
+		if opener == nil {
+			opener = openURL
+		}
+		go func() {
+			if err := opener(rawurl); err != nil {
+				log.Printf("tuohi: external URL handler: %v", err)
+			}
+		}()
 		return
 	}
 	log.Printf("tuohi: navigation to %q refused by the navigation policy", rawurl)
@@ -775,7 +787,7 @@ func (w *webview) openOutside(rawurl string) {
 		return
 	}
 	if action := w.navigationPolicy(rawurl); action == navExternal {
-		refuseNavigation(rawurl, action)
+		w.refuseNavigation(rawurl, action)
 	}
 }
 
@@ -792,19 +804,8 @@ func (w *webview) handleNewWindow(rawurl string) {
 	case action == navProceed:
 		log.Printf("tuohi: new window for %q dropped: it would replace the view's page", rawurl)
 	default:
-		refuseNavigation(rawurl, action)
+		w.refuseNavigation(rawurl, action)
 	}
-}
-
-// openExternal hands a refused navigation's URL to the system browser or mail
-// client, without blocking the UI thread it is called on. Tests replace it,
-// on the UI thread before a view exists, so that no browser starts.
-var openExternal = func(rawurl string) {
-	go func() {
-		if err := openURL(rawurl); err != nil {
-			log.Printf("tuohi: open %q: %v", rawurl, err)
-		}
-	}()
 }
 
 // bridgeMessage is the envelope window.__webview__ posts for every call.

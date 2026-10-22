@@ -718,6 +718,7 @@ func (a *App) showFirst(view *View) error {
 		return err
 	}
 	var w engine = nw
+	w.core().externalOpener = cfg.openExternal
 	w.trust(view.Origins...)
 	fail := func(err error) error {
 		w.Close()

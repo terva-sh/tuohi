@@ -1557,7 +1557,7 @@ func (w *webview) decidePolicy(decision uintptr, decisionType int) bool {
 		return false
 	}
 	webkitPolicyDecisionIgnore(decision)
-	refuseNavigation(uri, action)
+	w.refuseNavigation(uri, action)
 	return true
 }
 
@@ -1595,7 +1595,7 @@ func (w *webview) loadFailed(loadEvent int32, uri string, gerror uintptr) bool {
 	if action != navExternal {
 		return false
 	}
-	refuseNavigation(uri, action)
+	w.refuseNavigation(uri, action)
 	return true
 }
 
