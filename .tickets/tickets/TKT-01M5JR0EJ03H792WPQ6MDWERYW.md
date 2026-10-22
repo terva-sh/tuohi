@@ -30,7 +30,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T21:57:47Z
+updated_at: 2026-10-22T22:00:32Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -69,3 +69,7 @@ Full CGO_ENABLED=0 just ci passes for both modules, including all eight prescrib
 **agent:codex/t3-b903096c** at 2026-10-22T21:57:47Z
 
 Both complete Linux GUI suites passed with CGO_ENABLED=0: WebKitGTK 6.0 and 4.1, including the signed-staging/normal-shutdown/instance-release example. The final consumer additionally displays the retained previous update outcome through ReadResult without trusting the record's sequence or automatically deleting recovery backups; that final source passed the native example check again on both stacks. Full just ci/all eight cross builds passed after merging the bundle overlap guard. PR #87 is clean again at exact head 3f5e4024f383622564810f4e03360c084d1df39e/base 1212b665, full run 87529304-886c-4b6e-93c9-479de782dee8 / Actions #598. PR #88's initial example/docs source was clean at ff0002910ef08e518ab350ed9c173784da24bf64/base 6a96a31d, full run 0b843e3e-a8b3-4214-a246-3f060ae85b2d / Actions #596; it had no findings. The updated integration head/base needs a fresh full review after pushing this source commit. No native non-Linux execution or publication/merge is inferred. Final task completion awaits that exact-revision review and checks.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:00:32Z
+
+Final validation improvement: portable subprocess restart/cancellation regressions are now enabled on every supported native OS rather than permanently skipped outside Linux. Windows uses an .exe target; the relaunched consumer stays alive until the test has opened a stable lifetime watch and explicitly releases it, so test cleanup waits for image release. This permits the repository's normal post-merge native macOS/Windows runners to exercise real replacement/restart without credentials. The tests passed three repetitions on Linux and compile for Darwin and Windows. Updated full CGO_ENABLED=0 just ci/all eight targets passes. This does not manufacture non-Linux execution evidence: successful native production bundle installation and platform signing/notarization acceptance remain owner/platform-runner release checks. Final full exact-head/base review will be requested after this test change; ticket completion follows its disposition.

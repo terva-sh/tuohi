@@ -261,7 +261,9 @@ exercise real portable replacement/restart and the parent-exit ordering.
 | Package/store/administrator managed | Explicit `ErrManaged`, consumer directs to normal manager | Unit-tested refusal; no automatic ownership inference/elevation |
 
 Filesystem transaction failure tests establish ordinary rollback and backup
-retention, not power-loss durability. Native code-signature/relative-dylib tests
+retention, not power-loss durability. Portable subprocess tests are enabled on all supported native targets, including
+macOS/Windows runners after the owner-authorized merge/mirror workflow. Only their
+Linux execution is established here. Native code-signature/relative-dylib tests
 are included for macOS runners; the dylib fixture uses ad-hoc signing without
 credentials and tests loader layout independently of the production team policy.
 Native successful production signing/notarization and installation need their own
