@@ -34,7 +34,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-22T20:12:39Z
-updated_at: 2026-10-22T20:43:37Z
+updated_at: 2026-10-22T20:47:05Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -106,3 +106,13 @@ Fix: keep native replacement IDs, but associate asynchronous submissions with pe
 **agent:codex/t3-b903096c** at 2026-10-22T20:43:37Z
 
 Disposition for review 2724, finding 1 (late cancellation cleanup): fixed with generation-guarded asynchronous submission cleanup. The controlled delayed-completion regression and latest-cancelled cleanup regression pass; the full cgo-free notify suite passed 20 consecutive runs. Full CGO_ENABLED=0 just ci passed in both modules with all eight prescribed cross builds and strict ticket checks; just test-gui passed on both native Linux WebKitGTK stacks. Native macOS delivery/completion behavior remains unexecuted here; the regression runs the actual shared asynchronous control path used by macBackend.post, not a native center. Requesting another exact-head/base review after push; no merge or release performed.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:46:45Z
+
+Review 2725 (Actions #557, run 6792e8a4-c997-412a-aa3d-f127dc20fbc4) reviewed cbdb9487e33b27fbdcba2b62103f16d3c37472d3 against 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099 and explicitly resolved review 2724's stale cleanup finding. Forgejo CI #555 passed. It found one valid medium issue in the shared asynchronous path: a native completion could clean up after cancellation but send nil to the waiter, whose select could then report success because both cancellation and result were ready.
+
+Disposition: fixed. A completion that observes cancellation now publishes the context error after cleanup, and a waiter taking the result branch rechecks cancellation and cleans up before returning that error. This also covers cancellation after a successful completion enqueues its result but before the waiter selects. TestCancelledCompletionCannotReportSuccess controls both orderings synchronously inside start, preventing the waiter from selecting until both channels are ready; 100 iterations per ordering exercise either selection branch and require both a cancellation error and cleanup. A result from deliberately removed content can no longer publish a live handle or successful replacement. The existing delayed A/B completion regressions still cover generation safety. This is shared ordering evidence, not native macOS runtime evidence.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:47:05Z
+
+Validation for review 2725's result-race fix: targeted CGO_ENABLED=0 notify tests passed, including 100 controlled iterations of each cancellation/completion ordering; full just ci passed in the library/examples, including all eight prescribed cross builds and strict ticket checks. The prior cbdb948 GUI suites passed locally on both Linux stacks and its Forgejo CI #555 passed; this follow-up changes only asynchronous result coordination, so relevant headless/control-path and full compile checks were rerun. Native macOS/Windows/BSD runtime validation remains unavailable. A fresh review follows this push.
