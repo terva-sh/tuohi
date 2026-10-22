@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JR0EJ03H792WPQ6MDWERYW
 title: Document and demonstrate desktop update lifecycle integration
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -20,17 +20,10 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/updater-example
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: 129b5376f3e7b52c938de7fa90cff5a93d508c40
-  session: null
-  claimed_at: 2026-10-22T21:45:09Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T22:10:38Z
+updated_at: 2026-10-22T22:29:02Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -48,7 +41,7 @@ Provide a reference public-API-only desktop consumer and release-producer instru
 
 - [x] An external-consumer example uses only public APIs and demonstrates graceful teardown/restart without automatically updating or quitting on startup.
 - [x] Producer and consumer docs include signed metadata format, key/sequence/expiry rules, platform matrix and recovery limitations.
-- [ ] Relevant tests, full just ci and prescribed cross builds pass; PR has exact-head/base review with dispositions.
+- [x] Relevant tests, full just ci and prescribed cross builds pass; PR has exact-head/base review with dispositions.
 
 ## Implementation plan
 
@@ -81,3 +74,22 @@ Final integration source bd63b0a merges GUI harness fix 3f67b4d from PR #87. The
 **agent:codex/t3-b903096c** at 2026-10-22T22:10:38Z
 
 Integrated PR #87 fix 643ba16553867276b3be2ecb6757f18ad4a2b084 for review 2741 high finding: bundle/stage overlap now uses filesystem identity rather than case-sensitive string containment. Complete cgo-free ci/all eight targets and Linux updater tests passed on the fix; case-alias test skips truthfully on this case-sensitive volume, Darwin and Windows test binaries compile, native macOS remains unavailable. The bundle ticket is reopened until the fresh review/check cycle is complete. The GUI harness ticket is complete; review 2741 raised no defect in its changes. Request a fresh full exact-head/base review for this integrated example head after publication.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:29:01Z
+
+Selected updater work is implemented and published as an internal PR stack; no merge, tag, public feed or release publication was performed. The last complete tested integration source is 96ce233d0af58d9884729450ce00c9e85f7964a7. All three checks are green on every PR at the following exact revisions:
+
+- PR #85 https://git.local.sothr.com/terva-sh/tuohi/pulls/85 — head 1d8d40e487df3c60a8d96d97ff8fd50eaa287259, base dc693b2b1c26a19c6dd467df35d938759635c76b; clean full review daedd397-f228-445d-b4da-67fc25850afd (Actions #580), CI #581.
+- PR #86 https://git.local.sothr.com/terva-sh/tuohi/pulls/86 — head 1212b665f036c6edea73a1d63f1530901a2789f8, base 1d8d40e487df3c60a8d96d97ff8fd50eaa287259; clean full review 93e873e2-de2e-46b6-a91b-6b0886edb931 (#586), CI #587.
+- PR #87 https://git.local.sothr.com/terva-sh/tuohi/pulls/87 — head 0b1c1d9f728bdec67b63bacedba4cdb9458c0880, base 1212b665f036c6edea73a1d63f1530901a2789f8; clean full review ab81960a-1775-4ec9-91f4-3f0d1ede22dc (#616), CI #615.
+- PR #88 https://git.local.sothr.com/terva-sh/tuohi/pulls/88 — head 96ce233d0af58d9884729450ce00c9e85f7964a7, base 0b1c1d9f728bdec67b63bacedba4cdb9458c0880; clean full review 24f3f522-7764-499a-a4de-ac9419f696e7 (#617), CI #618.
+
+All actionable review findings were individually dispositioned and fixed: signed-JSON case aliases (1d8d40e), partial helper cleanup/retry (1212b665), preserved helper bundle/dylib layout (6a96a31), and filesystem-identity protection against case-aliased overlapping bundle stages (643ba16). GUI timing/diagnostic improvements are in 3f67b4d and 0b1c1d9. Both modules pass CGO_ENABLED=0 just ci/all eight prescribed target builds and both native Linux WebKitGTK suites. Real subprocess replacement/restart/cancellation executes on Linux and now compiles for other native runners; complete signed-bundle installation and macOS/Windows/BSD native execution remain unavailable. The real case-alias regression skips on this case-sensitive Linux volume; no native case-insensitive-volume execution is claimed.
+
+TKT-01M5JVN8Z0XHCDRPRRHPGJXHF1 — Investigate intermittent GTK4 permission test stalls preserves one historical unreproduced permissions stall as a separate unselected draft. Four controlled CI-image runs and latest hosted checks pass. The original stall is not declared fixed. This does not change the updater API, production permissions policy or known GTK3 empty-clipboard workaround.
+
+Only ticket-store closure follows this source revision. Request review carry for the ticket-only final commit and verify its hosted checks before handing back. Native production signing/notarization and eventual platform acceptance remain consumer/owner release validation, not proof supplied by cross compilation.
+
+## Summary
+
+Published public-API-only consent/progress/graceful teardown/restart example, retained outcome display, offline manifest signer and producer/consumer recovery/security docs in PR #88. Integration source 96ce233 has clean exact-head/base full review #617 and all three hosted checks green (#618). Full cgo-free validation, all eight cross targets and both Linux native stacks pass. Other native runtimes and production macOS signing acceptance are accurately documented as unavailable.
