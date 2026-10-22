@@ -146,8 +146,9 @@ root. The signed artifact is a ZIP containing exactly one top-level `.app`, not
 just its executable. Application must equal `CFBundleIdentifier`. The current and
 replacement bundles must have valid code signatures and the same nonempty Apple
 team identifier and executable name. Ad-hoc/unsigned bundles are unsupported.
-The stage must be outside the installed bundle, including through symlink aliases;
-overlapping source/staging trees are rejected before the native helper clone.
+The stage must be outside the installed bundle, including through symlink and
+case aliases. Filesystem identities along both ancestor chains are checked before
+the native helper clone; overlapping trees or paths that cannot be inspected fail.
 Publisher pipelines must retain normal platform signing/notarization obligations;
 Ed25519 feed authentication does not replace them. The updater checks code-signature
 integrity/team identity; it is not a notarization service or Gatekeeper bypass.

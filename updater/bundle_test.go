@@ -233,6 +233,18 @@ func TestRejectBundleStageOverlapIncludingDirectoryAliases(t *testing.T) {
 	if err := checkBundleStage(bundle, safe); err != nil {
 		t.Fatal("safe external stage rejected", err)
 	}
+	if err := checkBundleStage(bundle, filepath.Join(root, "missing")); err == nil {
+		t.Fatal("missing stage accepted")
+	}
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{bundle, file}, {file, safe}} {
+		if err := checkBundleStage(pair[0], pair[1]); !errors.Is(err, ErrInvalid) {
+			t.Fatal("non-directory accepted", pair, err)
+		}
+	}
 	if runtime.GOOS == "windows" {
 		return
 	}
@@ -242,5 +254,52 @@ func TestRejectBundleStageOverlapIncludingDirectoryAliases(t *testing.T) {
 	}
 	if err := checkBundleStage(bundle, filepath.Join(alias, "Contents", "Cache", "stage")); !errors.Is(err, ErrInvalid) {
 		t.Fatal("symlink overlap accepted", err)
+	}
+}
+
+// Executes on a case-insensitive volume, including the usual macOS volume.
+// Creating the alias as a symlink would miss the original bug: EvalSymlinks
+// resolves symlinks but preserves case aliases in existing directory names.
+func TestRejectBundleStageCaseAliases(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "Desktop.app")
+	stage := filepath.Join(bundle, "Contents", "stage")
+	if err := os.MkdirAll(stage, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "desktop.app")
+	info, err := os.Stat(alias)
+	if os.IsNotExist(err) {
+		t.Skip("volume uses case-sensitive directory names")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Stat(bundle)
+	if err != nil || !os.SameFile(original, info) {
+		t.Fatal("case alias does not identify original bundle", err)
+	}
+	aliasedStage := filepath.Join(alias, "Contents", "stage")
+	for _, pair := range [][2]string{{bundle, aliasedStage}, {aliasedStage, bundle}, {bundle, alias}} {
+		if err := checkBundleStage(pair[0], pair[1]); !errors.Is(err, ErrInvalid) {
+			t.Fatal("case-aliased overlap accepted", pair, err)
+		}
+	}
+}
+
+func TestBundleStageAllowsCaseDistinctSiblings(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "Desktop.app")
+	stage := filepath.Join(root, "desktop.app")
+	if err := os.Mkdir(bundle, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(stage, 0700); os.IsExist(err) {
+		t.Skip("volume uses case-insensitive directory names")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkBundleStage(bundle, stage); err != nil {
+		t.Fatal("distinct filesystem directories rejected", err)
 	}
 }
