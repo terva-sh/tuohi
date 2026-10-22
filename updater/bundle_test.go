@@ -216,3 +216,31 @@ func TestBundleResourceMutationAbortsBeforeReplacement(t *testing.T) {
 		t.Fatal("old bundle changed", err)
 	}
 }
+
+func TestRejectBundleStageOverlapIncludingDirectoryAliases(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "Desktop.app")
+	stage := filepath.Join(bundle, "Contents", "Cache", "stage")
+	if err := os.MkdirAll(stage, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{bundle, stage}, {bundle, bundle}, {stage, bundle}} {
+		if err := checkBundleStage(pair[0], pair[1]); !errors.Is(err, ErrInvalid) {
+			t.Fatal("overlapping clone accepted", pair, err)
+		}
+	}
+	safe := t.TempDir()
+	if err := checkBundleStage(bundle, safe); err != nil {
+		t.Fatal("safe external stage rejected", err)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(bundle, alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkBundleStage(bundle, filepath.Join(alias, "Contents", "Cache", "stage")); !errors.Is(err, ErrInvalid) {
+		t.Fatal("symlink overlap accepted", err)
+	}
+}
