@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JYX8KTD3A2ARREB37A4RP7
 title: Exercise window lifecycle through the public application loop
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/lifecycle-app-wait-validation
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: 07906df27de9fef631f6dc0cbe3f799855faf9c1
-  session: null
-  claimed_at: 2026-10-22T23:25:11Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-22T23:25:00Z
-updated_at: 2026-10-22T23:33:00Z
+updated_at: 2026-10-22T23:40:58Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -77,6 +70,14 @@ Controlled scratch-only regression: delay worker completion ten seconds after Qu
 
 Updated CGO_ENABLED=0 just ci passes both modules/all eight prescribed targets; full just test-gui passes both Linux stacks and examples. Windows amd64 and Darwin arm64 root test binaries compile; pinned Windows lint passes. Native macOS/Windows runtime confirmation of this public-loop scenario remains pending after reviewed merge. Request a fresh full exact-head/base review after this synchronization fix. Original Windows 210-second timeout still has no established production cause.
 
+**agent:codex/t3-b903096c** at 2026-10-22T23:40:58Z
+
+PR #92 merged as d7f113cc07a5e53a1a0c5c07f358dfe6d7e87bef after all three internal checks and full exact-head/base clean review c8ba23a4-1b9e-415d-a3eb-8a3c24c26e61 (head af924cca7c1008403c3d7d44f631b0d09d6be615, base 07906df27de9fef631f6dc0cbe3f799855faf9c1). Review 2749 finding-1 is individually disposed as fixed by af924cc: the caller joins workerDone after App.Wait, and workerDone closes only after App.Quit returns.
+
+Native mirror run https://github.com/terva-sh/tuohi/actions/runs/39872943146 at d7f113c now completed both required desktop jobs successfully, with CGO_ENABLED=0 and TUOHI_REQUIRE_GUI=1. Windows job https://github.com/terva-sh/tuohi/actions/runs/39872943146/job/120151980729 passes TestNativeWindowLifecycle, all root WebView2 scenarios, helper packages and consumer examples. macOS job https://github.com/terva-sh/tuohi/actions/runs/39872943146/job/120151980911 also passes TestNativeWindowLifecycle, root native scenarios, helper packages and consumer examples. The scenario executes in TestMain and its result is asserted by the named test; the displayed 0.00-second assertion duration is not the native scenario duration. GTK3 x64 and both ARM GTK jobs also passed; x64 GTK4 was still installing dependencies when these native job logs were captured. Local both-stack GUI tests and all prescribed cross builds already passed.
+
+This completes this ticket's public-loop validation and native follow-through. The original Windows timeout's production cause remains unknown; no production source changed and no inferred root cause is claimed. Packaged notification delivery/permissions, production team-signed bundle updates/notarization, and manual tray usability remain separate acceptance work. No release/version was published.
+
 ## Summary
 
-Native lifecycle validation now uses the supported public App.Wait/App.Quit contract in one application loop, preserving every original close/renderer/state/thread/deferred/quit assertion. Failures carry stages and quit the whole app; a hard watchdog includes goroutine stacks before the outer CI kill. Both Linux WebKitGTK stacks, cgo-free CI/all prescribed cross builds, Windows/Darwin test compilation and Windows lint pass. A controlled renderer-state fault fails strictly and exits the loop. New native macOS/Windows execution remains pending; no original production cause or native timeout resolution is inferred.
+Landed through PR #92 at d7f113cc07a5e53a1a0c5c07f358dfe6d7e87bef. The native lifecycle scenario uses one public App.Wait/App.Quit loop, preserves close/renderer/state/thread/deferred/quit assertions, bounds failures with staged watchdogs and joins Quit completion. Review 2749 finding-1 fixed in af924cc; fresh full exact-head/base review clean. Full cgo-free CI/cross builds and both local Linux GUI stacks pass. Native GitHub run 39872943146 at d7f113c passes Windows and macOS desktop jobs including TestNativeWindowLifecycle, helper packages and consumer examples. Controlled renderer-state and delayed-Quit faults fail as intended. Original Windows timeout cause remains unknown; no production fix is claimed. Packaged-app release acceptance is separate, and no release was published.
