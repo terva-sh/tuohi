@@ -16,6 +16,10 @@ var ErrNotRunning = errors.New("tray: no active tray for this operation")
 // ErrUnavailable means a native tray registration or host is unavailable.
 var ErrUnavailable = errors.New("tray: host or native registration unavailable")
 
+// ErrMenuOpen means a menu replacement was requested synchronously on the
+// Windows UI thread while a popup was tracking. Queue it from another goroutine.
+var ErrMenuOpen = errors.New("tray: menu is currently open")
+
 // Changes is a patch to the current tray. Nil fields preserve their values.
 // Non-nil empty icon slices clear that variant; Title/Tooltip pointers may
 // clear text. Items replaces the entire menu including callbacks and checked
@@ -96,7 +100,7 @@ func validateChanges(c Changes) error {
 		if len(data) == 0 {
 			return nil
 		}
-		if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
+		if _, err := png.Decode(bytes.NewReader(data)); err != nil {
 			return errors.New("tray: update contains an invalid PNG icon")
 		}
 		return nil
@@ -122,6 +126,66 @@ func validateChanges(c Changes) error {
 		return walk(*c.Items)
 	}
 	return nil
+}
+
+// Native UI queues contain only integer tokens. Cancellation removes queued
+// work, and a captured lifetime prevents delivery to a subsequently created tray.
+type trayUpdate struct {
+	ctx     context.Context
+	changes Changes
+	source  *availabilitySource
+	result  chan error
+}
+
+type updateQueue struct {
+	sync.Mutex
+	next    uintptr
+	pending map[uintptr]*trayUpdate
+}
+
+func (q *updateQueue) add(ctx context.Context, c Changes, a *availabilitySource) (uintptr, *trayUpdate) {
+	q.Lock()
+	defer q.Unlock()
+	if q.pending == nil {
+		q.pending = make(map[uintptr]*trayUpdate)
+	}
+	q.next++
+	r := &trayUpdate{ctx: ctx, changes: c, source: a, result: make(chan error, 1)}
+	a.mu.Lock()
+	closed := a.closed
+	a.mu.Unlock()
+	if closed {
+		r.result <- ErrNotRunning
+		return q.next, r
+	}
+	q.pending[q.next] = r
+	return q.next, r
+}
+func (q *updateQueue) take(id uintptr) *trayUpdate {
+	q.Lock()
+	defer q.Unlock()
+	r := q.pending[id]
+	delete(q.pending, id)
+	return r
+}
+func (q *updateQueue) wait(id uintptr, r *trayUpdate) error {
+	defer q.take(id)
+	select {
+	case err := <-r.result:
+		return err
+	case <-r.ctx.Done():
+		return r.ctx.Err()
+	}
+}
+func (q *updateQueue) close(a *availabilitySource) {
+	q.Lock()
+	defer q.Unlock()
+	for id, r := range q.pending {
+		if r.source == a {
+			delete(q.pending, id)
+			r.result <- ErrNotRunning
+		}
+	}
 }
 
 func applyChanges(cfg Config, c Changes) Config {
