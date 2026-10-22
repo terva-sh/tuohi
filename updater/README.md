@@ -138,3 +138,38 @@ then. After validating the new app, the consumer owns removing the recovery
 directory. Windows also retains the private stage, because a running helper
 cannot unlink its own executable; reap obsolete stages only after helper exit.
 Compilation of the Windows/BSD code does not establish native installation behavior.
+
+## Complete macOS bundles
+
+Use `Config.Kind=AppBundle` and `BundleInstall` with the absolute installed `.app`
+root. The signed artifact is a ZIP containing exactly one top-level `.app`, not
+just its executable. Application must equal `CFBundleIdentifier`. The current and
+replacement bundles must have valid code signatures and the same nonempty Apple
+team identifier and executable name. Ad-hoc/unsigned bundles are unsupported.
+Publisher pipelines must retain normal platform signing/notarization obligations;
+Ed25519 feed authentication does not replace them. The updater checks code-signature
+integrity/team identity; it is not a notarization service or Gatekeeper bypass.
+
+Package ZIPs with symlinks preserved (for example, `zip -r -y` on a finished,
+signed bundle), with no `__MACOSX` sibling, resource-fork extras, or surrounding
+release directory. The archive is limited to 20,000 entries and 1 GiB expanded.
+Paths must be relative, NFC Unicode, and free of case collisions, backslashes,
+colons, duplicate entries and traversal. Regular file executable modes survive
+extraction. Relative framework symlinks are supported if they resolve entirely
+inside the bundle; dangling, cyclic and escaping links or archive entries below
+links are rejected. The ZIP digest and complete prepared tree digest are checked;
+code signatures, app identity and team equality are checked before scheduling and
+again before replacement.
+
+The helper replaces the whole `.app`, retains `backup.app`, then starts the
+installed bundle executable. This preserves the bundle location and process bundle
+identity. Executable-name changes are unsupported, so ordinary rollback can use
+the same executable path. Power loss between the two directory moves can require
+restoring `backup.app` manually, as for portable updates. `Pending.ResultPath` is
+outside the bundle so it survives replacement. App Store/MDM/package-owned bundles
+must use managed mode instead. The filesystem must be writable by the current
+user; the updater never requests administrator rights.
+
+Extraction/security regressions run on Linux. The macOS-native plist/codesign and
+process-watch paths are cross-compiled here; native macOS update execution is not
+available in this workspace and is not claimed as tested runtime behavior.

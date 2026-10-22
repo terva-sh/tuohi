@@ -151,10 +151,10 @@ func (s *Staged) Schedule(ctx context.Context, opts RestartOptions) (_ *Pending,
 	if opts.Mode == ManagedInstall {
 		return nil, ErrManaged
 	}
-	if opts.Mode != PortableInstall {
+	if opts.Mode != PortableInstall && opts.Mode != BundleInstall {
 		return nil, ErrUnsupported
 	}
-	if s.r.asset.Kind != Executable {
+	if (opts.Mode == PortableInstall && s.r.asset.Kind != Executable) || (opts.Mode == BundleInstall && (s.r.asset.Kind != AppBundle || runtime.GOOS != "darwin")) {
 		return nil, ErrUnsupported
 	}
 	if _, err = s.r.c.verify(s.r.envelope, time.Now()); err != nil {
@@ -167,14 +167,21 @@ func (s *Staged) Schedule(ctx context.Context, opts RestartOptions) (_ *Pending,
 		return nil, fmt.Errorf("%w: absolute target required", ErrInvalid)
 	}
 	opts.Target = filepath.Clean(opts.Target)
-	if runtime.GOOS == "darwin" && strings.Contains(opts.Target, ".app"+string(filepath.Separator)) {
+	if opts.Mode == PortableInstall && runtime.GOOS == "darwin" && strings.Contains(opts.Target, ".app"+string(filepath.Separator)) {
 		return nil, ErrUnsupported
 	}
 	current, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	oldInfo, err := regularFile(opts.Target)
+	runningTarget := opts.Target
+	if opts.Mode == BundleInstall {
+		runningTarget, err = bundleExecutable(ctx, opts.Target, s.r.c.cfg.Application)
+		if err != nil {
+			return nil, err
+		}
+	}
+	oldInfo, err := regularFile(runningTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -215,18 +222,39 @@ func (s *Staged) Schedule(ctx context.Context, opts RestartOptions) (_ *Pending,
 	if runtime.GOOS != "windows" && mode&0111 == 0 {
 		return nil, ErrUnsupported
 	}
-	newHash, err := copyFile(ctx, filepath.Join(s.dir, "artifact"), filepath.Join(work, "candidate"), mode)
+	artifact := filepath.Join(s.dir, "artifact")
+	artifactHash, err := fileDigest(ctx, artifact)
 	if err != nil {
 		return nil, err
 	}
-	if newHash != s.r.asset.SHA256 {
+	if artifactHash != s.r.asset.SHA256 {
 		return nil, fmt.Errorf("%w: staged artifact changed", ErrInvalid)
+	}
+	var newHash string
+	if opts.Mode == BundleInstall {
+		candidate := filepath.Join(work, "candidate.app")
+		if err = extractBundle(ctx, artifact, candidate); err != nil {
+			return nil, err
+		}
+		if _, err = validateBundle(ctx, opts.Target, candidate, s.r.c.cfg.Application); err != nil {
+			return nil, err
+		}
+		newHash, err = treeDigest(ctx, candidate)
+	} else {
+		newHash, err = copyFile(ctx, artifact, filepath.Join(work, "candidate"), mode)
+	}
+	if err != nil {
+		return nil, err
+	}
+	oldHash, err := installDigest(ctx, opts.Mode, opts.Target)
+	if err != nil {
+		return nil, err
 	}
 	helper := filepath.Join(s.dir, "helper")
 	if runtime.GOOS == "windows" {
 		helper += ".exe"
 	}
-	oldHash, err := copyFile(ctx, opts.Target, helper, 0700)
+	_, err = copyFile(ctx, runningTarget, helper, 0700)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +266,11 @@ func (s *Staged) Schedule(ctx context.Context, opts RestartOptions) (_ *Pending,
 	cfg := s.r.c.cfg
 	cfg.Fetch = nil
 	cfg.StageDir = ""
-	p := installPlan{Parent: os.Getpid(), Options: opts, Config: cfg, Envelope: s.r.envelope, Stage: s.dir, Work: work, OldDigest: oldHash, NewDigest: newHash, Relaunch: opts.Target, Deadline: time.Now().Add(opts.Timeout)}
+	stage, err := filepath.Abs(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	p := installPlan{Parent: os.Getpid(), Options: opts, Config: cfg, Envelope: s.r.envelope, Stage: stage, Work: work, OldDigest: oldHash, NewDigest: newHash, Relaunch: runningTarget, Deadline: time.Now().Add(opts.Timeout)}
 	pending, err := startHelper(ctx, helper, p)
 	if err != nil {
 		return nil, err
@@ -359,7 +391,7 @@ func runHelper(ctx context.Context, in io.Reader, out io.Writer) (err error) {
 		return ErrInvalid
 	}
 	p := wire.plan()
-	if p.Parent < 1 || p.Parent == os.Getpid() || p.Parent != os.Getppid() || !filepath.IsAbs(p.Work) || !filepath.IsAbs(p.Stage) || !filepath.IsAbs(p.Options.Target) || p.Options.Mode != PortableInstall || p.Relaunch != p.Options.Target || p.Deadline.After(time.Now().Add(time.Hour)) {
+	if p.Parent < 1 || p.Parent == os.Getpid() || p.Parent != os.Getppid() || !filepath.IsAbs(p.Work) || !filepath.IsAbs(p.Stage) || !filepath.IsAbs(p.Options.Target) || (p.Options.Mode != PortableInstall && p.Options.Mode != BundleInstall) || p.Deadline.After(time.Now().Add(time.Hour)) {
 		return ErrInvalid
 	}
 	ctx, cancel := context.WithDeadline(ctx, p.Deadline)
@@ -389,7 +421,23 @@ func runHelper(ctx context.Context, in io.Reader, out io.Writer) (err error) {
 	}
 	result.Version = r.Version()
 	result.Sequence = r.Sequence()
-	if r.asset.Kind != Executable || r.asset.SHA256 != p.NewDigest {
+	if (p.Options.Mode == PortableInstall && (r.asset.Kind != Executable || r.asset.SHA256 != p.NewDigest || p.Relaunch != p.Options.Target)) || (p.Options.Mode == BundleInstall && (r.asset.Kind != AppBundle || runtime.GOOS != "darwin")) {
+		return ErrInvalid
+	}
+	if p.Options.Mode == BundleInstall {
+		expected, e := bundleExecutable(ctx, p.Options.Target, p.Config.Application)
+		if e != nil {
+			return e
+		}
+		if p.Relaunch != expected {
+			return ErrInvalid
+		}
+	}
+	artifactHash, err := fileDigest(ctx, filepath.Join(p.Stage, "artifact"))
+	if err != nil {
+		return err
+	}
+	if artifactHash != r.asset.SHA256 {
 		return ErrInvalid
 	}
 	if _, err = fmt.Fprintln(out, helperReady); err != nil {
@@ -428,22 +476,28 @@ func startInstalled(p installPlan) error {
 // Ordinary failures restore and relaunch the old installation. A power loss
 // between directory moves can require manual restoration from backup.
 func install(p installPlan, move func(string, string) error, start func(installPlan) error) (string, error) {
-	ctx := context.Background()
-	old, err := fileDigest(ctx, p.Options.Target)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	old, err := installDigest(ctx, p.Options.Mode, p.Options.Target)
 	if err != nil {
 		return "failed", err
 	}
 	if old != p.OldDigest {
 		return "failed", ErrTargetChanged
 	}
-	candidate := filepath.Join(p.Work, "candidate")
-	backup := filepath.Join(p.Work, "backup")
-	newHash, err := fileDigest(ctx, candidate)
+	candidate := candidatePath(p)
+	backup := backupPath(p)
+	newHash, err := installDigest(ctx, p.Options.Mode, candidate)
 	if err != nil {
 		return "rolled-back", restartOld(p, err, start)
 	}
 	if newHash != p.NewDigest {
 		return "rolled-back", restartOld(p, fmt.Errorf("%w: prepared candidate changed", ErrInvalid), start)
+	}
+	if p.Options.Mode == BundleInstall {
+		if _, err = validateBundle(ctx, p.Options.Target, candidate, p.Config.Application); err != nil {
+			return "rolled-back", restartOld(p, err, start)
+		}
 	}
 	if _, err = os.Lstat(backup); !os.IsNotExist(err) {
 		return "rolled-back", restartOld(p, fmt.Errorf("%w: backup exists", ErrInvalid), start)
@@ -472,7 +526,7 @@ func install(p installPlan, move func(string, string) error, start func(installP
 }
 
 func restartOld(p installPlan, cause error, start func(installPlan) error) error {
-	h, err := fileDigest(context.Background(), p.Options.Target)
+	h, err := installDigest(context.Background(), p.Options.Mode, p.Options.Target)
 	if err != nil {
 		return errors.Join(cause, err)
 	}
