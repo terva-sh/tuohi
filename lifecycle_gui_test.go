@@ -196,7 +196,21 @@ func lifecycleScenario() string {
 		return "quit test has no pending request"
 	}
 	quit := make(chan struct{})
-	go func() { app.Quit(); close(quit) }()
+	go func() {
+		// Wait until Wait is pumping, so macOS can marshal Quit and Windows
+		// consumes its wake WM_QUIT before the next scenario creates a view.
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+			if ui.call(func() {}) == nil {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		app.Quit()
+		close(quit)
+	}()
+	if err := app.Wait(); err != nil {
+		return err.Error()
+	}
 	select {
 	case <-quit:
 	case <-time.After(5 * time.Second):

@@ -195,9 +195,13 @@ func (v *View) WindowState() WindowState {
 
 // RequestClose asks to close through CloseRequested, for example from custom
 // window chrome. It is safe from any goroutine and queues onto the UI thread.
-// Close instead tears down unconditionally.
+// It does nothing before Show or after Close. Close tears down unconditionally.
 func (v *View) RequestClose() {
-	v.onUI(func(w engine) {
+	w := v.live()
+	if w == nil {
+		return
+	}
+	v.onUIWith(w, func(w engine) {
 		if w.core().lifecycle.request() {
 			v.closeEngine(w)
 		}

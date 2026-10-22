@@ -1242,7 +1242,7 @@ func (w *webview) windowState() WindowState {
 		return WindowState{Closed: true}
 	}
 	visible := w.window.Send(sel("isVisible")) != 0 && w.window.Send(sel("isMiniaturized")) == 0 && w.app.Send(sel("isHidden")) == 0
-	return WindowState{Visible: visible, Active: visible && w.window.Send(sel("isKeyWindow")) != 0}
+	return WindowState{Visible: visible, Active: visible && w.app.Send(sel("isActive")) != 0 && w.window.Send(sel("isKeyWindow")) != 0}
 }
 
 func (w *webview) onWindowDestroyed(skipTermination bool) {

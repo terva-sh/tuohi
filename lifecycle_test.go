@@ -165,3 +165,22 @@ func TestScopeQuitInvalidatesDeferredClose(t *testing.T) {
 		t.Fatal("quit did not invalidate and bypass close policy")
 	}
 }
+
+func TestRequestCloseCannotTargetReplacementView(t *testing.T) {
+	f := newFakeUI()
+	prev := ui
+	ui = f.uiDispatcher
+	defer func() { ui = prev }()
+	old, next := &closeCountingEngine{}, &closeCountingEngine{}
+	v := &View{}
+	v.RequestClose() // unshown close button/worker is harmless
+	v.w = old
+	v.RequestClose() // queued for old lifetime
+	v.Close()
+	v.RequestClose() // teardown raced a late renderer/worker request
+	v.w = next
+	f.drain()
+	if old.closes.Load() != 1 || next.closes.Load() != 0 || v.live() != next {
+		t.Fatal("queued close affected replacement lifetime")
+	}
+}
