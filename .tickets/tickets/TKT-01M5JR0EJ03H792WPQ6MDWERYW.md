@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5JR0EJ03H792WPQ6MDWERYW
 title: Document and demonstrate desktop update lifecycle integration
 type: task
-status: ready
+status: in-progress
 status_reason: null
 priority: high
 due_on: null
@@ -20,10 +20,17 @@ dependencies:
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/updater-example
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: 129b5376f3e7b52c938de7fa90cff5a93d508c40
+  session: null
+  claimed_at: 2026-10-22T21:45:09Z
+  expires_at: null
 archive: null
 created_at: 2026-10-22T21:24:24Z
-updated_at: 2026-10-22T21:24:26Z
+updated_at: 2026-10-22T21:48:20Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -46,3 +53,9 @@ Provide a reference public-API-only desktop consumer and release-producer instru
 ## Implementation plan
 
 Add example and producer/consumer docs, validate cgo-free both modules/all targets and relevant native scenarios, publish internal PR and request full exact-head/base review; record and fix findings.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-22T21:48:20Z
+
+Consumer reference example implemented and focused headless tests compile/pass. It uses only public APIs, consumer HTTP transport, explicit user prepare/install actions, early helper handling, managed-by-default installation mode, compiled sequence, normal Quit/Wait and single-instance release, and a no-install signed staging GUI check. Remaining work is producer documentation/tooling, native Linux GUI validation and full final CI/review. PR #86 cleanup fix now has a clean full review at 1212b665 against 1d8d40e (run 93e873e2-de2e-46b6-a91b-6b0886edb931 / Actions #586). PR #87 review 2736 found a high issue with standalone helper copies losing bundle-relative dylibs; pause integration publication and fix that on the owning bundle branch, preserving all example work in this commit.
