@@ -124,15 +124,20 @@ tryMedia({video: true}).then(function(r) { parent.postMessage('frame=' + r, '*')
 		return "", `<!DOCTYPE html><html><body><script>` + tryMedia + `
 window.addEventListener('load', async function() {
   var out = [];
+  window.progress('video');
   out.push('video=' + await tryMedia({video: true}));
+  window.progress('audio');
   out.push('audio=' + await tryMedia({audio: true}));
   var pasted = false;
   document.addEventListener('paste', function() { pasted = true; });
   var ran = false;
   try { ran = document.execCommand('paste'); } catch (e) {}
   out.push('paste=' + (ran && pasted));
+  window.progress('read');
   try { await navigator.clipboard.readText(); out.push('read=ok'); } catch (e) { out.push('read=' + (e.name === 'NotAllowedError' ? 'denied' : e.name)); }
+  window.progress('notify');
   out.push('notify=' + (typeof Notification === 'undefined' ? 'none' : await Notification.requestPermission()));
+  window.progress('frame');
   var frame = await new Promise(function(resolve) {
     window.addEventListener('message', function(e) { resolve(String(e.data)); });
     var f = document.createElement('iframe');
@@ -161,6 +166,7 @@ window.addEventListener('load', async function() {
     });
   });
   document.body.appendChild(layer);
+  window.progress('click');
   window.done(out.join(' '));
 });
 </script></body></html>`
@@ -194,12 +200,19 @@ window.addEventListener('load', async function() {
 	enableFakeCapture(w.w)
 	res := make(chan string, 1)
 	clicks := make(chan string, 1)
+	var progress atomic.Value
+	progress.Store("navigation")
+	_ = w.w.Bind("progress", func(s string) { progress.Store(s) })
 	_ = w.w.Bind("done", func(s string) { res <- s })
 	_ = w.w.Bind("clicked", func(s string) { clicks <- s })
-	time.AfterFunc(45*time.Second, func() { w.Close() })
+	watchdog := time.AfterFunc(45*time.Second, func() { w.Close() })
+	defer watchdog.Stop()
 	result := make(chan string, 1)
 	go func() {
 		defer w.Close()
+		// Both phases share a deadline shorter than the emergency close, so
+		// slow page setup cannot leave a final click wait racing teardown.
+		deadline := time.After(40 * time.Second)
 		select {
 		case r := <-res:
 			// A real click where the platform can make one.
@@ -209,6 +222,8 @@ window.addEventListener('load', async function() {
 				case click = <-clicks:
 				case <-time.After(10 * time.Second):
 					click = "clickread=timeout"
+				case <-deadline:
+					click = "clickread=timeout"
 				}
 			}
 			r += " " + click
@@ -217,8 +232,8 @@ window.addEventListener('load', async function() {
 			r += " asked=" + strings.Join(asked, ",")
 			askedMu.Unlock()
 			result <- r
-		case <-time.After(40 * time.Second):
-			result <- "no report"
+		case <-deadline:
+			result <- "timeout at " + progress.Load().(string)
 		}
 	}()
 	w.w.Navigate(trusted + "page")
@@ -227,7 +242,7 @@ window.addEventListener('load', async function() {
 	case r := <-result:
 		return r
 	default:
-		return "no report"
+		return "loop stopped at " + progress.Load().(string)
 	}
 }
 

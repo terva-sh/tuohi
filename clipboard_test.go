@@ -41,11 +41,16 @@ func clipboardScenario() string {
 	onUI := roundTrip(clipboardText)
 
 	result := make(chan string, 1)
-	time.AfterFunc(15*time.Second, func() { w.Close() })
-	go func() {
-		defer w.Close()
-		result <- roundTrip("off " + clipboardText)
-	}()
+	watchdog := time.AfterFunc(15*time.Second, func() { w.Close() })
+	defer watchdog.Stop()
+	// Dispatch queues even on the UI thread. Start the worker only once Run
+	// drains this turn: synchronous off-thread clipboard calls require a loop.
+	w.w.Dispatch(func() {
+		go func() {
+			defer w.Close()
+			result <- roundTrip("off " + clipboardText)
+		}()
+	})
 	w.w.Run()
 	select {
 	case offUI := <-result:

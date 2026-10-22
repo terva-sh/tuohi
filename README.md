@@ -154,6 +154,12 @@ bindings, events, serving (`App.FS`, `App.HTTP`), the runtime icon
 `WebView2` on Windows.
 
 The desktop services live in subpackages on the same cgo-free foundation.
+The optional [`updater`](updater/README.md) package verifies signed release feeds,
+stages bounded downloads through the consumer's transport, and supports explicit
+portable-executable or whole-macOS-bundle installation after graceful shutdown.
+Consumers retain update consent, channel, UI and package-manager policy. The
+[`selfupdate`](examples/selfupdate/) example shows the desktop lifecycle;
+[`updatefeed`](examples/updatefeed/) signs metadata offline without publishing it.
 None of them imports the root, and the root imports none of them except
 `dialog`, so a program that only opens a window links none of their
 dependencies: neither godbus (the Linux tray and notifications) nor the
