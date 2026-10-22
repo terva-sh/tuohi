@@ -93,7 +93,7 @@ func runProgram() error {
 	if err != nil {
 		return err
 	}
-	defer lock.Release()
+	defer func() { _ = lock.Release() }()
 	app := &tuohi.App{Name: "tuohi updates", FS: content, Exit: true}
 	view := &tuohi.View{Title: "Desktop updates", URL: "app://app/page.html", Frame: true, Width: 640, Height: 480}
 	var op sync.Mutex
@@ -115,7 +115,7 @@ func runProgram() error {
 			if e != nil {
 				return ""
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			path, e := io.ReadAll(io.LimitReader(f, 4097))
 			if e != nil || len(path) > 4096 || !filepath.IsAbs(string(path)) {
 				return ""
@@ -149,7 +149,7 @@ func runProgram() error {
 			if e != nil {
 				return "", e
 			}
-			s, e := r.Stage(ctx, func(p updater.Progress) { view.Emit("download", p) })
+			s, e := r.Stage(ctx, func(p updater.Progress) { _ = view.Emit("download", p) })
 			if e != nil {
 				return "", e
 			}

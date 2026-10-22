@@ -4,6 +4,10 @@
 // supported trio; anything else reports ErrUnsupported from Set and Run.
 package tray
 
+import "context"
+
+func update(context.Context, Changes) error { return ErrUnsupported }
+
 func set(_ Config) error { return ErrUnsupported }
 
 func remove() {}

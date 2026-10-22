@@ -119,7 +119,7 @@ func TestScheduleRefusesUnsafeTargetAndManagedInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	for _, opts := range []RestartOptions{{Mode: ManagedInstall}, {Mode: PortableInstall, Target: "relative"}, {Mode: PortableInstall, Target: filepath.Join(t.TempDir(), "absent")}} {
 		if _, err = s.Schedule(context.Background(), opts); err == nil {
 			t.Fatal("accepted", opts)
@@ -295,7 +295,7 @@ func TestPortableSubprocessRestart(t *testing.T) {
 			if e != nil {
 				t.Fatal("cannot observe relaunched consumer", e)
 			}
-			defer watch.Close()
+			defer func() { _ = watch.Close() }()
 			if e = os.WriteFile(filepath.Join(d, "release-relaunch"), nil, 0600); e != nil {
 				t.Fatal(e)
 			}
@@ -314,7 +314,7 @@ func TestNativeWatchCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	if err = w.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
@@ -379,7 +379,7 @@ func TestScheduleRetriesAfterCancelledHelperCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	helper := filepath.Join(s.dir, "helper")
 	if runtime.GOOS == "windows" {
 		helper += ".exe"

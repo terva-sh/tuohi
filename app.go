@@ -555,6 +555,7 @@ var scopePtr atomic.Pointer[appScope]
 // App and keep its Wait from ever seeing zero (TKT-01M3V1Z4). Each window is
 // reported once, however many paths observe its close.
 func (c *viewCore) reportClosed() {
+	c.lifecycle.update(WindowState{Closed: true})
 	if s := c.scope.Swap(nil); s != nil {
 		s.windowClosed()
 	}
@@ -569,8 +570,17 @@ func (s *appScope) windowClosed() {
 func (s *appScope) requestExit() {
 	s.exitOnce.Do(func() {
 		atomic.StoreInt32(&s.exitFlag, 1)
+		s.invalidateCloseRequests()
 		appUIWake()
 	})
+}
+
+func (s *appScope) invalidateCloseRequests() {
+	s.viewsMu.Lock()
+	defer s.viewsMu.Unlock()
+	for _, w := range s.views {
+		w.core().lifecycle.quit()
+	}
 }
 
 // Backend reports which web-engine backend the App scope uses for its views,

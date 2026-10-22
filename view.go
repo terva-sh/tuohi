@@ -769,6 +769,13 @@ func (a *App) showFirst(view *View) error {
 	view.mu.Lock()
 	view.w, view.app = w, a
 	view.mu.Unlock()
+	if atomic.LoadInt32(&s.exitFlag) != 0 {
+		w.core().lifecycle.quit()
+	}
+	w.core().lifecycle.start(w.windowState(), view.CloseRequested, view.WindowChanged, ui.run, func() { view.closeEngine(w) })
+	if view.live() != w { // an initial state callback may close the view
+		return nil
+	}
 	view.onUIWith(w, applyTitle)
 	// Load the window's first page: the declarative URL. With an empty URL
 	// no navigation happens (a blank window) and Ready stays pending until
@@ -897,6 +904,21 @@ type View struct {
 	// has no declarative JS/CSS injection API - call Eval from Ready to run
 	// code when the page comes up.
 	Ready func()
+
+	// CloseRequested intercepts user/keyboard close and RequestClose. It runs
+	// on the native UI thread and must return promptly. Nil allows closing.
+	// Use Cancel then Hide to preserve this view, or Defer and decide later
+	// from a worker. View.Close and App.Quit bypass this policy. Configure
+	// before Show; changing the field later has no effect on the live window.
+	CloseRequested func(*CloseRequest)
+
+	// WindowChanged receives an initial native state after engine publication,
+	// subsequent visibility/activation changes, and a terminal Closed state
+	// on destruction. It runs on the UI thread without internal locks and
+	// must return promptly. Calls may be nested if the callback changes native
+	// state (for example Hide). State is updated before each call. Configure
+	// before Show. Occlusion and workspace visibility are not reported.
+	WindowChanged func(WindowState)
 
 	// window is the OPTIONAL native host window to embed into, set before
 	// Show (a GtkWindow* / NSWindow* / HWND); nil lets tuohi create and own
@@ -1114,13 +1136,22 @@ func (v *View) Window(f func(wnd unsafe.Pointer)) {
 // before the View was ever shown - closing an unshown View is not an error.
 // Off the UI thread the teardown is queued and Close does not wait for it.
 func (v *View) Close() {
+	v.closeEngine(nil)
+}
+
+func (v *View) closeEngine(expected engine) {
 	v.mu.Lock()
 	w, app := v.w, v.app
+	if expected != nil && w != expected {
+		v.mu.Unlock()
+		return
+	}
 	v.w, v.app = nil, nil
 	v.mu.Unlock()
 	if w == nil {
 		return
 	}
+	w.core().lifecycle.quit()
 	w.Close()
 	if app != nil {
 		app.unregisterView(v, w)

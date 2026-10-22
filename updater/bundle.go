@@ -92,7 +92,7 @@ func extractBundle(ctx context.Context, archive, dst string) (err error) {
 	if err != nil {
 		return fmt.Errorf("%w: bundle ZIP", ErrInvalid)
 	}
-	defer z.Close()
+	defer func() { _ = z.Close() }()
 	if len(z.File) == 0 || len(z.File) > bundleEntryLimit {
 		return fmt.Errorf("%w: bundle entry count", ErrInvalid)
 	}

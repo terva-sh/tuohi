@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3N2Q0BCTNFZ9PNWTK1CMX99
 title: Let a consumer's test see links handed to the system browser
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -22,18 +22,13 @@ references:
     path: null
   - ref: t3-thread://v1/564d5d21-1210-473a-aa2b-918183ce9764
     path: null
+  - ref: https://git.local.sothr.com/terva-sh/tuohi/pulls/81
+    path: null
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/prepare-library-changes
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be
-  session: null
-  claimed_at: 2026-10-22T20:12:41Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-28T22:38:34Z
-updated_at: 2026-10-22T20:17:13Z
+updated_at: 2026-10-22T21:04:35Z
 created_by:
   id: agent:claude-code/fe5548cb
   name: ""
@@ -99,3 +94,13 @@ The owner selected this existing ticket on 2026-10-22 as one of five Kuiske upst
 Implemented App.OpenExternal as a committed App setting, captured by each view. Removed the mutable test-only package opener. URL scheme checks and native/bridge navigation policy precede the hook, a failing hook never falls back, and navigation calls run on workers so native event dispatch stays responsive. The hook must be concurrency-safe.
 
 Validation: CGO_ENABLED=0 just ci passed in both modules, including vet for Linux/macOS/Windows, embedded JavaScript checks, unit tests, import rules, formatting, ticket validation and all eight target cross builds. CGO_ENABLED=0 just test-gui passed on native Linux WebKitGTK 6.0 and 4.1, including the migrated shared navigation scenarios and the public loopback consumer, which now verifies both outside links and App.Open without launching a browser. Headless tests cover app isolation, committed settings, returned errors and scheme/policy refusal. macOS/Windows/BSD runtime validation is unavailable on this Linux host; cross-compilation is not claimed as native validation. No public version was published.
+
+**agent:codex/t3-b903096c** at 2026-10-22T20:28:28Z
+
+Internal PR #81 is ready for owner review: https://git.local.sothr.com/terva-sh/tuohi/pulls/81. Head 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099, base cf945c1c5152b33b4bf8f76b7cf91c4e1015d1be. Forgejo CI passed both check and both-stack GUI jobs (Actions run #545). Terva full review run b024d458-31f3-49cd-8553-d47959d9ec08, request open-external-ready-review-4f8d5e6, Actions #546 / id 26999, found no findings. No dispositions are required. The review explicitly distinguishes callback wiring/cross-compilation from unavailable native macOS/Windows/BSD execution. The workflow dispatch returned the documented unexpected-end-of-JSON error, but inspection confirmed the requested run completed, so it was not dispatched again.
+
+Implementation and review are complete; PR remains open pending owner merge authorization. No release/version has been published. Kuiske received the API, tested source commit, PR URL and platform validation limits.
+
+## Summary
+
+Landed through internal PR #81, merged by the owner as dc693b2b1c26a19c6dd467df35d938759635c76b. App.OpenExternal is an App-scoped committed setting covering App.Open and refused/outside navigation on all engines after existing URL/navigation security checks; nil preserves OS behavior. Public loopback consumer regression, shared tests, cgo-free just ci/all cross builds and both native Linux GUI stacks passed. Full review b024d458-31f3-49cd-8553-d47959d9ec08 was clean at 4f8d5e638ed4ff802ff8e9af9ee6e9673c09c099. Native macOS/Windows execution was unavailable on this host. No public version was published by this session.

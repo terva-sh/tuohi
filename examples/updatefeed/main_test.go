@@ -53,7 +53,7 @@ func TestSignedFeedRoundTripThroughPublicConsumerAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if _, err = signManifest(payload, "publisher", []byte("not a seed")); err == nil {
 		t.Fatal("accepted malformed seed")
 	}

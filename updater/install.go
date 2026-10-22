@@ -108,7 +108,7 @@ func ReadResult(path string) (Result, error) {
 	if err != nil {
 		return r, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b, err := io.ReadAll(io.LimitReader(f, 64<<10+1))
 	if err != nil {
 		return r, err
@@ -418,12 +418,12 @@ func runHelper(ctx context.Context, in io.Reader, out io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	watch, err := watchProcess(p.Parent)
 	if err != nil {
 		return err
 	}
-	defer watch.Close()
+	defer func() { _ = watch.Close() }()
 	// A private result record intentionally contains no args, env or metadata URL.
 	result := Result{State: "failed", RecoveryDir: p.Work}
 	defer func() {
@@ -573,7 +573,7 @@ func fileDigest(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err = io.Copy(h, &contextReader{ctx: ctx, r: f}); err != nil {
 		return "", err
@@ -589,7 +589,7 @@ func copyFile(ctx context.Context, src, dst string, mode os.FileMode) (string, e
 	if err != nil {
 		return "", err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
 	if err != nil {
 		return "", err
@@ -628,7 +628,7 @@ func writeResult(path string, r Result) error {
 		return err
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err = f.Write(b); err != nil {
 		_ = f.Close()
 		return err
