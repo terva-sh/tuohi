@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M5JTA6MQ25ZDBGKAHJ1B47MJ
 title: Synchronize GUI clipboard and binding lifecycle scenarios
 type: bug
-status: done
-status_reason: null
+status: in-progress
+status_reason: "PR #89 CI #640 GTK4 binding scenario received no page reports; investigate independently of the previous fixed Eval/navigation race."
 priority: normal
 due_on: null
 labels:
@@ -17,10 +17,17 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/complete-desktop-stack
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: 3e8d58871fcd93fbf30b4eebd9a61f1b7bba4b29
+  session: null
+  claimed_at: 2026-10-22T22:56:51Z
+  expires_at: null
 archive: null
 created_at: 2026-10-22T22:04:41Z
-updated_at: 2026-10-22T22:10:38Z
+updated_at: 2026-10-22T22:56:51Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -41,7 +48,7 @@ CI run #599 on PR #87 exposed two existing GUI scenario races, in root tests unc
 
 ## Implementation plan
 
-Use a queued native dispatch turn as clipboard startup barrier; navigate from the evaluation-report binding; share one observation deadline and cancel watchdog timers. Run both native Linux stacks, required ci/cross builds, then fresh exact-head/base review. Archive failure and fix in PR #87 and ticket.
+Run fresh native processes in the CI Debian Go/WebKitGTK image with two CPUs, retaining the full preceding TestMain sequence. Instrument the binding scenario with independent network request/page-script diagnostics and checked binding setup errors, preserving the same off-thread Eval/Focus/Navigate contract and exact success criteria. Do not attribute the missing report to a production cause without evidence. Regress any confirmed harness error, run full cgo-free checks and both stacks, record the exact source/runtime and request fresh review after source changes.
 
 ## Notes
 
@@ -50,6 +57,14 @@ Use a queued native dispatch turn as clipboard startup barrier; navigate from th
 Investigated both failures in PR #87 Actions run #599 at 3f5e402. They concern existing GUI tests unchanged from main, not the bundle installer. clipboardScenario launched its synchronous off-thread call before webview.Run marked a loop active; the dispatcher correctly refused it. goroutineCallsScenario issued Navigate immediately after asynchronous Eval, allowing navigation to discard the evaluated page; its independent report waits also raced its watchdog. Fixed by launching clipboard work from a queued UI turn, chaining Navigate from the evaluation report binding (still off the UI thread), using one observation deadline before the emergency close, and stopping both watchdogs. Existing assertions still require exact Unicode clipboard round trips and page/eval/navigation/off-thread reports. No production threading semantics changed.
 
 Validation: CGO_ENABLED=0 just ci passes both modules and all eight prescribed targets. CGO_ENABLED=0 just test-gui passes both native Linux WebKitGTK stacks and available examples. Native macOS/Windows/BSD execution remains unavailable; compilation is not runtime evidence. Fresh full exact-head/base review is requested with this source fix; remote checks will be tracked before ticket closure.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:56:50Z
+
+done to in-progress: PR #89 CI #640 GTK4 binding scenario received no page reports; investigate independently of the previous fixed Eval/navigation race.
+
+**agent:codex/t3-b903096c** at 2026-10-22T22:56:51Z
+
+CI #640 at 3e8d588 fails only TestViewMethodsFromBinding on WebKitGTK 6.0 with start=none eval=none navigate=none offUI=false. GTK3 and all subpackages/examples pass. This differs from the fixed Eval/navigation ordering issue: no initial page binding arrived. Existing output cannot establish whether navigation, page script or bridge failed. Preserve strict assertions; reproduce in the CI base runtime and add independent page/network phase diagnostics if necessary.
 
 ## Summary
 
