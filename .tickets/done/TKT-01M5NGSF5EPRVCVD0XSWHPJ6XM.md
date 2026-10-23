@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5NGSF5EPRVCVD0XSWHPJ6XM
 title: Supplement missing native macOS menu commands
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -19,17 +19,10 @@ references:
   - ref: pr:https://git.local.sothr.com/terva-sh/tuohi/pulls/100
     path: null
 moved_to: null
-claim:
-  actor: agent:codex/tuohi-native-20261023
-  branch: agent/native-macos-menu-fullscreen
-  worktree: /Users/drewshort/.local/state/agent-scratch/tuohi-native-20261023/repo
-  commit: 728218d48d300fd704c884342ec9009754d05b24
-  session: null
-  claimed_at: 2026-10-23T23:16:08Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-23T23:15:59Z
-updated_at: 2026-10-23T23:32:33Z
+updated_at: 2026-10-23T23:40:25Z
 created_by:
   id: agent:codex/tuohi-native-20261023
   name: ""
@@ -55,7 +48,7 @@ Boundary: no clipboard payload path through Go, native keyboard interception, Ma
 
 ## Definition of done
 
-- [ ] Required checks, isolated native macOS acceptance and exact-head terva review pass; PR records evidence and boundaries.
+- [x] Required checks, isolated native macOS acceptance and exact-head terva review pass; PR records evidence and boundaries.
 
 ## Implementation plan
 
@@ -91,3 +84,29 @@ Focused native command (this literal command supersedes the abbreviated pseudo-r
 CGO_ENABLED=0 TUOHI_REQUIRE_GUI=1 TUOHI_TEST_MACOS_REGRESSIONS=1 go test -count=1 -run 'TestNative(MenuSupplement|FullscreenHide)|TestMenuEditKeys' -v .
 
 The fixed working tree passes all three native assertions in 15.812s on macOS 26.6.2 arm64. The fullscreen cases forward the real DidEnter notification to tuohi before invoking the synthetic host action while delivery is still active, making the ordering deterministic without assuming NSNotificationCenter ordering. Both direct Hide and RequestClose with Cancel+Hide are covered. Vet, formatting, public-example/import checks, eight-target cross builds in both modules and strict ticket validation pass after the fixes. A fresh full terva review will be requested after pushing the substantive changes.
+
+**agent:codex/tuohi-native-20261023** at 2026-10-23T23:36:39Z
+
+Substantive review fixes are committed and pushed as d39030fab606e0fd74eac57c184f3d6123e3938d. Exact-head focused native acceptance passes all three assertions in 15.360s with the literal command recorded in the preceding note. Regression proof using the extended test file on the prior 52fa5f9 implementation fails both actionable-leaf preservation and the late-DidEnter host Hide case (enter=6, exit=5, pending=true). Disposition/evidence comment: https://git.local.sothr.com/terva-sh/tuohi/pulls/100#issuecomment-34678.
+
+Fresh FULL review (carry=false) requested and confirmed as Actions #709, request native-macos-d39030f-full-review; CI is #708. The parent owns watching and merger decisions. Original protected Linux GUI gate #706 failed; its failing test/log is still unavailable. Parent's isolated emulated linux/amd64 Podman reproduction stopped at a local user-namespace/bubblewrap limitation, which establishes no Forge runner cause. Source changes remain Darwin-only except comments in view.go; no Linux preflight/source change is warranted by the local environment failure. No merge or release performed.
+
+The clean actual upstream checkout is /Users/drewshort/.local/state/agent-scratch/tuohi-native-20261023/repo on agent/native-macos-menu-fullscreen. Staged orientation: /Users/drewshort/.local/state/agent-handoffs/tuohi/2026-10-23-native-menu-fullscreen-upstream.md. Keep Kuiske v0.2.0 pin and wrappers until a separately authorized upstream release and consumer follow-up.
+
+**agent:codex/tuohi-native-20261023** at 2026-10-23T23:40:25Z
+
+Implementation evidence is complete on head `d39030fab606e0fd74eac57c184f3d6123e3938d`, base `728218d48d300fd704c884342ec9009754d05b24`.
+
+- All three exact-head statuses are success: [CI #708](https://git.local.sothr.com/terva-sh/tuohi/actions/runs/708) headless/vet/cross-build and GUI scenarios on both WebKitGTK stacks, plus terva-review/code.
+- [Fresh full clean review](https://git.local.sothr.com/terva-sh/tuohi/pulls/100#issuecomment-34677), run `35a84e43-d5c6-40ef-8367-45e0b0662cd8`, [Actions #709](https://git.local.sothr.com/terva-sh/tuohi/actions/runs/709), explicitly resolves both review 2818 findings with no new findings. [Dispositions and regression evidence](https://git.local.sothr.com/terva-sh/tuohi/pulls/100#issuecomment-34678) remain applicable.
+- Exact-head isolated macOS 26.6.2 arm64 acceptance passed all three native assertions in 15.360s with `CGO_ENABLED=0 TUOHI_REQUIRE_GUI=1 TUOHI_TEST_MACOS_REGRESSIONS=1 go test -count=1 -run 'TestNative(MenuSupplement|FullscreenHide)|TestMenuEditKeys' -v .`. Extended tests fail both reviewed defects on the old implementation and pass on d39030f.
+
+Earlier CI #706 Linux failure remains unattributed. The parent's independent emulated linux/amd64 Podman diagnostic initially hit a bubblewrap namespace limitation. With the WebKit sandbox deliberately disabled only in the disposable container, both engines passed maximize, the root GUI package (6.0: 57.127s; 4.1: 70.519s), and examples; updater failed on unsupported process watch under emulation, with an additional GTK6 Xvfb cleanup error. This is not a full-suite or CI-equivalent pass and establishes no cause for #706. No Linux source/preflight changes or further repeats were made. Full local macOS suite is also not claimed: separately ticketed baseline failures remain as documented.
+
+Closing and releasing the selected menu/fullscreen tickets with all acceptance criteria earned. The final commit will touch only `.tickets/`; review carry will be requested under repository rules. Parent owns final-head gate readiness and merge. No merge, mirror sync, release, or Kuiske pin/wrapper change is authorized here. A separately authorized upstream release containing the eventual merge must precede the consumer version/pin follow-up; no release number is assumed.
+
+PR closeout evidence: https://git.local.sothr.com/terva-sh/tuohi/pulls/100#issuecomment-34693
+
+## Summary
+
+Implemented and accepted in PR #100 on d39030fab606e0fd74eac57c184f3d6123e3938d; both CI gates and full exact-head terva review pass. Native synthetic regression acceptance passes, including both prior review findings. Evidence: https://git.local.sothr.com/terva-sh/tuohi/pulls/100#issuecomment-34693. Final ticket-only closeout uses review carry. Parent owns merge/release; Kuiske pin and wrappers remain unchanged.
