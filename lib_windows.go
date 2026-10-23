@@ -889,7 +889,8 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 				cw.AddNavigationCompleted(handlerPtr(w.navH), &navTok)
 				// The navigation policy: NavigationStarting fires for the
 				// top-level document only (frames have their own event,
-				// which is left alone), before any request is sent.
+				// which is left alone). Cancelling prevents the document from
+				// committing, but WebView2 may already send its GET request.
 				w.navStartH = newHandler(w.id, kindNavigationStarting, &iidNavigationStarting)
 				var navStartTok uint64
 				cw.AddNavigationStarting(handlerPtr(w.navStartH), &navStartTok)
@@ -987,8 +988,9 @@ func handlerInvoke(this, a, b uintptr) uintptr {
 		}
 	case kindNavigationStarting:
 		// Invoke(this, ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
-		// A navigation the policy does not let proceed is cancelled here,
-		// before its request is sent, and the page stays as it was.
+		// Cancel keeps the current page intact. WebView2 explicitly permits
+		// GET requests while the host responds to this event; this is not
+		// a network-request boundary (see docs/navigation-security.md).
 		if b != 0 {
 			args := asNavigationStartingArgs(b)
 			uri := args.URI()
