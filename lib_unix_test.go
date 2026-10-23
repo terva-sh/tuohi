@@ -113,7 +113,10 @@ func TestMain(m *testing.M) {
 		ok, why = guiAvailable()
 	}
 	guiSkipReason = why
-	if ok {
+	if ok && os.Getenv("TUOHI_TEST_WM") == "1" {
+		// This separate process owns an isolated Xvfb display with a real WM.
+		resMaximize.Store(maximizeWithWM())
+	} else if ok {
 		resBridge.Store(bridgeScenario())
 		resErrorUnbind.Store(errorUnbindScenario())
 		resRichTypes.Store(richTypesScenario())
