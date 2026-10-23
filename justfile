@@ -57,7 +57,7 @@ test:
 # a private bus. TUOHI_REQUIRE_GUI=1 fails a scenario that would skip, so a
 # green run means the scenarios ran. Both stacks run even when the first
 # fails.
-test-gui:
+test-gui: test-maximize
     failed=""; \
     for backend in webkitgtk-6.0 webkit2gtk-4.1; do \
         for m in {{modules}}; do \
@@ -66,6 +66,15 @@ test-gui:
         done; \
     done; \
     if [ -n "$failed" ]; then echo "test-gui failed on:$failed" >&2; exit 1; fi
+
+# A real window manager must acknowledge maximize/restore. This runs only the
+# dedicated scenario, in isolated Xvfb, and needs openbox's runtime package.
+test-maximize:
+    failed=""; \
+    for backend in webkitgtk-6.0 webkit2gtk-4.1; do \
+        TUOHI_TEST_WM=1 TUOHI_REQUIRE_GUI=1 TUOHI_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 -run '^TestAppRegionToggleMaximize$' -v . || failed="$failed $backend"; \
+    done; \
+    if [ -n "$failed" ]; then echo "maximize scenario failed on:$failed" >&2; exit 1; fi
 
 # Build every package and example for every target. FreeBSD needs purego's
 # fakecgo compiled with -std when cgo is off; the README says why.
