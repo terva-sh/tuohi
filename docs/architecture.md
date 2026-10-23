@@ -386,7 +386,11 @@ call a view's Go bindings) carries out:
     `NavigationStarting` has still reached the server, as its ordinary
     request and not a prefetch (GitHub run 36513098161, runtime 153). So
     the bridge's outside-link intercept runs here too, as on WebKitGTK. A
-    server redirect to an outside host is still requested first.
+    server redirect to an outside host may still be requested first.
+    Microsoft explicitly permits GET requests while the host responds to
+    `NavigationStarting`; cancellation preserves the current document, not
+    network silence. See [navigation security](navigation-security.md) for
+    the vendor contract, regression evidence and resource-filter tradeoffs.
   - **WKWebView** judges each navigation in
     `decidePolicyForNavigationAction`, before any request is sent. It uses
     `targetFrame` to tell frames and new windows apart. It judges the main

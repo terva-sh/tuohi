@@ -857,6 +857,14 @@ type View struct {
 	// needs that origin listed here, or the view stays blank while the
 	// browser opens it. A redirect to another scheme or host, such as http
 	// to https, or 127.0.0.1 to localhost, counts as another origin.
+	//
+	// Origins controls top-level documents and bridge access, not all network
+	// traffic. On Windows, WebView2 may send a GET before a cancelled
+	// NavigationStarting completes; on Linux, response-time decisions can
+	// also follow a request. Redirects and meta refresh can therefore contact
+	// an untrusted destination even though its page is never shown. Frames
+	// and subresources can also contact other origins. See
+	// docs/navigation-security.md for the platform limits.
 	Origins []string
 
 	// Permissions lists what a page in this view may use that the web engine
