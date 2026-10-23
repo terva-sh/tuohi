@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-23T04:26:52Z
-updated_at: 2026-10-23T04:28:59Z
+updated_at: 2026-10-23T04:55:55Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -70,3 +70,7 @@ in-progress to blocked: Interactive macOS notification/tray acceptance needs a n
 **agent:codex/t3-b903096c** at 2026-10-23T04:28:59Z
 
 Runbook validation: CGO_ENABLED=0 just ci passed both modules, prescribed platform cross builds and strict ticket validation. Commands/flags checked against managednotify, selfupdate and showcase sources. No API/code changed; native delivery/signing/manual host observations remain pending as recorded.
+
+**agent:codex/t3-b903096c** at 2026-10-23T04:55:55Z
+
+Additional consumer evidence read from Kuiske docs/desktop-acceptance.md at documentation source 231a758, runtime a6cc50d, same tuohi pin v0.1.2-0.20261022233646-d7f113cc07a5. Actual relocated production executable passed Xfce panel interaction, native close hide/reopen retaining settings, second-instance focus, panel-loss recovery, no-host close/exit, tray Quit and locked/missing GNOME Keyring guidance on GTK4 and GTK3. Environment: disposable Debian 13 amd64 X11/Xvfb, WebKitGTK 2.52.6, GTK 4.18.6/3.24.49, Xfce panel 4.20.4, Openbox 3.6.1, GNOME Keyring 48.0; empty account profile. This is actual Linux panel acceptance, not physical-device/Wayland, WSLg/Steam Frame, enrolled-account notification delivery, tagged consumer or packaged macOS/signing acceptance. AC4 remains open for selected unavailable platforms. Owner has now requested a tuohi source release; publication task TKT-01M5KHNGVKW2Y5ABMBV8MZ5SCC (Release tuohi v0.2.0) will disclose these limits rather than close this acceptance ticket. Tuohi main f022d8c native GitHub run 39902385484 passed all jobs.

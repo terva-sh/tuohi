@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-22T23:02:55Z
-updated_at: 2026-10-22T23:02:55Z
+updated_at: 2026-10-23T04:55:55Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -43,3 +43,9 @@ TKT-01M5JTA6MQ25ZDBGKAHJ1B47MJ (Synchronize GUI clipboard and binding lifecycle 
 
 - [ ] Capture actionable missing-phase/runtime evidence or establish a repeatable reproduction.
 - [ ] Any correction preserves strict bridge, navigation and off-thread method expectations and passes both Linux stacks.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-23T04:55:55Z
+
+Recurrence during PR #97 at head 14d2d9de157608208a995dab95919fba4b119020, internal CI run #683 (id 27431), GUI attempt 1: TestViewMethodsFromBinding on webkitgtk-6.0 returned start=none eval=none navigate=none offUI=false request=none page=none ready=0. The independent diagnostics now establish that the local fixture received no request, no page-script diagnostic arrived, and Ready never fired before the existing 20-second deadline. No native crash is shown; GTK3 and other packages/examples passed. PR #97 runtime edits are macOS-only, so no production Linux correction or shared cause is established. Keep strict assertions/timeouts; repeat at unchanged runtime source with a ticket-only follow-up and review carry. Failure log: https://git.local.sothr.com/terva-sh/tuohi/actions/runs/683/jobs/1/attempt/1/logs . This is new missing-phase evidence, not a fix or reproducible cause.
