@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3NGAJ7SCY3WM0THV1KAMS4Y
 title: Keep WebView2 from requesting a navigation NavigationStarting cancels
 type: bug
-status: draft
+status: in-progress
 status_reason: null
 priority: normal
 due_on: null
@@ -18,15 +18,22 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim: null
+claim:
+  actor: agent:codex/t3-b903096c
+  branch: t3/windows-navigation-contract
+  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
+  commit: f9335e6241ba7ed6ab56c62b751e10402f77da12
+  session: null
+  claimed_at: 2026-10-23T04:36:38Z
+  expires_at: null
 archive: null
 created_at: 2026-09-29T02:36:27Z
-updated_at: 2026-09-29T02:36:27Z
+updated_at: 2026-10-23T04:37:05Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
 updated_by:
-  id: agent:claude-code/t3code-72958710
+  id: agent:codex/t3-b903096c
   name: ""
 extensions: {}
 ---
@@ -57,3 +64,7 @@ TKT-01M3MV9PNV turned on the bridge's outside-link intercept on Windows too. Lin
 
 - [ ] The cause of the request is found and recorded
 - [ ] A server redirect to an untrusted origin is not requested on Windows, or the limit is documented with the reason
+
+## Implementation plan
+
+Resolve the documented-limit branch of acceptance: Microsoft ICoreWebView2NavigationStartingEventArgs.get_Cancel explicitly permits GET requests while the host responds. Verify the interface has no NavigationStarting deferral and assess WebResourceRequested against existing cross-origin iframe/subresource support before proposing a network block. Correct false pre-request comments and public Origins documentation, cite the vendor contract and native historical/current evidence, and retain the existing redirect-retains-page, outside-handoff and trusted-frame regressions. No blanket all-origin resource filter, no weakening bridge origin checks, and no inferred network sandbox guarantee. Re-run cgo-free validation and relevant GUI regressions; native Windows evidence remains clearly identified.
