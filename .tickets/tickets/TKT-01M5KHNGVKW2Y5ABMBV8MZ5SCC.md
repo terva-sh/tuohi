@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-23T04:52:49Z
-updated_at: 2026-10-23T05:02:38Z
+updated_at: 2026-10-23T05:09:32Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -50,7 +50,7 @@ No existing release ticket covers this version. Prior v0.1.0 ticket is done. Exi
 
 ## Acceptance criteria
 
-- [ ] Review and merge release notes, version rationale and accurate acceptance limits.
+- [x] Review and merge release notes, version rationale and accurate acceptance limits.
 - [ ] Final mirrored source passes native cgo-free CI, including the macOS fullscreen preference regression.
 - [ ] One annotated v0.2.0 tag points to the validated source on both forges.
 - [ ] Gated tag CI publishes the source-only GitHub release and the Go module proxy serves v0.2.0.
@@ -73,3 +73,7 @@ PR #98 clean full review 38be59c3-b741-4b33-b4f8-75ef37e1d03e at a181417/base f0
 **agent:codex/t3-b903096c** at 2026-10-23T05:02:38Z
 
 PR #97 merged internally and mirrored as 960bb41533cb5a05b7763273d3202dc074df3878 after all three checks passed at a7ca22122d5843da859922055d04c2278b914b91 against f022d8cd07bca41787b54386c612e6118287e2b2. Clean full review ea691c31-76f0-4ad3-826f-8edec7ef35be covered runtime head 14d2d9d; successful review carry verified the later commit touches only its ticket. Strict local full GUI repeat also passed both Linux stacks/modules and the real-WM regression. Incorporated merged main into the release-preparation branch without rewriting history. Fresh full review/CI required for PR #98 at its new base. Native macOS TestElementFullscreenPreference and full final-source native matrix remain publication gates; fullscreen ticket remains in progress pending actual execution. No tag or release yet.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:09:32Z
+
+PR #98 merged and mirrored as cebf4c0750bd1cd5618268e0b2e13925e53c350a after clean exact head 4d288e1b80c17c347e138a1d2022d7cc78b83bc3/base 960bb41533cb5a05b7763273d3202dc074df3878 review 454febf9-4c34-4bbf-a34e-bda5f04c23c7 and all three checks. PR #97 native macOS TestElementFullscreenPreference passed (not skipped), job 120250200321/run 39903533841. Final candidate is merged source cebf4c0; full native run 39904111530 is queued/in progress and must pass before tagging. Release-notes and publication authorization are complete; no tag created yet. Post-publication ticket records are prepared on t3/record-v0.2.0-release, not part of the planned candidate; any tag command must explicitly target the validated candidate SHA rather than this evidence branch HEAD. All packaged-app/hardware acceptance gaps remain in their owning ticket and release notes.

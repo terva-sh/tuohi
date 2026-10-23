@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M3NSA8JEDJJEBA47SVA4EZ7T
 title: Document why macOS keeps element fullscreen on
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: low
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/fullscreen-policy
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: f9335e6241ba7ed6ab56c62b751e10402f77da12
-  session: null
-  claimed_at: 2026-10-23T04:39:56Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-09-29T05:13:34Z
-updated_at: 2026-10-23T04:56:43Z
+updated_at: 2026-10-23T05:09:32Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -60,7 +53,7 @@ The architecture review listed it next to the media grants. It is split out of T
 
 - [x] The comment in lib_darwin.go gives the cross-engine reason for fullScreenEnabled
 - [x] The View.Permissions documentation says element fullscreen is allowed on every engine and is not a permission
-- [ ] Native macOS verifies the enabled public element-fullscreen preference in the copied WKWebView configuration; unavailable older APIs are reported accurately.
+- [x] Native macOS verifies the enabled public element-fullscreen preference in the copied WKWebView configuration; unavailable older APIs are reported accurately.
 
 ## Implementation plan
 
@@ -93,3 +86,11 @@ Merged current main f022d8cd07bca41787b54386c612e6118287e2b2 after PR #96. Repea
 **agent:codex/t3-b903096c** at 2026-10-23T04:56:43Z
 
 PR #97 review ea691c31-76f0-4ad3-826f-8edec7ef35be is clean for exact head 14d2d9de157608208a995dab95919fba4b119020/base f022d8cd07bca41787b54386c612e6118287e2b2. Internal #683 cross-build passed; GTK4 GUI failed TestViewMethodsFromBinding with start=none eval=none navigate=none offUI=false request=none page=none ready=0. GTK3 and remaining packages/examples passed. This matches TKT-01M5JXMTDYT0V6SG8K7MNPN3VB (Diagnose GTK4 windows missing initial binding reports); no HTTP request, script diagnostic or Ready event establishes a missing initial load, not a macOS fullscreen regression. Runtime changes here are macOS-only. Strict assertions/timeouts retained. Ticket-only evidence commit triggers a fresh CI run at identical runtime source; request carry of the clean review. Native macOS preference execution still pending reviewed merge/mirror. Owner has now additionally authorized cutting/publishing the tuohi library release, tracked separately in TKT-01M5KHNGVKW2Y5ABMBV8MZ5SCC (Release tuohi v0.2.0), PR #98; no release/tag yet.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:09:32Z
+
+PR #97 is merged and mirrored as 960bb41533cb5a05b7763273d3202dc074df3878. Native macOS GitHub job 120250200321 in run 39903533841 completed successfully. Its actual log contains === RUN TestElementFullscreenPreference followed by --- PASS, not SKIP. This establishes enabled public preference in a constructed WKWebView copied configuration on that hosted runtime. It does not establish interactive user-gesture fullscreen acceptance or behavior on older engines. Code, public permission/architecture docs, native regression, local cgo-free CI/cross builds and both Linux GUI stacks are complete. PR #98 subsequently merged only release docs/ticket records on top, as cebf4c0750bd1cd5618268e0b2e13925e53c350a. Full final-source native matrix remains a separate release gate. Evidence: https://github.com/terva-sh/tuohi/actions/runs/39903533841/job/120250200321 .
+
+## Summary
+
+Enabled the selected public macOS element-fullscreen preference and documented cross-engine/gesture policy. PR #97 merged as 960bb41 after clean review and cgo-free checks. Native TestElementFullscreenPreference passed on hosted macOS in run 39903533841/job 120250200321; interactive gesture acceptance is outside this preference regression.
