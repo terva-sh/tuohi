@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-22T22:28:12Z
-updated_at: 2026-10-22T22:28:13Z
+updated_at: 2026-10-23T05:01:02Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -41,3 +41,13 @@ If the stall recurs, use its new stage diagnostic and native/version logs to iso
 
 - [ ] Capture an actionable stalled browser phase and native/version evidence, or document why the original observation remains unreproduced.
 - [ ] Any correction preserves strict permission/security expectations and passes both native Linux stacks.
+
+## Notes
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:00:49Z
+
+PR #98 GUI attempt 1 at exact head a181417e38680ad51f811d49780011bc52924eb2 failed TestPermissions on WebKitGTK 6.0: the no-permission and clipboard-granted runs produced their expected exact reports, while the camera-granted run returned "timeout at navigation". This means no progress binding report arrived before the existing shared 40-second deadline; it does not distinguish an absent load from failed initial bridge delivery, nor establish a camera permission decision failure. GTK3 and all other packages/examples passed. Failure log: https://git.local.sothr.com/terva-sh/tuohi/actions/runs/686/jobs/1/attempt/1/logs . This is a recurrence of the existing unselected investigation, separate from TKT-01M5JXMTDYT0V6SG8K7MNPN3VB (Diagnose GTK4 windows missing initial binding reports); no shared cause is established. Release PR #98 changes docs/tickets only. Keep assertions/timeouts intact; record the limitation, request fresh review for updated release notes, and rerun CI before any merge/tag. No production fix is claimed. The prior full local CGO_ENABLED=0 just test-gui at identical Linux runtime source passed both stacks, both modules and the dedicated WM regression.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:01:02Z
+
+Runtime context for the PR #98 recurrence: the CI dependency log installs WebKitGTK 6.0 and 4.1 version 2.54.0-1~deb13u3 and GTK4 4.18.6+ds-2 in the existing Go 1.27 Debian trixie container. Local passing runtime coverage uses host WebKitGTK 2.52.6 and is not reproduction under that newer WebKit build.

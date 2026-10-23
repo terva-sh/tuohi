@@ -33,6 +33,18 @@ The initial read-only integration snapshot is Kuiske
 `v0.1.2-0.20261022233646-d7f113cc07a5`; its final review/checks were reported
 clean. This pin is a development pseudo-version, not a new published tuohi release.
 
+Additional consumer acceptance is recorded in Kuiske PR #34 at documentation
+source `231a758` (runtime source `a6cc50d`; the same tuohi pin). Its relocated
+production Linux amd64 executable passed icon/menu interaction, retained-window
+hide/reopen, second-instance focus, panel-loss recovery, no-host close/exit, tray
+Quit, and locked/missing credential-provider guidance on both engines. The
+disposable Debian 13 X11/Xvfb session used WebKitGTK 2.52.6,
+GTK 4.18.6/3.24.49, Xfce panel 4.20.4, Openbox 3.6.1 and GNOME Keyring 48.0.
+The profile had no enrolled accounts. This is actual panel/executable acceptance,
+without physical-device/Wayland, real-daemon message delivery or tagged-consumer
+release acceptance. See Kuiske's
+[acceptance procedure](https://git.local.sothr.com/terva-sh/kuiske/src/commit/231a758/docs/desktop-acceptance.md).
+
 ## Managed notifications
 
 Use [managednotify](../examples/managednotify/main.go) for a minimal public-API
@@ -135,7 +147,7 @@ release sequences and a test publisher/feed. Follow the
 | Check | Status at the recorded source |
 | --- | --- |
 | Cgo-free native CI and prescribed cross builds | Passed, run linked above |
-| Kuiske routing and background policy | Consumer implementation reported complete; record current consumer acceptance separately |
+| Kuiske routing and background policy | Implementation complete; real Xfce panel and retained-window checks passed on both Linux engines as scoped above |
 | Interactive macOS notification query/request/denial/click/dismiss | Pending macOS desktop and packaged test consumer |
 | Production team-signed bundle update/rollback/relaunch | Pending signed disposable releases and authorized native environment |
 | Real tray usability on macOS, WSLg and Steam Frame | Pending consumer platform acceptance |
