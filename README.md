@@ -618,6 +618,11 @@ view.WindowChanged = func(state tuohi.WindowState) {
 }
 ```
 
+On macOS, hiding a fullscreen window first waits for its fullscreen exit,
+then hides the same window and renderer. `Show` cancels a pending hide;
+`App.Quit` and `Close` invalidate it during teardown. Native visibility
+callbacks during the transition do not represent a new reveal request.
+
 The consumer decides whether a hidden window remains reachable. A tray's
 registration cannot prove its icon is visible; use the tray availability API
 and your own background-running policy before hiding the only window.
@@ -827,8 +832,14 @@ window, so the usual keys work:
   windows.
 
 The application menu takes its title from `App.Name`, or the process name.
-The menu cannot be replaced or extended yet. A main menu that something else
-installed first, such as an embedding host's, is left as it is.
+There is no public menu configuration API yet. If an embedding host or bundled
+launch already installed a main menu, tuohi adds only missing Edit, Quit and
+Close commands. Existing menus, action targets and key equivalents are
+preserved, including host selectors using the standard shortcuts. Added Edit
+commands use the native responder chain. A host-provided Quit retains its own
+policy; a supplemented Quit calls `App.Quit`, so `App.Wait` returns for the
+consumer to join its cleanup. Close follows `CloseRequested` on framed and
+frameless windows.
 
 ### First click on an inactive window (macOS)
 
