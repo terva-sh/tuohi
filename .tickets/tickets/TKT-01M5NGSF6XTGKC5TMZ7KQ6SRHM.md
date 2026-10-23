@@ -15,7 +15,9 @@ parent: null
 origin: null
 dependencies: []
 blocks_on: none
-references: []
+references:
+  - ref: pr:https://git.local.sothr.com/terva-sh/tuohi/pulls/100
+    path: null
 moved_to: null
 claim:
   actor: agent:codex/tuohi-native-20261023
@@ -27,7 +29,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-23T23:15:59Z
-updated_at: 2026-10-23T23:24:23Z
+updated_at: 2026-10-23T23:32:33Z
 created_by:
   id: agent:codex/tuohi-native-20261023
   name: ""
@@ -72,3 +74,20 @@ Required non-test checks passed: vet in both modules including Darwin/Windows, g
 **agent:codex/tuohi-native-20261023** at 2026-10-23T23:24:23Z
 
 Confirmed identical TestPermissions failure on unchanged main 728218d48d300fd704c884342ec9009754d05b24, native darwin/arm64 macOS 26.6.2, CGO_ENABLED=0. This is a baseline limitation; remaining native suite and examples are being run with that one existing assertion excluded.
+
+**agent:codex/tuohi-native-20261023** at 2026-10-23T23:30:00Z
+
+PR #100 is open at exact implementation head 52fa5f9be7378035c62a593f88749a63dd7d6b12, base 728218d48d300fd704c884342ec9009754d05b24. Exact-head focused native acceptance passed all three assertions in 12.110s using CGO_ENABLED=0 TUOHI_REQUIRE_GUI=1 TUOHI_TEST_MACOS_REGRESSIONS=1 go test -count=1 -run TestNative/MenuSupplement-or-FullscreenHide-or-TestMenuEditKeys -v . (the literal regex is recorded in the PR follow-up evidence). terva dispatch returned the documented unexpected-end-of-JSON error, but Actions #707 was confirmed running with matching PR/request-id; no duplicate dispatch. Parent notified to watch. Full native suite remains unclaimed: baseline permission failure is draft TKT-01M5NH8TV3APBN79DC6YN05D6J (Reconcile native macOS permission fixture with current WKWebView); a later run also exposed pre-existing-scenario refcount/activation/focus instability before the new scenarios.
+
+**agent:codex/tuohi-native-20261023** at 2026-10-23T23:32:33Z
+
+Review dispositions for terva review 2818, run d0fe18b9-d60b-4c34-9e64-2bb1e7656251, Actions #707, exact original head 52fa5f9be7378035c62a593f88749a63dd7d6b12/base 728218d48d300fd704c884342ec9009754d05b24: https://git.local.sothr.com/terva-sh/tuohi/pulls/100#issuecomment-34675.
+
+HIGH (DidEnter host observer): accepted. Keep fullscreenEntering true until an unconditional later main-queue turn, even when no hide is pending at the instant tuohi receives DidEnter. Revalidate the window/observer lifetime and transition epoch, then inspect the current hide intent. Later host observers can now request Hide or Cancel+Hide during real notification delivery without toggling prematurely or latching an exit that AppKit rejected. A separate epoch prevents a stale completion from changing a later native transition.
+
+MEDIUM (actionable Edit/Window leaf): accepted. ensureSubmenu now skips matching actionable leaves and creates/reuses a separate submenu for the missing commands. Existing host leaf action, target, key equivalent and modifiers remain intact. Native acceptance checks both titled leaves and supplementation idempotence.
+
+Focused native command (this literal command supersedes the abbreviated pseudo-regex in the preceding evidence note):
+CGO_ENABLED=0 TUOHI_REQUIRE_GUI=1 TUOHI_TEST_MACOS_REGRESSIONS=1 go test -count=1 -run 'TestNative(MenuSupplement|FullscreenHide)|TestMenuEditKeys' -v .
+
+The fixed working tree passes all three native assertions in 15.812s on macOS 26.6.2 arm64. The fullscreen cases forward the real DidEnter notification to tuohi before invoking the synthetic host action while delivery is still active, making the ordering deterministic without assuming NSNotificationCenter ordering. Both direct Hide and RequestClose with Cancel+Hide are covered. Vet, formatting, public-example/import checks, eight-target cross builds in both modules and strict ticket validation pass after the fixes. A fresh full terva review will be requested after pushing the substantive changes.

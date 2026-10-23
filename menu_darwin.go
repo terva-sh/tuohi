@@ -237,6 +237,11 @@ func ensureSubmenu(bar objc.ID, title string) objc.ID {
 		if sub := item.Send(sel("submenu")); sub != 0 {
 			return sub
 		}
+		// A same-titled host command is a leaf, not a menu placeholder.
+		// Giving it a submenu would make its action inaccessible.
+		if objc.Send[objc.SEL](item, sel("action")) != 0 {
+			continue
+		}
 		sub := newMenu(title)
 		item.Send(sel("setSubmenu:"), sub)
 		return sub

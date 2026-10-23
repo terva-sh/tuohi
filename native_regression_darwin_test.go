@@ -36,12 +36,19 @@ func menuSupplementScenario() string {
 	}()
 	var failure string
 	autorelease(func() {
-		for _, shape := range []string{"absent", "empty", "placeholder", "populated", "existing-edit", "existing-actions", "custom-keys"} {
+		for _, shape := range []string{"absent", "empty", "placeholder", "populated", "existing-edit", "existing-actions", "custom-keys", "actionable-leaves"} {
 			bar := newMenu("")
 			var host, hostItem, copyItem objc.ID
 			if shape != "absent" && shape != "empty" {
 				host = addSubmenu(bar, "Synthetic host")
 				hostItem = bar.Send(sel("itemAtIndex:"), 0)
+			}
+			var leaves []objc.ID
+			if shape == "actionable-leaves" {
+				for _, title := range []string{"Edit", "Window"} {
+					addItem(bar, title, "hide:", "j", nsEventModifierFlagOption, nsapp)
+					leaves = append(leaves, bar.Send(sel("itemAtIndex:"), objc.Send[int](bar, sel("numberOfItems"))-1))
+				}
 			}
 			if shape == "populated" {
 				addItem(host, "Host action", "hide:", "j", nsEventModifierFlagOption, nsapp)
@@ -74,6 +81,12 @@ func menuSupplementScenario() string {
 			if countMenuItems(actual) != count || shape != "absent" && actual != bar || hostItem != 0 && actual.Send(sel("itemAtIndex:"), 0) != hostItem {
 				failure = shape + ": replaced or duplicated host menus"
 				return
+			}
+			for _, leaf := range leaves {
+				if leaf.Send(sel("submenu")) != 0 || objc.Send[objc.SEL](leaf, sel("action")) != sel("hide:") || leaf.Send(sel("target")) != nsapp || cstr(leaf.Send(sel("keyEquivalent")).Send(sel("UTF8String"))) != "j" || objc.Send[uint](leaf, sel("keyEquivalentModifierMask")) != nsEventModifierFlagOption {
+					failure = "actionable host leaf changed into a submenu"
+					return
+				}
 			}
 			for _, action := range []string{"undo:", "redo:", "cut:", "copy:", "paste:", "selectAll:"} {
 				items := menuActionItems(actual, action)
@@ -234,11 +247,22 @@ func fullscreenHideScenario() string {
 	nw = native(v)
 	window, renderer := nw.window, nw.webView
 	entered, exited, exitStarted := 0, 0, 0
+	forwardEntry := false
+	var lateEntryAction func()
 	observerClass, err := objc.RegisterClass("TuohiFullscreenAcceptanceObserver", objc.GetClass("NSObject"), nil, nil,
 		[]objc.MethodDef{{Cmd: sel("observe:"), Fn: func(_ objc.ID, _ objc.SEL, notification objc.ID) {
 			switch cstr(notification.Send(sel("name")).Send(sel("UTF8String"))) {
 			case "NSWindowDidEnterFullScreenNotification":
 				entered++
+				if forwardEntry {
+					// NSNotificationCenter promises no observer order. For the
+					// late-host cases, forward the real AppKit notification to
+					// tuohi first, then invoke the host while delivery is active.
+					fullscreenWindowNotification(nw.fullscreenObserver, 0, notification)
+				}
+				if lateEntryAction != nil {
+					lateEntryAction()
+				}
 			case "NSWindowWillExitFullScreenNotification":
 				exitStarted++
 			case "NSWindowDidExitFullScreenNotification":
@@ -328,14 +352,34 @@ func fullscreenHideScenario() string {
 		return "entry reveal failed to cancel deferred exit"
 	}
 	closeWindow()
-	if !wait(func() bool { return exitStarted == 5 }) {
+	if !wait(func() bool { return exited == 5 && !visible() }) {
+		return "exit after entry reveal timed out"
+	}
+	v.Show()
+	// Deliver DidEnter to tuohi before the synthetic host observer, while
+	// still in the real AppKit notification. No Hide is pending beforehand.
+	center.Send(sel("removeObserver:name:object:"), nw.fullscreenObserver, nsstr("NSWindowDidEnterFullScreenNotification"), window)
+	forwardEntry = true
+	for i, action := range []func(){v.Hide, v.RequestClose} {
+		lateEntryAction = action
+		if !enter(6+i) || !wait(func() bool { return exited == 6+i && !visible() }) || premature {
+			return fmt.Sprintf("late DidEnter host action %d failed: enter=%d exit=%d pending=%v", i, entered, exited, nw.hidePending)
+		}
+		lateEntryAction = nil
+		v.Show()
+	}
+	if !enter(8) {
+		return "quit-race entry timed out"
+	}
+	closeWindow()
+	if !wait(func() bool { return exitStarted == 8 }) {
 		return "quit-race exit never started"
 	}
 	app.Quit()
 	if err := app.Wait(); err != nil { // No teardown wait may depend on the animation.
 		return err.Error()
 	}
-	if !wait(func() bool { return exited == 5 }) || !visible() || nw.hidePending || premature {
+	if !wait(func() bool { return exited == 8 }) || !visible() || nw.hidePending || premature {
 		return "quit did not invalidate pending hide"
 	}
 	// Closing while an exit is pending removes the observer and queued work.

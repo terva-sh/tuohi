@@ -24,6 +24,7 @@ func (w *webview) observeFullscreen() {
 
 func (w *webview) stopObservingFullscreen() {
 	w.cancelPendingHide()
+	w.fullscreenTransition++
 	if w.fullscreenObserver == 0 {
 		return
 	}
@@ -34,7 +35,6 @@ func (w *webview) stopObservingFullscreen() {
 }
 
 func (w *webview) cancelPendingHide() {
-	w.hideGeneration++
 	w.hidePending = false
 }
 
@@ -72,22 +72,25 @@ func fullscreenWindowNotification(self objc.ID, _ objc.SEL, notification objc.ID
 	}
 	switch cstr(notification.Send(sel("name")).Send(sel("UTF8String"))) {
 	case "NSWindowWillEnterFullScreenNotification":
+		w.fullscreenTransition++
 		w.fullscreenEntering = true
 	case "NSWindowWillExitFullScreenNotification":
+		w.fullscreenTransition++
 		w.fullscreenEntering, w.fullscreenExiting = false, true
 	case "NSWindowDidEnterFullScreenNotification":
-		w.fullscreenEntering = false
-		if w.hasPendingHide() {
-			// AppKit rejects toggleFullScreen: during DidEnter delivery. Queue
-			// the exit and recheck both the window lifetime and reveal intent.
-			window, generation := w.window, w.hideGeneration
-			dispatchMain(func() {
-				if w.window == window && w.hideGeneration == generation {
-					w.exitFullscreenToHide()
-				}
-			})
-		}
+		// Keep the entry guard through the entire notification delivery. A
+		// host observer called AFTER this one can still request Hide, even
+		// when no hide was pending when tuohi received DidEnter. AppKit rejects
+		// a toggle until all observers return, so always settle on a later turn.
+		window, transition := w.window, w.fullscreenTransition
+		dispatchMain(func() {
+			if w.window == window && w.fullscreenTransition == transition && w.fullscreenObserver != 0 {
+				w.fullscreenEntering = false
+				w.exitFullscreenToHide()
+			}
+		})
 	case "NSWindowDidExitFullScreenNotification":
+		w.fullscreenTransition++
 		w.fullscreenEntering, w.fullscreenExiting = false, false
 		w.exitFullscreenToHide()
 	case "NSWindowWillCloseNotification":

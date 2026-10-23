@@ -916,11 +916,11 @@ type webview struct {
 	scriptHandler  objc.ID
 
 	// Fullscreen transition and delayed-hide state, confined to AppKit.
-	fullscreenObserver objc.ID
-	fullscreenEntering bool
-	fullscreenExiting  bool
-	hidePending        bool
-	hideGeneration     uint64
+	fullscreenObserver   objc.ID
+	fullscreenEntering   bool
+	fullscreenExiting    bool
+	hidePending          bool
+	fullscreenTransition uint64
 
 	ownsWindow bool
 	// firstMouse makes a click on an INACTIVE window reach the page instead of
@@ -1435,10 +1435,7 @@ func (w *webview) Hide() {
 	}
 	performOnMain(func() {
 		autorelease(func() {
-			if !w.hidePending {
-				w.hideGeneration++
-				w.hidePending = true
-			}
+			w.hidePending = true
 			w.exitFullscreenToHide()
 		})
 	})
