@@ -3,6 +3,8 @@
 package tuohi
 
 import (
+	"strings"
+
 	"github.com/ebitengine/purego/objc"
 )
 
@@ -12,8 +14,8 @@ import (
 // text fields have no ⌘C, ⌘V, ⌘X, ⌘A or ⌘Z. tuohi installs a fixed menu when
 // it creates the first window: the application menu, Edit, and Window. A
 // consumer cannot replace or extend it yet; a menu API waits until one asks.
-// A main menu someone else already installed, such as an embedding host's,
-// is left as it is.
+// An existing host menu is supplemented only with missing Edit, Quit and
+// Close actions; its objects, targets and key equivalents remain intact.
 
 // Modifier flags for setKeyEquivalentModifierMask:.
 const (
@@ -73,6 +75,9 @@ func menuClose() {
 		win.Send(sel("performClose:"), objc.ID(0))
 		return
 	}
+	if w := lookupEngine(win.Send(sel("delegate"))); w != nil && !w.lifecycle.request() {
+		return
+	}
 	win.Send(sel("close"))
 }
 
@@ -101,11 +106,12 @@ func menuWindow() objc.ID {
 	return app.Send(sel("mainWindow"))
 }
 
-// installMainMenu installs the default main menu unless NSApp already has
-// one. It runs on the main thread, when a window is created.
+// installMainMenu installs or supplements the main menu on the main thread,
+// when a window is created. Bundled launches can supply a placeholder menu.
 func installMainMenu() {
 	app := class("NSApplication").Send(sel("sharedApplication"))
-	if app.Send(sel("mainMenu")) != 0 {
+	if bar := app.Send(sel("mainMenu")); bar != 0 {
+		autorelease(func() { supplementMainMenu(bar) })
 		return
 	}
 	if menuTarget == 0 {
@@ -185,4 +191,101 @@ func addItem(menu objc.ID, title, action, key string, mods uint, target objc.ID)
 		item.Send(sel("setTarget:"), target)
 	}
 	menu.Send(sel("addItem:"), item)
+}
+
+// supplementMainMenu preserves host actions wherever they live in the menu
+// tree. A host's terminate: remains its own policy; only a missing Quit is
+// routed through tuohi so App.Wait can return for joined Go teardown.
+func supplementMainMenu(bar objc.ID) {
+	if menuTarget == 0 {
+		menuTarget = objc.ID(menuTargetClass).Send(sel("new"))
+	}
+	if !menuHasCommand(bar, "q", "tuohiQuit:", "terminate:") {
+		var application objc.ID
+		if objc.Send[int](bar, sel("numberOfItems")) > 0 {
+			application = bar.Send(sel("itemAtIndex:"), 0).Send(sel("submenu"))
+		}
+		if application == 0 {
+			application = newMenu(menuAppName())
+			item := class("NSMenuItem").Send(sel("alloc")).Send(
+				sel("initWithTitle:action:keyEquivalent:"), nsstr(menuAppName()), objc.SEL(0), nsstr("")).Send(sel("autorelease"))
+			item.Send(sel("setSubmenu:"), application)
+			bar.Send(sel("insertItem:atIndex:"), item, 0)
+		}
+		addItem(application, "Quit "+menuAppName(), "tuohiQuit:", "q", 0, menuTarget)
+	}
+	for _, command := range []struct{ title, action, key string }{
+		{"Undo", "undo:", "z"}, {"Redo", "redo:", "Z"},
+		{"Cut", "cut:", "x"}, {"Copy", "copy:", "c"},
+		{"Paste", "paste:", "v"}, {"Select All", "selectAll:", "a"},
+	} {
+		if !menuHasCommand(bar, command.key, command.action) {
+			addItem(ensureSubmenu(bar, "Edit"), command.title, command.action, command.key, 0, 0)
+		}
+	}
+	if !menuHasCommand(bar, "w", "tuohiClose:", "performClose:") {
+		addItem(ensureSubmenu(bar, "Window"), "Close", "tuohiClose:", "w", 0, menuTarget)
+	}
+}
+
+func ensureSubmenu(bar objc.ID, title string) objc.ID {
+	for i := 0; i < objc.Send[int](bar, sel("numberOfItems")); i++ {
+		item := bar.Send(sel("itemAtIndex:"), i)
+		if !objc.Send[bool](item.Send(sel("title")), sel("isEqualToString:"), nsstr(title)) {
+			continue
+		}
+		if sub := item.Send(sel("submenu")); sub != 0 {
+			return sub
+		}
+		sub := newMenu(title)
+		item.Send(sel("setSubmenu:"), sub)
+		return sub
+	}
+	return addSubmenu(bar, title)
+}
+
+func menuHasAction(menu objc.ID, actions ...string) bool {
+	for i := 0; i < objc.Send[int](menu, sel("numberOfItems")); i++ {
+		item := menu.Send(sel("itemAtIndex:"), i)
+		for _, action := range actions {
+			if objc.Send[objc.SEL](item, sel("action")) == sel(action) {
+				return true
+			}
+		}
+		if sub := item.Send(sel("submenu")); sub != 0 && menuHasAction(sub, actions...) {
+			return true
+		}
+	}
+	return false
+}
+
+// A host may use its own selector for a standard key. Do not shadow that
+// shortcut merely because its action has a different name.
+func menuHasCommand(menu objc.ID, key string, actions ...string) bool {
+	if menuHasAction(menu, actions...) {
+		return true
+	}
+	return menuHasKey(menu, key)
+}
+
+func menuHasKey(menu objc.ID, key string) bool {
+	wantMods := uint(nsEventModifierFlagCommand)
+	if key != strings.ToLower(key) {
+		wantMods |= 1 << 17 // NSEventModifierFlagShift
+	}
+	for i := 0; i < objc.Send[int](menu, sel("numberOfItems")); i++ {
+		item := menu.Send(sel("itemAtIndex:"), i)
+		actual := cstr(item.Send(sel("keyEquivalent")).Send(sel("UTF8String")))
+		mods := objc.Send[uint](item, sel("keyEquivalentModifierMask"))
+		if actual != strings.ToLower(actual) {
+			mods |= 1 << 17
+		}
+		if actual != "" && strings.EqualFold(actual, key) && mods == wantMods {
+			return true
+		}
+		if sub := item.Send(sel("submenu")); sub != 0 && menuHasKey(sub, key) {
+			return true
+		}
+	}
+	return false
 }

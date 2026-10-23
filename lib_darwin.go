@@ -413,7 +413,7 @@ func registerClasses() error {
 	if err := registerMenuTargetClass(); err != nil {
 		return fmt.Errorf("webview: menu target class: %w", err)
 	}
-	return nil
+	return registerFullscreenObserverClass()
 }
 
 // startURLSchemeTask implements -webView:startURLSchemeTask:. It resolves the
@@ -915,6 +915,13 @@ type webview struct {
 	manager        objc.ID
 	scriptHandler  objc.ID
 
+	// Fullscreen transition and delayed-hide state, confined to AppKit.
+	fullscreenObserver objc.ID
+	fullscreenEntering bool
+	fullscreenExiting  bool
+	hidePending        bool
+	hideGeneration     uint64
+
 	ownsWindow bool
 	// firstMouse makes a click on an INACTIVE window reach the page instead of
 	// only bringing the window forward. See Config.FirstMouse.
@@ -1102,6 +1109,7 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 			w.window.Send(sel("makeFirstResponder:"), w.webView)
 		}
 	})
+	w.observeFullscreen()
 	if w.frameless && w.ownsWindow {
 		// Track the page's -app-region boxes; a mouse-down inside a
 		// "drag" box (outside any "no-drag" box) requests a native window
@@ -1226,6 +1234,7 @@ func postWakeEvent(app objc.ID) {
 }
 
 func (w *webview) onWindowWillClose() {
+	w.stopObservingFullscreen()
 	w.widget = 0
 	w.webView = 0
 	w.window = 0
@@ -1381,6 +1390,7 @@ func (w *webview) Raise() {
 	}
 	performOnMain(func() {
 		autorelease(func() {
+			w.cancelPendingHide()
 			// Both halves are needed and neither substitutes for the other:
 			// activateIgnoringOtherApps brings the APPLICATION forward (without it
 			// the window rises inside an app that is still in the background, and
@@ -1401,6 +1411,7 @@ func (w *webview) Show() {
 	}
 	performOnMain(func() {
 		autorelease(func() {
+			w.cancelPendingHide()
 			if w.window.Send(sel("isMiniaturized")) != 0 {
 				w.window.Send(sel("deminiaturize:"), objc.ID(0))
 			}
@@ -1416,16 +1427,19 @@ func (w *webview) Show() {
 	})
 }
 
-// Hide removes the window from the screen (orderOut: detaches it from the
-// window list, unlike a miniaturize which would keep a Dock tile).
+// Hide exits fullscreen before ordering the existing window out, so AppKit
+// can remove its dedicated Space. Show/Raise cancel a pending hide.
 func (w *webview) Hide() {
 	if w.window == 0 {
 		return
 	}
 	performOnMain(func() {
 		autorelease(func() {
-			w.window.Send(sel("orderOut:"), objc.ID(0))
-			w.lifecycle.update(w.windowState())
+			if !w.hidePending {
+				w.hideGeneration++
+				w.hidePending = true
+			}
+			w.exitFullscreenToHide()
 		})
 	})
 }
@@ -1797,6 +1811,7 @@ func (w *webview) Destroy() {
 
 func (w *webview) destroyOnUI() {
 	autorelease(func() {
+		w.stopObservingFullscreen()
 		if w.window != 0 {
 			if w.webView != 0 {
 				if w.uiDelegate != 0 {

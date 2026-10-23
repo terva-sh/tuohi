@@ -45,6 +45,13 @@ func TestMain(m *testing.M) {
 	// running all of them unconditionally makes a plain `go test` slow and fragile
 	// under a tight timeout. The assertions skip when their scenario didn't run.
 	flag.Parse()
+	if os.Getenv("TUOHI_TEST_MACOS_REGRESSIONS") == "1" {
+		runtime.LockOSThread()
+		resMenuSupplement.Store(menuSupplementScenario())
+		resMenuEdit.Store(menuSupplementEditScenario())
+		resFullscreenHide.Store(fullscreenHideScenario())
+		os.Exit(m.Run())
+	}
 	if !testing.Short() {
 		runtime.LockOSThread()
 		// First, while no run loop has ever run.
@@ -88,7 +95,9 @@ func TestMain(m *testing.M) {
 		resMenuKeys.Store(menuKeysScenario())
 		resMenuClose.Store(menuCloseScenario())
 		resMenuNoMenu.Store(menuEditScenario(true))
-		resMenuEdit.Store(menuEditScenario(false))
+		resMenuEdit.Store(menuSupplementEditScenario())
+		resMenuSupplement.Store(menuSupplementScenario())
+		resFullscreenHide.Store(fullscreenHideScenario())
 		logWindows("menu scenarios")
 		// Last: this scenario runs its own [NSApp run] as the "external" host.
 		resExternalLoop.Store(externalLoopScenario())

@@ -1204,8 +1204,9 @@ func (v *View) Show() {
 
 // Hide removes the window from the screen AND from the taskbar / window
 // list - the classic "hide to tray" behavior: the process keeps running
-// and the window stays alive until Show brings it back. Safe to call from
-// any goroutine.
+// and the window stays alive until Show brings it back. On macOS a fullscreen
+// window exits fullscreen before hiding; Show cancels that pending hide.
+// Safe to call from any goroutine.
 func (v *View) Hide() {
 	v.onUI(engine.Hide)
 }
