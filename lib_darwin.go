@@ -978,8 +978,9 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 	// initialised (WKWebView copies its configuration at init, so nothing
 	// can change afterwards). The pushed values mirror WKWebView's native
 	// WKPreferences defaults - javaScriptEnabled YES, fullScreenEnabled NO
-	// (tuohi's one tuned divergence: it enables fullscreen so the demo's
-	// <video> can go fullscreen), deprecated javaEnabled/plugInsEnabled NO -
+	// (tuohi enables element fullscreen for parity with WebKitGTK/WebView2;
+	// the engine still requires a user gesture), deprecated javaEnabled/
+	// plugInsEnabled NO -
 	// except developerExtrasEnabled, which tracks the view's resolved Debug
 	// flag (View.Debug OR App.Debug). Every write goes
 	// through KVC guarded by respondsToSelector: on the property's setter,
@@ -1007,14 +1008,19 @@ func newWebView(v *View, serve serveFunc, app objc.ID, loopRunning bool) *webvie
 			}
 		}
 		push("javaScriptEnabled", "setJavaScript:", num(true))
-		push("fullScreenEnabled", "setFullScreenEnabled:", num(true)) // tuohi's tuned default (native NO)
+		// Retain the guarded legacy spelling for older engines. Modern
+		// WKPreferences exposes elementFullscreenEnabled (set below).
+		push("fullScreenEnabled", "setFullScreenEnabled:", num(true))
 		push("developerExtrasEnabled", "setDeveloperExtrasEnabled:", num(devTools))
 		push("javaScriptCanOpenWindowsAutomatically", "setJavaScriptCanOpenWindowsAutomatically:", num(true))
 		push("minimumFontSize", "setMinimumFontSize:", numF(0))
 		push("tabFocusesLinks", "setTabFocusesLinks:", num(false))
 		push("textInteractionEnabled", "setTextInteractionEnabled:", num(true))
 		push("siteSpecificQuirksModeEnabled", "setSiteSpecificQuirksModeEnabled:", num(true))
-		push("elementFullscreenEnabled", "setElementFullscreenEnabled:", num(false))
+		// Enable the public element-fullscreen preference before WKWebView
+		// copies this configuration. It is not a View.Permissions grant;
+		// user-gesture requirements still apply, as on the other engines.
+		push("elementFullscreenEnabled", "setElementFullscreenEnabled:", num(true))
 		push("fraudulentWebsiteWarningEnabled", "setFraudulentWebsiteWarningEnabled:", num(true))
 		push("shouldPrintBackgrounds", "setShouldPrintBackgrounds:", num(false))
 		push("javaEnabled", "setJavaEnabled:", num(false))

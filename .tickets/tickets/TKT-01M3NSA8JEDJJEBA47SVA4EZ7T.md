@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-29T05:13:34Z
-updated_at: 2026-10-23T04:39:57Z
+updated_at: 2026-10-23T04:42:16Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -58,8 +58,9 @@ The architecture review listed it next to the media grants. It is split out of T
 
 ## Acceptance criteria
 
-- [ ] The comment in lib_darwin.go gives the cross-engine reason for fullScreenEnabled
-- [ ] The View.Permissions documentation says element fullscreen is allowed on every engine and is not a permission
+- [x] The comment in lib_darwin.go gives the cross-engine reason for fullScreenEnabled
+- [x] The View.Permissions documentation says element fullscreen is allowed on every engine and is not a permission
+- [ ] Native macOS verifies the enabled public element-fullscreen preference in the copied WKWebView configuration; unavailable older APIs are reported accurately.
 
 ## Implementation plan
 
@@ -80,3 +81,7 @@ It does not block v0.1.0.
 **agent:codex/t3-b903096c** at 2026-10-23T04:39:56Z
 
 Source inspection found the historical ticket assumption is stale: newWebView attempts legacy fullScreenEnabled=true, then explicitly writes public elementFullscreenEnabled=false. Current WebKit WKPreferences.mm shows setElementFullscreenEnabled writes the same fullScreenEnabled preference, so the later write disables the intended policy on supporting macOS versions. Source: https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/API/Cocoa/WKPreferences.mm . The legacy setFullScreenEnabled selector is not the current public API (private SPI is _setFullScreenEnabled). The owner decision dated 2026-10-01 explicitly chooses enabled element fullscreen across engines; documenting the existing false setter as enabled would be inaccurate. Implement that selected policy through the public guarded setter and retain the older guarded attempt for legacy runtimes; add a native preference-query regression instead of claiming a docs-only no-op. Actual user-gesture fullscreen execution remains native acceptance work.
+
+**agent:codex/t3-b903096c** at 2026-10-23T04:42:16Z
+
+Implementation applies the recorded owner policy through guarded public elementFullscreenEnabled=true, replacing the contradictory false write; legacy guarded spelling retained without adding private SPI. View.Permissions and architecture describe cross-engine parity and engine gesture/API availability. Added TestElementFullscreenPreference: create a native WKWebView and query its copied WKPreferences.isElementFullscreenEnabled, so the old false assignment would fail on a supporting runtime. Older engines without this public getter explicitly skip with a reason. Local CGO_ENABLED=0 just ci passes both modules/prescribed cross builds; Darwin arm64 test binary compiles. Actual macOS test execution and user-gesture fullscreen are not established here; native preference execution remains pending reviewed merge/mirror. Ticket remains in progress until that result.
