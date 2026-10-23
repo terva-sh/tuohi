@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-09-29T05:13:34Z
-updated_at: 2026-10-23T04:50:42Z
+updated_at: 2026-10-23T04:56:43Z
 created_by:
   id: agent:claude-code/t3code-72958710
   name: ""
@@ -89,3 +89,7 @@ Implementation applies the recorded owner policy through guarded public elementF
 **agent:codex/t3-b903096c** at 2026-10-23T04:50:42Z
 
 Merged current main f022d8cd07bca41787b54386c612e6118287e2b2 after PR #96. Repeated CGO_ENABLED=0 just ci successfully on the combined tree: both modules, JavaScript/import checks, prescribed eight-target cross builds, and strict tickets. Darwin arm64 test binary compiles. This remains compilation evidence only for the new macOS preference scenario; its native result is pending the reviewed merge/mirror workflow. Latest complete native baseline is 31d2f8d9c492745547815d1f47d66d1aeb5f4689, GitHub run 39901736578, all jobs successful. No release published.
+
+**agent:codex/t3-b903096c** at 2026-10-23T04:56:43Z
+
+PR #97 review ea691c31-76f0-4ad3-826f-8edec7ef35be is clean for exact head 14d2d9de157608208a995dab95919fba4b119020/base f022d8cd07bca41787b54386c612e6118287e2b2. Internal #683 cross-build passed; GTK4 GUI failed TestViewMethodsFromBinding with start=none eval=none navigate=none offUI=false request=none page=none ready=0. GTK3 and remaining packages/examples passed. This matches TKT-01M5JXMTDYT0V6SG8K7MNPN3VB (Diagnose GTK4 windows missing initial binding reports); no HTTP request, script diagnostic or Ready event establishes a missing initial load, not a macOS fullscreen regression. Runtime changes here are macOS-only. Strict assertions/timeouts retained. Ticket-only evidence commit triggers a fresh CI run at identical runtime source; request carry of the clean review. Native macOS preference execution still pending reviewed merge/mirror. Owner has now additionally authorized cutting/publishing the tuohi library release, tracked separately in TKT-01M5KHNGVKW2Y5ABMBV8MZ5SCC (Release tuohi v0.2.0), PR #98; no release/tag yet.
