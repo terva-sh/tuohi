@@ -36,6 +36,7 @@ var (
 	resWindowState  atomic.Value // string
 	resBadMessages  atomic.Value // string
 	resOffMain      atomic.Value // string
+	resFullscreen   atomic.Value // string
 )
 
 func TestMain(m *testing.M) {
@@ -63,6 +64,7 @@ func TestMain(m *testing.M) {
 		resHitTest.Store(hitTestFirstMouseScenario())
 		resRaise.Store(raiseScenario())
 		resWindowState.Store(windowStateScenario())
+		resFullscreen.Store(fullscreenPreferenceScenario())
 		resOriginGate.Store(originGateScenario())
 		resFrameGate.Store(frameGateScenario())
 		resNavPolicy.Store(navPolicyScenario())
@@ -97,6 +99,36 @@ func TestMain(m *testing.M) {
 func nativeRequestClose(w *webview) { w.window.Send(sel("performClose:"), objc.ID(0)) }
 
 func nativeActivateForTest(w *webview) { w.Raise() }
+
+// Query the preferences copied into a real WKWebView, rather than just testing
+// our requested values. A later contradictory setter must not disable the
+// owner-selected element-fullscreen policy on modern macOS.
+func fullscreenPreferenceScenario() string {
+	v := &View{}
+	if err := testApp().Show(v); err != nil {
+		return err.Error()
+	}
+	defer v.Close()
+	prefs := native(v).webView.Send(sel("configuration")).Send(sel("preferences"))
+	if prefs.Send(sel("respondsToSelector:"), sel("isElementFullscreenEnabled")) == 0 {
+		return "public preference unavailable"
+	}
+	if prefs.Send(sel("isElementFullscreenEnabled")) == 0 {
+		return "element fullscreen disabled in copied WKWebView configuration"
+	}
+	return "enabled"
+}
+
+func TestElementFullscreenPreference(t *testing.T) {
+	got, _ := resFullscreen.Load().(string)
+	requireGUI(t, got)
+	if got == "public preference unavailable" {
+		t.Skip("older WKWebView has no public element-fullscreen preference")
+	}
+	if got != "enabled" {
+		t.Fatal(got)
+	}
+}
 
 // requireGUI skips a GUI assertion when its scenario did not run (e.g.
 // -short), or fails it when TUOHI_REQUIRE_GUI=1, which GitHub CI sets.
