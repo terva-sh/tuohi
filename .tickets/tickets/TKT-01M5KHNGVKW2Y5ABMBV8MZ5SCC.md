@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-23T04:52:49Z
-updated_at: 2026-10-23T05:00:49Z
+updated_at: 2026-10-23T05:02:38Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -69,3 +69,7 @@ Owner requested release publication explicitly in this session. Target v0.2.0 fo
 **agent:codex/t3-b903096c** at 2026-10-23T05:00:49Z
 
 PR #98 clean full review 38be59c3-b741-4b33-b4f8-75ef37e1d03e at a181417/base f022d8c found no issues. Headless/cross-build CI passed; GTK4 GUI failed camera permission setup with timeout at navigation, while the other two permission cases, GTK3 and remaining packages/examples passed. Recorded exact recurrence under TKT-01M5JVN8Z0XHCDRPRRHPGJXHF1 (Investigate intermittent GTK4 permission test stalls). Release notes now disclose unresolved GTK4 test navigation stalls without asserting a shared cause or production correction. Full local cgo-free just ci for this docs/ticket branch passed; the unchanged Linux runtime also passed a full local just test-gui repeat from the fullscreen branch. Fresh full review/CI requested for updated notes; publication remains pending the gates in this ticket. No tag created.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:02:38Z
+
+PR #97 merged internally and mirrored as 960bb41533cb5a05b7763273d3202dc074df3878 after all three checks passed at a7ca22122d5843da859922055d04c2278b914b91 against f022d8cd07bca41787b54386c612e6118287e2b2. Clean full review ea691c31-76f0-4ad3-826f-8edec7ef35be covered runtime head 14d2d9d; successful review carry verified the later commit touches only its ticket. Strict local full GUI repeat also passed both Linux stacks/modules and the real-WM regression. Incorporated merged main into the release-preparation branch without rewriting history. Fresh full review/CI required for PR #98 at its new base. Native macOS TestElementFullscreenPreference and full final-source native matrix remain publication gates; fullscreen ticket remains in progress pending actual execution. No tag or release yet.
