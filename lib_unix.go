@@ -169,8 +169,7 @@ var (
 	// Maximized-state query for the drag-area double-click toggle (see
 	// toggleMaximize): GTK4 reads the window's GdkSurface via
 	// gdk_toplevel_get_state, GTK3 reads the widget's GdkWindow via
-	// gdk_window_get_state. Both return a state bitmask in which the maximized
-	// bit is 1<<1 == GDK_WINDOW_STATE_MAXIMIZED / GDK_TOPLEVEL_STATE_MAXIMIZED.
+	// gdk_window_get_state. Their maximized bits differ (see below).
 	gdkToplevelGetState func(toplevel uintptr) uint32 // GTK4
 	gdkWindowGetState   func(window uintptr) uint32   // GTK3
 
@@ -1463,11 +1462,12 @@ func (w *webview) beginResizeDrag(p dragRequestParams) {
 	gtkWindowBeginResizeDrag3(w.window, edge, button, p.ScreenX, p.ScreenY, p.Time)
 }
 
-// gdkStateMaximized is the maximized bit of the GdkWindowState (GTK3) and
-// GdkToplevelState (GTK4) masks returned by gdk_window_get_state /
-// gdk_toplevel_get_state: GDK_WINDOW_STATE_MAXIMIZED = 1<<1 (GTK3) and
-// GDK_TOPLEVEL_STATE_MAXIMIZED = 1<<1 (GTK4) share the value.
-const gdkStateMaximized = 1 << 1
+// The GTK3 GdkWindowState and GTK4 GdkToplevelState enums differ: GTK3's
+// bit 1 is ICONIFIED, while GTK4's bit 1 is MAXIMIZED.
+const (
+	gdkWindowStateMaximized   = 1 << 2 // GDK_WINDOW_STATE_MAXIMIZED (GTK3)
+	gdkToplevelStateMaximized = 1 << 1 // GDK_TOPLEVEL_STATE_MAXIMIZED (GTK4)
+)
 
 // toggleMaximize flips the window between maximized and its normal size; the
 // app-region tracker asks for it when a "drag" box is double-clicked (see
@@ -1480,20 +1480,23 @@ func (w *webview) toggleMaximize() {
 		return
 	}
 	var state uint32
+	var maximized uint32
 	if gtk4 {
 		surface := gtkNativeGetSurface(w.window)
 		if surface == 0 {
 			return
 		}
 		state = gdkToplevelGetState(surface)
+		maximized = gdkToplevelStateMaximized
 	} else {
 		gdkWindow := gtkWidgetGetWindow(w.window)
 		if gdkWindow == 0 {
 			return
 		}
 		state = gdkWindowGetState(gdkWindow)
+		maximized = gdkWindowStateMaximized
 	}
-	if state&gdkStateMaximized != 0 {
+	if state&maximized != 0 {
 		gtkWindowUnmaximize(w.window)
 	} else {
 		gtkWindowMaximize(w.window)

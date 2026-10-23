@@ -98,7 +98,7 @@ jobs:
           set -eu
           apt-get update
           apt-get install -y --no-install-recommends \
-            nodejs git xvfb xauth dbus libxtst6 \
+            nodejs git xvfb xauth dbus libxtst6 openbox \
             libwebkit2gtk-4.1-0 libwebkitgtk-6.0-4
           rm -rf /var/lib/apt/lists/*
 
@@ -113,6 +113,7 @@ jobs:
         run: |
           failed=""
           for backend in webkitgtk-6.0 webkit2gtk-4.1; do
+            TUOHI_TEST_WM=1 TUOHI_REQUIRE_GUI=1 TUOHI_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 -run '^TestAppRegionToggleMaximize$' -v . || failed="$failed $backend:maximize"
             for m in . examples; do
               echo "== $backend $m"
               (cd $m && TUOHI_REQUIRE_GUI=1 TUOHI_BACKEND=$backend dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' go test -count=1 ./...) || failed="$failed $backend:$m"
