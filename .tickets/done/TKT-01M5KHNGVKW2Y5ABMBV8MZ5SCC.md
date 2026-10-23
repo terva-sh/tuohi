@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5KHNGVKW2Y5ABMBV8MZ5SCC
 title: Release tuohi v0.2.0
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:codex/t3-b903096c
-  branch: t3/release-v0.2.0
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-b903096c
-  commit: f022d8cd07bca41787b54386c612e6118287e2b2
-  session: null
-  claimed_at: 2026-10-23T04:53:05Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-23T04:52:49Z
-updated_at: 2026-10-23T05:13:13Z
+updated_at: 2026-10-23T05:16:27Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -53,8 +46,8 @@ No existing release ticket covers this version. Prior v0.1.0 ticket is done. Exi
 - [x] Review and merge release notes, version rationale and accurate acceptance limits.
 - [x] Final mirrored source passes native cgo-free CI, including the macOS fullscreen preference regression.
 - [x] One annotated v0.2.0 tag points to the validated source on both forges.
-- [ ] Gated tag CI publishes the source-only GitHub release and the Go module proxy serves v0.2.0.
-- [ ] Record release evidence and notify the Kuiske consumer session.
+- [x] Gated tag CI publishes the source-only GitHub release and the Go module proxy serves v0.2.0.
+- [x] Record release evidence and notify the Kuiske consumer session.
 
 ## Implementation plan
 
@@ -85,3 +78,11 @@ Final source cebf4c0750bd1cd5618268e0b2e13925e53c350a passed every required nati
 **agent:codex/t3-b903096c** at 2026-10-23T05:13:13Z
 
 Public module verification succeeded using GOPROXY=https://proxy.golang.org and GOSUMDB=sum.golang.org: go mod download -json github.com/terva-sh/tuohi@v0.2.0 returned origin hash cebf4c0750bd1cd5618268e0b2e13925e53c350a, Ref refs/tags/v0.2.0, module sum h1:qGgLFgL9+hCOg9r+PO/lhqyBif0WEsc/E5JNPtKyoUo= and go.mod sum h1:byWobGhSQfSLBumj/1xFVfZWWaAa/qcJPXaMYnxpTg8=. This establishes public proxy/checksum availability; gated GitHub release publication is still pending tag run 39904422070, so AC4 remains open.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:16:26Z
+
+Publication complete. Gated tag run 39904422070 passed all 27 jobs, including Release v0.2.0, at exact source cebf4c0750bd1cd5618268e0b2e13925e53c350a. GitHub published https://github.com/terva-sh/tuohi/releases/tag/v0.2.0 at 2026-10-23T05:14:08Z; verified non-draft, non-prerelease and no binary assets. Updated the public body from the reviewed docs/releases/v0.2.0.md with tag-resolved links and exact validation/changelog links; read-back matches. Public proxy/checksum download already verified exact source and module/go.mod sums in the preceding note. Identical annotated tags on both forges remain unchanged. Notified Kuiske thread 564d5d21-1210-473a-aa2b-918183ce9764 through t3_thread_send, idempotency key tuohi-v020-published-cebf4c0, including version/hash, passing native/tag CI, capabilities and remaining packaged-app/signing/hardware acceptance limits. No consumer feed or binary publication. PR #99 carries the final evidence/ticket closure through normal internal review; release source remains the reviewed/validated tagged commit, rather than this later record.
+
+## Summary
+
+Published tuohi v0.2.0 from reviewed source cebf4c0750bd1cd5618268e0b2e13925e53c350a. Identical annotated tags on Forgejo/GitHub, full cgo-free native/build CI before tagging and on the tag, public GitHub release with reviewed notes, and Go proxy/checksum availability verified. Kuiske notified with source/version and accurate remaining acceptance gaps. Final ticket/evidence closure recorded in PR #99; packaged-app/signing/hardware checks remain separately tracked.
