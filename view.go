@@ -874,7 +874,9 @@ type View struct {
 	// listed here. Everything else a page asks for, such as geolocation or
 	// notifications, is denied, and no engine shows a prompt of its own.
 	// Empty, the default, denies everything. Pointer lock is not a
-	// permission: every engine allows it on a user gesture.
+	// permission: every engine allows it on a user gesture. Element fullscreen
+	// is also outside this list: tuohi enables it across engines where their
+	// fullscreen API is available, subject to the engine's user-gesture rules.
 	//
 	// A frame on another origin can ask only when the trusted page delegates
 	// the feature to it with the iframe's allow attribute. WebView2 and

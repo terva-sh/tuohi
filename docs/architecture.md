@@ -487,8 +487,12 @@ Everything else is denied, and no engine shows a prompt of its own.
 Two neighbours of this policy were split out, because the ticket's acceptance
 criteria do not cover them:
 
-- macOS turns `fullScreenEnabled` on against the native default:
-  TKT-01M3NSA8JEDJJEBA47SVA4EZ7T.
+- Element fullscreen stays enabled for parity across engines, subject to their
+  user-gesture rules; it is not a `View.Permissions` grant. macOS enables the
+  public `elementFullscreenEnabled` preference where supported and retains the
+  guarded legacy `fullScreenEnabled` attempt for older engines. The previously
+  contradictory public-preference disable was corrected under
+  TKT-01M3NSA8JEDJJEBA47SVA4EZ7T (Document why macOS keeps element fullscreen on).
 - `TUOHI_DEBUG=1` turned dev tools on in any build:
   TKT-01M3NSA8HE52CHVQZ2A6T8H5NS. `View.Debug` is the application's
   decision, and an environment variable belongs to whoever launched it, so
