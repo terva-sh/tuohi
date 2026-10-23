@@ -28,7 +28,7 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-23T04:52:49Z
-updated_at: 2026-10-23T05:09:32Z
+updated_at: 2026-10-23T05:13:13Z
 created_by:
   id: agent:codex/t3-b903096c
   name: ""
@@ -51,8 +51,8 @@ No existing release ticket covers this version. Prior v0.1.0 ticket is done. Exi
 ## Acceptance criteria
 
 - [x] Review and merge release notes, version rationale and accurate acceptance limits.
-- [ ] Final mirrored source passes native cgo-free CI, including the macOS fullscreen preference regression.
-- [ ] One annotated v0.2.0 tag points to the validated source on both forges.
+- [x] Final mirrored source passes native cgo-free CI, including the macOS fullscreen preference regression.
+- [x] One annotated v0.2.0 tag points to the validated source on both forges.
 - [ ] Gated tag CI publishes the source-only GitHub release and the Go module proxy serves v0.2.0.
 - [ ] Record release evidence and notify the Kuiske consumer session.
 
@@ -77,3 +77,11 @@ PR #97 merged internally and mirrored as 960bb41533cb5a05b7763273d3202dc074df387
 **agent:codex/t3-b903096c** at 2026-10-23T05:09:32Z
 
 PR #98 merged and mirrored as cebf4c0750bd1cd5618268e0b2e13925e53c350a after clean exact head 4d288e1b80c17c347e138a1d2022d7cc78b83bc3/base 960bb41533cb5a05b7763273d3202dc074df3878 review 454febf9-4c34-4bbf-a34e-bda5f04c23c7 and all three checks. PR #97 native macOS TestElementFullscreenPreference passed (not skipped), job 120250200321/run 39903533841. Final candidate is merged source cebf4c0; full native run 39904111530 is queued/in progress and must pass before tagging. Release-notes and publication authorization are complete; no tag created yet. Post-publication ticket records are prepared on t3/record-v0.2.0-release, not part of the planned candidate; any tag command must explicitly target the validated candidate SHA rather than this evidence branch HEAD. All packaged-app/hardware acceptance gaps remain in their owning ticket and release notes.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:12:45Z
+
+Final source cebf4c0750bd1cd5618268e0b2e13925e53c350a passed every required native test/lint/build job in GitHub run 39904111530; its branch release job correctly skipped. Actual macOS job 120252109863 log contains --- PASS: TestElementFullscreenPreference (not SKIP). Native Linux GTK3/GTK4 on x64/ARM, Windows, macOS, 19-target example builds and lint all passed with the workflow CGO_ENABLED=0 setting. Pushed annotated v0.2.0 separately to origin and github; both report identical tag object 5ab583744291f2f3dd5b8be56ef7a1dbaf18b9a8 peeling to cebf4c0. No tags were rewritten. Gated tag/publication run 39904422070 is queued/in progress; the GitHub release is not yet claimed published. Public proxy/checksum verification is in progress. Native/pre-tag and identical annotated-tag criteria satisfied; publication/consumer notification remain open. Evidence branch is a post-release record, not the tag target.
+
+**agent:codex/t3-b903096c** at 2026-10-23T05:13:13Z
+
+Public module verification succeeded using GOPROXY=https://proxy.golang.org and GOSUMDB=sum.golang.org: go mod download -json github.com/terva-sh/tuohi@v0.2.0 returned origin hash cebf4c0750bd1cd5618268e0b2e13925e53c350a, Ref refs/tags/v0.2.0, module sum h1:qGgLFgL9+hCOg9r+PO/lhqyBif0WEsc/E5JNPtKyoUo= and go.mod sum h1:byWobGhSQfSLBumj/1xFVfZWWaAa/qcJPXaMYnxpTg8=. This establishes public proxy/checksum availability; gated GitHub release publication is still pending tag run 39904422070, so AC4 remains open.

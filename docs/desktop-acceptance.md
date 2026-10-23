@@ -8,13 +8,15 @@ signing-key material in the record. Publication is a separate release action.
 
 ## Established evidence
 
-At tuohi `68fc3ac7539712deb1cabe405142b38d317e67bb`,
-[GitHub run 39873829324](https://github.com/terva-sh/tuohi/actions/runs/39873829324)
+At tuohi `cebf4c0750bd1cd5618268e0b2e13925e53c350a` (the `v0.2.0` tag target),
+[GitHub run 39904111530](https://github.com/terva-sh/tuohi/actions/runs/39904111530)
 passed lint, every build, both Linux GTK stacks on x64/ARM, native macOS/Windows
-tests and consumer examples with `CGO_ENABLED=0`. The release job was skipped.
-The preceding lifecycle source `d7f113c` also passed native Windows/macOS jobs;
-its remaining Linux GTK4 job was cancelled during dependency installation by the
-newer main push, not a failing test.
+tests and consumer examples with `CGO_ENABLED=0`. The native macOS
+`TestElementFullscreenPreference` passed, rather than skipping, in
+[job 120252109863](https://github.com/terva-sh/tuohi/actions/runs/39904111530/job/120252109863).
+The branch run skipped its release job; the tag's separate workflow gates
+publication. This source also includes the real-window-manager maximize/restore
+regression on both GTK stacks.
 
 These results cover automated lifecycle assertions, private D-Bus protocol
 fixtures, portable updater subprocesses and the macOS relative-dylib helper
