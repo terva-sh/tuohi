@@ -212,7 +212,8 @@ the recipe and both CIs set, fails a scenario that would skip, so a green run
 means the scenarios ran.
 
 On Debian 13 the GUI tests need `libwebkit2gtk-4.1-0`, `libwebkitgtk-6.0-4`,
-`xvfb`, `dbus`, and `libxtst6`, which the permissions scenario clicks with.
+`xvfb`, `dbus`, `openbox` for the isolated maximize/restore scenario, and
+`libxtst6`, which the permissions scenario clicks with.
 Only the runtime libraries are needed, never `-dev` packages, because nothing
 is compiled against them.
 
