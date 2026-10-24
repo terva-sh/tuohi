@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5NJ6Q60PV4XPBTP9P7ZZ7B0
 title: Read an image from the system clipboard
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/tuohi-clipboard-image
-  branch: t3/clipboard-image
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-clipboard-image
-  commit: 728218d48d300fd704c884342ec9009754d05b24
-  session: null
-  claimed_at: 2026-10-23T23:40:52Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-23T23:40:42Z
-updated_at: 2026-10-24T00:09:14Z
+updated_at: 2026-10-24T00:26:56Z
 created_by:
   id: agent:claude-code/tuohi-clipboard-image
   name: ""
@@ -79,7 +72,7 @@ and its server decodes PNG, JPEG, GIF and WebP, so PNG output fits.
 - [x] GTK 3 and GTK 4 read PNG and BMP-only offers, including WSLg's text/html plus image/bmp
 - [x] GUI scenarios put a real image on a real clipboard from another process and read it back on both WebKitGTK stacks
 - [x] macOS and Windows either read images or return a clear unsupported error, with follow-up tickets filed
-- [ ] Pull request opened on Forgejo with a terva review requested and findings dispositioned
+- [x] Pull request opened on Forgejo with a terva review requested and findings dispositioned
 
 ## Implementation plan
 
@@ -159,3 +152,29 @@ the parent reads with PasteImage on both stacks under Xvfb.
   it there.
 - Running the scenarios moved the live clipboard on this host while someone
   was using it, so probing stopped there.
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T00:11:52Z
+
+Opened PR #101 (https://git.local.sothr.com/terva-sh/tuohi/pulls/101) at c737858 plus the ticket commit, rebased onto main 6fa85d8. Requested terva-review: the dispatch answered 'unexpected end of JSON input' but created run 28108. CI run 28107.
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T00:16:02Z
+
+### Disposition of terva-review on 3d266ac8 (run 71183cbc)
+
+**medium: Restrict the all-zero alpha workaround to 32-bit images**: fixed in 03e5a12.
+
+The fallback now applies only to 32-bit bitmaps, whose fourth byte the original format reserves. A 16-bit or 32-bit bitmap with no alpha mask is opaque from its masks. A 16-bit bitmap with an explicit alpha mask keeps its alpha as given, including all zero. New `TestDecodeDIB` cases cover A1R5G5B5 with mixed alpha and with every alpha bit clear (fully transparent).
+
+### CI failure on 3d266ac8
+
+Both jobs ran `go test ./...` under Go 1.27. On it, `TestEncodeImage/limits/BMP_exactly_at_limits` failed. The test assumed the PNG of a 5×3 image is smaller than its 102-byte BMP. Go 1.27's encoder writes it larger, which this host's Go 1.26 does not. I reproduced it in `golang:1.27-alpine`. The test now sets the exact byte limit from the output it gets. The library's behaviour was right: `ErrImageTooLarge` for a PNG over MaxBytes.
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T00:26:56Z
+
+Second terva-review (run 8e0fe25a, request fix-review) on 03e5a12: clean, finding-1 resolved. CI on 03e5a12 passes both jobs: Vet, test and cross-build; GUI scenarios on both WebKitGTK stacks.
+
+## Summary
+
+`clipboard.PasteImage(ImageLimits{MaxBytes, MaxPixels}) ([]byte, error)` returns the clipboard image as PNG on GTK 3 and GTK 4. It reads PNG, BMP, JPEG and GIF offers, decodes them in Go (clipboard/dib.go, clipboard/image.go) and re-encodes them. Zero limits default to 32 MiB and 50 Mpx. It returns `ErrNoImage` when nothing readable is offered and `ErrImageTooLarge` when a limit is exceeded. macOS and Windows return `ErrUnsupported`; follow-ups TKT-01M5NKRPY4 and TKT-01M5NKRPZ0 cover them. Landed through PR #101, with a clean terva review on 03e5a12 and green CI on both stacks.
+
+Limits: GTK 3 buffers the whole transfer before MaxBytes applies. GTK 4 under WSLg is unverified with a focused window, while GTK 3 read a real WSLg Wayland image/bmp offer correctly.
