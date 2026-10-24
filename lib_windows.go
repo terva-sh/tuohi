@@ -81,7 +81,7 @@ var (
 	iidIUnknown             = guid{0x00000000, 0x0000, 0x0000, [8]byte{0xC0, 0, 0, 0, 0, 0, 0, 0x46}}
 	iidEnvironmentComplete  = guid{0x4E8A3389, 0xC9D8, 0x4BD2, [8]byte{0xB6, 0xB5, 0x12, 0x4F, 0xEE, 0x6C, 0xC1, 0x4D}}
 	iidControllerComplete   = guid{0x6C4819F3, 0xC9B7, 0x4260, [8]byte{0x81, 0x27, 0xC9, 0xF5, 0xBD, 0xE7, 0xF6, 0x8C}}
-	iidController2          = guid{0xF0EC8882, 0x7EC5, 0x4118, [8]byte{0xA7, 0xC8, 0x59, 0x54, 0x0C, 0xFF, 0x17, 0xED}}
+	iidController2          = guid{0xC979903E, 0xD4CA, 0x4228, [8]byte{0x92, 0xEB, 0x47, 0xEE, 0x3F, 0xA9, 0x6E, 0xAB}}
 	iidMessageReceived      = guid{0x57213F19, 0x00E6, 0x49FA, [8]byte{0x8E, 0x07, 0x89, 0x8E, 0xA0, 0x1E, 0xCB, 0xD2}}
 	iidScriptAdded          = guid{0xB99369F3, 0x9B11, 0x47B5, [8]byte{0xBC, 0x6F, 0x8E, 0x78, 0x95, 0xFC, 0xEA, 0x17}}
 	iidWebResourceRequested = guid{0xAB00B74C, 0x15F1, 0x4646, [8]byte{0x80, 0xE8, 0xE7, 0x63, 0x41, 0xD2, 0x5D, 0x71}}
@@ -618,6 +618,13 @@ func (i *controller) Release() { purego.SyscallN(i.vtbl.Release, uintptr(unsafe.
 // HRESULT so callers can detect E_INVALIDARG / failures (transparency).
 func (i *controller2) PutDefaultBackgroundColor(color uint32) uintptr {
 	r, _, _ := purego.SyscallN(i.vtbl.PutDefaultBackgroundColor, uintptr(unsafe.Pointer(i)), uintptr(color))
+	return r
+}
+
+// GetDefaultBackgroundColor reads the color PutDefaultBackgroundColor set,
+// in the same packing, and returns the HRESULT.
+func (i *controller2) GetDefaultBackgroundColor(color *uint32) uintptr {
+	r, _, _ := purego.SyscallN(i.vtbl.GetDefaultBackgroundColor, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(color)))
 	return r
 }
 
@@ -1424,7 +1431,6 @@ func (w *webview) resizeWebView() {
 	}
 }
 
-// applyDefaultBackgroundColor sets the WebView2 default background to fully
 // applyDefaultBackgroundColor makes the WebView2 default background match the
 // window: fully transparent on frameless windows (page-transparent areas show
 // through to the desktop) and opaque white on framed windows, via
@@ -1441,20 +1447,28 @@ func (w *webview) applyDefaultBackgroundColor() {
 		return
 	}
 	defer asController2(ctrl2).Release()
-	// COREWEBVIEW2_COLOR is a {A, R, G, B} byte struct passed by value; on the
-	// little-endian calling convention that is A in the low byte. A fully
-	// transparent background (alpha 0) with the WS_EX_NOREDIRECTIONBITMAP
-	// window style lets the desktop show through the page's transparent pixels;
-	// a fully opaque one (alpha 0xFF) paints the usual white behind the page. A framed
-	// window is opaque white; there is no per-window opaque-background option.
-	var color uint32
-	if w.frameless {
-		color = 0 // A=0 -> fully transparent
-	} else {
-		color = 0x000000FF // A=0xFF -> opaque white
-	}
+	color := defaultBackgroundColor(w.frameless)
 	hr = asController2(ctrl2).PutDefaultBackgroundColor(color)
 	dbg("applyDefaultBackgroundColor: color=0x%08x hr=0x%x", color, uint32(hr))
+}
+
+// The COREWEBVIEW2_COLOR values applyDefaultBackgroundColor sets. The struct
+// is the bytes {A, R, G, B}, passed by value as a little-endian uint32: A in
+// the low byte, B in the high one. WebView2 accepts only alpha 0 or 255.
+const (
+	backgroundTransparent = 0x00000000 // A=0
+	backgroundOpaqueWhite = 0xFFFFFFFF // A=R=G=B=0xFF
+)
+
+// defaultBackgroundColor is the background behind the page: transparent on a
+// frameless window, which with WS_EX_NOREDIRECTIONBITMAP lets the desktop
+// show through the page's transparent pixels, and opaque white on a framed
+// one.
+func defaultBackgroundColor(frameless bool) uint32 {
+	if frameless {
+		return backgroundTransparent
+	}
+	return backgroundOpaqueWhite
 }
 
 func (w *webview) Focus() {
