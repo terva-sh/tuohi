@@ -3,8 +3,8 @@ schema: 4
 id: TKT-01M4HAEK8VHG2EY13RCNWVTC06
 title: Let a tray application keep its macOS Dock icon
 type: task
-status: in-progress
-status_reason: null
+status: blocked
+status_reason: "Code merged in #80 (cf945c1); waiting for the Dock-icon check on a real Mac, which no session here can run."
 priority: normal
 due_on: null
 labels:
@@ -29,12 +29,12 @@ claim:
   expires_at: null
 archive: null
 created_at: 2026-10-09T21:52:32Z
-updated_at: 2026-10-09T21:58:09Z
+updated_at: 2026-10-24T01:49:06Z
 created_by:
   id: agent:claude/vuoro-dock-20261009
   name: ""
 updated_by:
-  id: agent:claude/vuoro-dock-20261009
+  id: agent:claude-code/tuohi-clipboard-image
   name: ""
 extensions: {}
 ---
@@ -71,3 +71,11 @@ just ci passes on linux, with every target cross-built. Nothing here runs macOS,
 **agent:claude/vuoro-dock-20261009** at 2026-10-09T21:58:09Z
 
 CI run 539: the GUI job failed TestViewMethodsFromBinding on webkitgtk-6.0 with 'got no report' and passed it on webkit2gtk-4.1. The change touches only tray_darwin.go and a Config field, which that scenario never reaches, and the scenario passed 3 of 3 locally under xvfb on webkitgtk-6.0. Re-running CI.
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T01:49:06Z
+
+The implementation merged in PR #80 as cf945c1 on 2026-10-09, and tray.Config.Dock shipped in v0.2.0. Only the third criterion, a check on a real Mac, remains, so this is blocked on that rather than in progress. Noted while preparing v0.3.0 (TKT-01M5NSDCJ574MXR81G4P5CSSDC).
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T01:49:06Z
+
+in-progress to blocked: Code merged in #80 (cf945c1); waiting for the Dock-icon check on a real Mac, which no session here can run.
