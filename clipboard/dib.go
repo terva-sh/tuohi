@@ -13,9 +13,10 @@ package clipboard
 // compression are refused. Colour profiles are ignored.
 //
 // A 32-bit bitmap's fourth byte is reserved in the original format and
-// alpha in later use, and Windows programs fill it either way, so alpha is
-// honoured only when some pixel has a non-zero alpha: a bitmap whose alpha
-// is all zero is opaque, not invisible.
+// alpha in later use, and Windows programs fill it either way, so a 32-bit
+// bitmap's alpha is honoured only when some pixel has a non-zero alpha: one
+// whose alpha is all zero is opaque, not invisible. A 16-bit bitmap has
+// alpha only through an explicit mask, which is honoured as it is.
 
 import (
 	"encoding/binary"
@@ -193,7 +194,16 @@ func decodeDIBAt(dib []byte, pixOff int, limits ImageLimits) (image.Image, error
 	}
 	width, height := int(w), int(h)
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
-	alpha := false
+	// masked splits a 16 or 32-bit pixel through the masks. A bitmap
+	// without an alpha mask is opaque.
+	masked := func(v uint32) [4]uint8 {
+		px := [4]uint8{r.get(v), g.get(v), b.get(v), 0xff}
+		if a.mask != 0 {
+			px[3] = a.get(v)
+		}
+		return px
+	}
+	alpha := false // some pixel has a non-zero alpha
 	for y := range height {
 		row := dib[pixOff+y*int(stride):]
 		dy := height - 1 - y
@@ -213,20 +223,18 @@ func decodeDIBAt(dib []byte, pixOff int, limits ImageLimits) (image.Image, error
 					px[3] = 0xff
 				}
 			case 16:
-				v := uint32(le.Uint16(row[2*x:]))
-				px = [4]uint8{r.get(v), g.get(v), b.get(v), a.get(v)}
+				px = masked(uint32(le.Uint16(row[2*x:])))
 			case 24:
 				p := row[3*x:]
 				px = [4]uint8{p[2], p[1], p[0], 0xff}
 			case 32:
-				v := le.Uint32(row[4*x:])
-				px = [4]uint8{r.get(v), g.get(v), b.get(v), a.get(v)}
+				px = masked(le.Uint32(row[4*x:]))
 			}
 			alpha = alpha || px[3] != 0
 			copy(out[4*x:], px[:])
 		}
 	}
-	if !alpha {
+	if bpp == 32 && !alpha {
 		for i := 3; i < len(img.Pix); i += 4 {
 			img.Pix[i] = 0xff
 		}

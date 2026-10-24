@@ -30,7 +30,8 @@ type bmpSpec struct {
 	bpp         int  // 1, 8, 16, 24 or 32
 	compression int  // biRGB or biBitfields
 	topDown     bool // rows top to bottom, a negative height
-	zeroAlpha   bool // 32 bits: leave the fourth byte zero
+	zeroAlpha   bool // 32 bits: leave the fourth byte zero; 16 bits: clear the alpha bit
+	alpha16     bool // 16 bits: A1R5G5B5 bitfields, the alpha bit set from A >= 128
 	palette     [][3]uint8
 }
 
@@ -64,6 +65,9 @@ func makeDIB(t *testing.T, img *image.NRGBA, spec bmpSpec) []byte {
 	masks := []uint32{0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000}
 	if spec.compression == biBitfields && spec.bpp == 16 {
 		masks = []uint32{0xf800, 0x07e0, 0x001f, 0} // 5-6-5
+		if spec.alpha16 {
+			masks = []uint32{0x7c00, 0x03e0, 0x001f, 0x8000}
+		}
 	}
 	if spec.compression == biBitfields && spec.header >= 56 {
 		for i, m := range masks {
@@ -107,7 +111,12 @@ func makeDIB(t *testing.T, img *image.NRGBA, spec bmpSpec) []byte {
 				row[bit/8] |= byte(idx << (8 - spec.bpp - bit%8))
 			case 16:
 				var v uint16
-				if spec.compression == biBitfields {
+				if spec.alpha16 {
+					v = uint16(c.R>>3)<<10 | uint16(c.G>>3)<<5 | uint16(c.B>>3)
+					if c.A >= 128 && !spec.zeroAlpha {
+						v |= 0x8000
+					}
+				} else if spec.compression == biBitfields {
 					v = uint16(c.R>>3)<<11 | uint16(c.G>>2)<<5 | uint16(c.B>>3)
 				} else {
 					v = uint16(c.R>>3)<<10 | uint16(c.G>>3)<<5 | uint16(c.B>>3)
@@ -156,6 +165,21 @@ func quantize(img *image.NRGBA, rBits, gBits, bBits int) *image.NRGBA {
 		out.Pix[i] = scale(out.Pix[i], rBits)
 		out.Pix[i+1] = scale(out.Pix[i+1], gBits)
 		out.Pix[i+2] = scale(out.Pix[i+2], bBits)
+	}
+	return out
+}
+
+// alpha1 returns img with the alpha of src cut to one bit, as A1R5G5B5
+// carries it, or with every alpha zero when clear is set.
+func alpha1(img, src *image.NRGBA, clear bool) *image.NRGBA {
+	out := image.NewNRGBA(img.Bounds())
+	copy(out.Pix, img.Pix)
+	for i := 3; i < len(out.Pix); i += 4 {
+		if src.Pix[i] >= 128 && !clear {
+			out.Pix[i] = 0xff
+		} else {
+			out.Pix[i] = 0
+		}
 	}
 	return out
 }
@@ -212,6 +236,8 @@ func TestDecodeDIB(t *testing.T) {
 		{"32-bit bitfields in a V4 header, top-down", src, bmpSpec{header: 108, bpp: 32, compression: biBitfields, topDown: true}, src},
 		{"16-bit 5-5-5", src, bmpSpec{header: 40, bpp: 16}, quantize(src, 5, 5, 5)},
 		{"16-bit 5-6-5 bitfields", src, bmpSpec{header: 40, bpp: 16, compression: biBitfields}, quantize(src, 5, 6, 5)},
+		{"16-bit 1-5-5-5 bitfields with alpha", src, bmpSpec{header: 56, bpp: 16, compression: biBitfields, alpha16: true}, alpha1(quantize(src, 5, 5, 5), src, false)},
+		{"16-bit 1-5-5-5 bitfields, fully transparent", src, bmpSpec{header: 56, bpp: 16, compression: biBitfields, alpha16: true, zeroAlpha: true}, alpha1(quantize(src, 5, 5, 5), src, true)},
 		{"8-bit palette", src, bmpSpec{header: 40, bpp: 8, palette: palette}, opaque(src)},
 		{"8-bit palette, core header", src, bmpSpec{header: 12, bpp: 8, palette: palette}, opaque(src)},
 		{"1-bit palette", mono, bmpSpec{header: 40, bpp: 1, palette: [][3]uint8{{0, 0, 0}, {255, 255, 255}}}, mono},
@@ -334,6 +360,14 @@ func TestEncodeImage(t *testing.T) {
 		})
 	}
 
+	// The PNG encoder's output size varies between Go releases, so the
+	// exact limit is the larger of the BMP and the PNG made from it.
+	out, err := encodeImage("image/bmp", bmpData, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atLimit := max(len(bmpData), len(out))
+
 	t.Run("limits", func(t *testing.T) {
 		for name, c := range map[string]struct {
 			mimeType string
@@ -345,12 +379,11 @@ func TestEncodeImage(t *testing.T) {
 			"BMP over MaxPixels":    {"image/bmp", bmpData, ImageLimits{MaxBytes: 1 << 20, MaxPixels: 14}},
 			"JPEG over MaxPixels":   {"image/jpeg", jpegData, ImageLimits{MaxBytes: 1 << 20, MaxPixels: 14}},
 			"GIF over MaxPixels":    {"image/gif", gifData, ImageLimits{MaxBytes: 1 << 20, MaxPixels: 14}},
-			"BMP exactly at limits": {"image/bmp", bmpData, ImageLimits{MaxBytes: len(bmpData), MaxPixels: 15}},
+			"BMP exactly at limits": {"image/bmp", bmpData, ImageLimits{MaxBytes: atLimit, MaxPixels: 15}},
 		} {
 			t.Run(name, func(t *testing.T) {
 				_, err := encodeImage(c.mimeType, c.data, c.limits)
 				if name == "BMP exactly at limits" {
-					// The PNG of a 5×3 image is smaller than its BMP.
 					if err != nil {
 						t.Fatalf("encodeImage = %v, want success", err)
 					}
