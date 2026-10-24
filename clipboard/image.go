@@ -69,7 +69,8 @@ func (l ImageLimits) withDefaults() ImageLimits {
 // PasteImage can measure it, so there MaxBytes bounds what is kept and
 // decoded, not what GTK buffers for the call. macOS and Windows return
 // ErrUnsupported for now. Like Paste it needs a running tuohi app on GTK,
-// and is safe to call from any goroutine.
+// is safe to call from any goroutine, and can wait indefinitely on a
+// clipboard owner that does not answer; see the package documentation.
 func PasteImage(limits ImageLimits) ([]byte, error) {
 	return pasteImage(limits.withDefaults())
 }

@@ -19,8 +19,9 @@ tuohi is a fork of `github.com/malivvan/appkit` v0.1.0, whose repository no
 longer exists. [docs/provenance.md](docs/provenance.md) records where the
 source came from and what the review of it found, and [NOTICE](NOTICE) credits
 the projects it draws on. The library is under active development; its v0 API
-can change. See the [v0.2.0 release notes](docs/releases/v0.2.0.md) for the new
-desktop APIs and their platform limits.
+can change. See the [v0.3.0 release notes](docs/releases/v0.3.0.md) for
+clipboard images and the latest fixes, and the [v0.2.0 release
+notes](docs/releases/v0.2.0.md) for the desktop APIs and their platform limits.
 [docs/architecture.md](docs/architecture.md) records the shape tuohi is moving
 to, and why.
 

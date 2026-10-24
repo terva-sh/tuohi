@@ -144,6 +144,28 @@ release sequences and a test publisher/feed. Follow the
 5. Verify package/store/administrator-managed installs return `ErrManaged` and
    direct the user to the normal installer, without elevation or self-replacement.
 
+## Clipboard images
+
+`clipboard.PasteImage` (v0.3.0) has GUI scenarios on both WebKitGTK stacks
+under Xvfb, in which a separate owner process puts real images on a real X11
+clipboard; they run in both CIs at tuohi `debc890`. Forgejo CI ran them on
+Debian 13 with WebKitGTK 2.54.0.
+
+Real WSLg, on the owner's machine: Windows build 10.0.26200, WSL 2.7.11, WSLg
+1.0.73, Ubuntu 24.04.5 x86_64, WebKitGTK 2.52.6 with both stacks installed,
+and a Wayland session. An image copied in a Windows browser is offered as
+exactly `text/html image/bmp`; a v0.2.0 probe's paste event carried only
+`text/html`. On 2026-10-24 the owner pasted a real Windows browser image into
+Kuiske at tuohi `debc890` (pseudo-version
+`v0.2.1-0.20261024003306-debc890bea1e`, Kuiske branch
+`t3/native-clipboard-image`), and Kuiske's preview opened. The WebKitGTK stack
+of that run was not recorded. Kuiske's `scripts/check.sh` and
+`scripts/desktop-check.sh` passed at that pin on its default stack under
+Xvfb; Kuiske CI had not run there. Separately, a tuohi probe on that machine
+read a Wayland `image/bmp` offer on GTK 3.
+
+macOS and Windows return `ErrUnsupported` and have no acceptance to record.
+
 ## Remaining acceptance
 
 | Check | Status at the recorded source |
@@ -153,6 +175,7 @@ release sequences and a test publisher/feed. Follow the
 | Interactive macOS notification query/request/denial/click/dismiss | Pending macOS desktop and packaged test consumer |
 | Production team-signed bundle update/rollback/relaunch | Pending signed disposable releases and authorized native environment |
 | Real tray usability on macOS, WSLg and Steam Frame | Pending consumer platform acceptance |
+| Clipboard image paste under WSLg | A real Windows browser image pasted into Kuiske, stack unrecorded; see Clipboard images |
 | Public release/feed publication | Separate owner-controlled action, not performed by this runbook |
 
 Track execution and sanitized evidence in

@@ -30,6 +30,11 @@
 //   - GTK 4 reads the clipboard asynchronously, so Paste and PasteImage wait
 //     on a round trip through the UI thread, which keeps running its loop
 //     meanwhile.
+//   - On GTK a read waits for the process that owns the clipboard to answer,
+//     with no timeout of its own, and GTK does not bound every transfer. An
+//     owner that never answers keeps Paste or PasteImage waiting, so a
+//     caller that must answer within a deadline calls them from a goroutine
+//     it can abandon.
 //
 // Windows needs no tuohi window: the clipboard works in any program, and Copy
 // opens it with a hidden window of its own for the call. When another
