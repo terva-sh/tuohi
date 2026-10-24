@@ -7,3 +7,5 @@ package clipboard
 func copyText(string) error { return ErrUnsupported }
 
 func paste() (string, error) { return "", ErrUnsupported }
+
+func pasteImage(ImageLimits) ([]byte, error) { return nil, ErrUnsupported }

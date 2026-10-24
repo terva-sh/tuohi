@@ -107,6 +107,10 @@ var guiSkipReason string
 func TestMain(m *testing.M) {
 	flag.Parse()
 	runtime.LockOSThread()
+	if offer := os.Getenv(clipboardOwnerEnv); offer != "" {
+		// A clipboard owner the image scenario started, not a test run.
+		os.Exit(clipboardOwner(offer))
+	}
 	// -short never probes: the probe runs bwrap and loads the GTK stack.
 	ok, why := false, "GUI scenarios skipped under -short"
 	if !testing.Short() {
@@ -136,6 +140,7 @@ func TestMain(m *testing.M) {
 		resLoopbackLate.Store(loopbackLateScenario())
 		resBareAppURL.Store(bareAppURLScenario())
 		resClipboard.Store(clipboardScenario())
+		resClipboardImage.Store(clipboardImageScenario())
 		resCloseFromGo.Store(closeFromGoScenario())
 		resLifecycle.Store(lifecycleScenario())
 	}

@@ -224,6 +224,12 @@ loaded, so no `xclip`, `xsel` or `wl-copy` is needed, and on macOS
 window, and until then return `clipboard.ErrNoApp`. On Wayland, and on X11
 without a clipboard manager, copied text lasts only as long as the process.
 On Windows they use the Win32 clipboard, which needs no tuohi window.
+`clipboard.PasteImage(limits)` returns the clipboard's image as PNG,
+reading PNG, BMP, JPEG or GIF offers within a byte and a pixel limit, and
+`clipboard.ErrNoImage` when there is none. It is for an image the page's
+paste event does not carry: WebKitGTK hands a page no BMP, which is how
+WSLg offers an image copied on Windows. It reads on GTK only for now, and
+returns `clipboard.ErrUnsupported` on macOS and Windows.
 
 **Tray.** `App.Start` runs on the UI thread when `Wait` starts, before its
 loop dispatches any event, which is where `tray.Set` must be called. An
@@ -1169,7 +1175,7 @@ go build -ldflags="-H windowsgui" .
   `ShowOpts` with icon/urgency, `Alert` and `Beep`
 - `instance/` - single instance: `Acquire`, `Lock.Release` and `Send`
 - `autostart/` - launch at login: `New(id)` and the per-platform backends
-- `clipboard/` - text `Copy` and `Paste`
+- `clipboard/` - text `Copy` and `Paste`, and `PasteImage`
 - `dialog/` - the standalone native file-dialog package
 
 tuohi loads the OS view framework directly and bundles or extracts no native
