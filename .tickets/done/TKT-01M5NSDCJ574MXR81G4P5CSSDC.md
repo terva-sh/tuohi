@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5NSDCJ574MXR81G4P5CSSDC
 title: Release tuohi v0.3.0
 type: task
-status: in-progress
+status: done
 status_reason: null
 priority: high
 due_on: null
@@ -17,17 +17,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/tuohi-clipboard-image
-  branch: t3/release-v0.3.0
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-clipboard-image
-  commit: debc890bea1ef5c241b8e2a689fdda80464b3620
-  session: null
-  claimed_at: 2026-10-24T01:49:14Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-24T01:46:40Z
-updated_at: 2026-10-24T01:49:14Z
+updated_at: 2026-10-24T02:39:45Z
 created_by:
   id: agent:claude-code/tuohi-clipboard-image
   name: ""
@@ -70,12 +63,29 @@ force-push, consumer feed or signed artifacts.
 
 ## Acceptance criteria
 
-- [ ] Release notes for v0.3.0 reviewed and merged, with accurate validation limits
-- [ ] The merged release-notes commit passes native cgo-free CI on GitHub
-- [ ] One annotated v0.3.0 tag, approved by the owner, points to that commit on both forges
-- [ ] The tag workflow publishes the GitHub release and proxy.golang.org serves v0.3.0
-- [ ] Kuiske is told the version, the API and its limits
+- [x] Release notes for v0.3.0 reviewed and merged, with accurate validation limits
+- [x] The merged release-notes commit passes native cgo-free CI on GitHub
+- [x] One annotated v0.3.0 tag, approved by the owner, points to that commit on both forges
+- [x] The tag workflow publishes the GitHub release and proxy.golang.org serves v0.3.0
+- [x] Kuiske is told the version, the API and its limits
 
 ## Implementation plan
 
 v0.3.0: minor bump for the new clipboard image API. This PR carries docs/releases/v0.3.0.md, the README pointer, the clipboard-image evidence in docs/desktop-acceptance.md, and a doc line that GTK clipboard reads can wait indefinitely, which Kuiske asked for. After merge: sync GitHub without force, check native CI on the merge commit, then ask the owner before pushing an annotated v0.3.0 tag to each forge. Follow-ups filed, not in this release: TKT-01M5NSFRAB (Controller2 IID), TKT-01M5NSFRB4 (WebView2 user data folder), TKT-01M5NSFRBX (cancellable clipboard reads).
+
+## Notes
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T02:39:45Z
+
+### Publication
+
+- PR #102 merged as 4083fa914b2e394a109791b92387bba79ac20097 on Forgejo; its terva review was clean at f733848 (run 3fa9f134), and both CI jobs passed.
+- GitHub main fast-forwarded debc890..4083fa9, without force. Native run 40054617865 on 4083fa9 passed every test, lint and build job; its release job skipped, as on a branch.
+- The owner approved the tag. One annotated tag, v0.3.0 -> 4083fa9, was pushed separately to origin and github.
+- Tag run 40054865744 passed and its "Release v0.3.0" job published https://github.com/terva-sh/tuohi/releases/tag/v0.3.0 (not draft, not prerelease) at 2026-10-24T02:38:41Z.
+- proxy.golang.org serves v0.3.0 at 4083fa9 (refs/tags/v0.3.0). sum.golang.org: h1:vKd+T8uOYj/NkRoh6XxZ8rLw/Gdw8PAzqe8xJDZ5bBU=, go.mod h1:byWobGhSQfSLBumj/1xFVfZWWaAa/qcJPXaMYnxpTg8=. A clean module resolves `go get github.com/terva-sh/tuohi@v0.3.0`. The proxy's @latest still answered v0.2.0 straight after publication.
+- Kuiske's session was sent the version, the checksums and the API limits. Its first session had restarted, so the message went to its new one.
+
+## Summary
+
+Published tuohi v0.3.0: annotated tag at 4083fa9 on both forges, GitHub release from tag run 40054865744, and proxy.golang.org and sum.golang.org serve it. The release adds clipboard.PasteImage and #100's macOS fixes. Kuiske was told to repin. Windows fixes for a patch release are next, starting with TKT-01M5NSFRAB.
