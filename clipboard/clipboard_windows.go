@@ -165,3 +165,7 @@ func paste() (string, error) {
 // the Go GC neither owns nor moves; the spelling only keeps go vet's
 // unsafeptr check quiet.
 func ptr(u uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&u)) } // #nosec G103 -- audited FFI reinterpret
+
+// pasteImage is not implemented on Windows yet: reading the registered PNG
+// format, then CF_DIBV5 and CF_DIB through decodeDIB, is a follow-up.
+func pasteImage(ImageLimits) ([]byte, error) { return nil, ErrUnsupported }

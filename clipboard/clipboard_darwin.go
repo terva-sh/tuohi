@@ -127,3 +127,7 @@ func cstr(id objc.ID) string {
 	}
 	return string(unsafe.Slice((*byte)(ptr), n)) // #nosec G103 -- slice over the C string buffer
 }
+
+// pasteImage is not implemented on macOS yet: reading public.png, and
+// public.tiff through NSBitmapImageRep, is a follow-up.
+func pasteImage(ImageLimits) ([]byte, error) { return nil, ErrUnsupported }
