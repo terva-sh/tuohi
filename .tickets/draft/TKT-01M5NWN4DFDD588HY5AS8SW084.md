@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-24T02:43:20Z
-updated_at: 2026-10-24T02:43:20Z
+updated_at: 2026-10-24T03:15:47Z
 created_by:
   id: agent:claude-code/tuohi-clipboard-image
   name: ""
@@ -76,3 +76,9 @@ Kuiske's other surfaces.
 - Remove a fixed set by default, or add a per-view option (off, filtered,
   full), or both. Changing the default is a behaviour change for consumers.
 - Whether "Copy Image" should stop also offering the `blob:` address.
+
+## Notes
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T03:15:47Z
+
+Owner decision, 2026-10-24: in v0.4.0, remove by default the built-in entries a tuohi view cannot honour, on every engine, and add a per-view option to turn the built-in menu off entirely. The release notes state the default change.

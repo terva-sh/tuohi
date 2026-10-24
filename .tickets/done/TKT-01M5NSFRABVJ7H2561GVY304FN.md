@@ -3,7 +3,7 @@ schema: 4
 id: TKT-01M5NSFRABVJ7H2561GVY304FN
 title: Use the documented IID for ICoreWebView2Controller2
 type: bug
-status: in-progress
+status: done
 status_reason: null
 priority: normal
 due_on: null
@@ -18,17 +18,10 @@ dependencies: []
 blocks_on: none
 references: []
 moved_to: null
-claim:
-  actor: agent:claude-code/tuohi-clipboard-image
-  branch: t3/webview2-controller2-iid
-  worktree: /home/sothr/.t3/worktrees/tuohi/t3-clipboard-image
-  commit: a86412120b0437509b251402d70ad0a9951490c8
-  session: null
-  claimed_at: 2026-10-24T02:45:45Z
-  expires_at: null
+claim: null
 archive: null
 created_at: 2026-10-24T01:47:58Z
-updated_at: 2026-10-24T02:45:45Z
+updated_at: 2026-10-24T03:15:56Z
 created_by:
   id: agent:claude-code/tuohi-clipboard-image
   name: ""
@@ -95,3 +88,13 @@ default) was showing WebView2's white background and is now transparent where
 the page does not paint, as on WebKitGTK and WKWebView. A page with no
 background of its own will show the desktop through it. The patch notes must
 say so.
+
+## Notes
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T03:15:47Z
+
+Merged in #104 as 2729be2. GitHub native run 40056863061 on 2729be2 passed every job. On the Windows runner, under TUOHI_REQUIRE_GUI=1, TestDefaultBackgroundColorPacking and TestDefaultBackgroundColor passed, and applyDefaultBackgroundColor logged hr=0x0.
+
+## Summary
+
+Fixed in #104 (2729be2): the ICoreWebView2Controller2 IID now matches WebView2.h, and the colour packing is fixed (opaque white is 0xFFFFFFFF; the old 0x000000FF was black). Framed windows get opaque white and frameless windows a transparent background, as View.Frame documents. Verified on GitHub's Windows runner in run 40056863061. Ships in v0.3.1.
