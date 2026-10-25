@@ -21,7 +21,7 @@ moved_to: null
 claim: null
 archive: null
 created_at: 2026-10-24T01:47:58Z
-updated_at: 2026-10-24T01:47:58Z
+updated_at: 2026-10-24T03:15:47Z
 created_by:
   id: agent:claude-code/tuohi-clipboard-image
   name: ""
@@ -55,3 +55,9 @@ nothing waits on this yet.
 - Whether to move existing data, or leave a changed default to the consumer.
 - The equivalent on WebKitGTK and WKWebView, so the field means the same thing
   everywhere.
+
+## Notes
+
+**agent:claude-code/tuohi-clipboard-image** at 2026-10-24T03:15:47Z
+
+Owner decision, 2026-10-24: add an App field naming the web data directory, in v0.4.0. Honour it on Windows (WebView2 user data folder) and WebKitGTK, which take a path. macOS has no public API for a path, so it keeps its per-bundle store, documented. The default stays as it is, so no existing app loses its stored web data.
